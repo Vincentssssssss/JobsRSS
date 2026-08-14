@@ -37,3 +37,11 @@ class JobOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class JobDetail(JobOut):
+    country: Optional[str]
+    description: str
+    updated_at: Optional[datetime]
+    first_seen_at: Optional[datetime]
+    last_seen_at: Optional[datetime]

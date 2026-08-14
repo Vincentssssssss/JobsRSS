@@ -34,12 +34,12 @@ class AuthenticatedPlaywrightCollector(BaseCollector):
 
         results: List[Dict[str, Any]] = []
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(headless=True, args=["--ignore-certificate-errors"])
             context_args: Dict[str, Any] = {}
             state_path = self.get_storage_state_path()
             if state_path:
                 context_args["storage_state"] = state_path
-            context = browser.new_context(**context_args)
+            context = browser.new_context(ignore_https_errors=True, **context_args)
             page = context.new_page()
 
             if not state_path:

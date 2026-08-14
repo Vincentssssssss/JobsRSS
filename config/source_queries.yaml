@@ -51,7 +51,7 @@ sources:
         locations: ["香港", "新加坡", "上海"]
 
   job51:
-    enabled: true
+    enabled: false
     source_type: platform
     polling_interval_minutes: 20
     query_templates:
@@ -79,7 +79,7 @@ sources:
       - keyword: "安全工程经理"
 
   linkedin_email:
-    enabled: true
+    enabled: false
     source_type: email
     polling_interval_minutes: 15
     email_filters:

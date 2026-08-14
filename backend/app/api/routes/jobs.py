@@ -1,13 +1,13 @@
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models.job import Job
-from app.schemas.job import JobOut
+from app.schemas.job import JobDetail, JobOut
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -66,3 +66,11 @@ def summary_last_24h(db: Session = Depends(get_db)):
             for job in top_jobs
         ],
     }
+
+
+@router.get("/{job_id}", response_model=JobDetail)
+def get_job_detail(job_id: int, db: Session = Depends(get_db)):
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job

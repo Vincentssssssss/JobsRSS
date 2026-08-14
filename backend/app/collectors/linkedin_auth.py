@@ -1,4 +1,6 @@
-from typing import Any, List, Optional
+import re
+from typing import Any, Dict, List, Optional
+from urllib.parse import urljoin, urlparse, urlunparse
 
 from app.collectors.authenticated_playwright import AuthenticatedPlaywrightCollector
 from app.collectors.base import CollectorMeta
@@ -37,3 +39,160 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
     def is_job_url(self, url: str) -> bool:
         lowered = url.lower()
         return "linkedin.com/jobs/view/" in lowered or "linkedin.com/jobs/search/" in lowered
+
+    def fetch_raw(self) -> List[Dict[str, Any]]:
+        if not self.is_enabled():
+            return []
+        search_urls = self.get_search_urls()
+        if not search_urls:
+            return []
+
+        from playwright.sync_api import sync_playwright
+
+        results: Dict[str, Dict[str, Any]] = {}
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True, args=["--ignore-certificate-errors"])
+            context_args: Dict[str, Any] = {"ignore_https_errors": True}
+            state_path = self.get_storage_state_path()
+            if state_path:
+                context_args["storage_state"] = state_path
+            context = browser.new_context(**context_args)
+            page = context.new_page()
+
+            if not state_path:
+                self.perform_login(page)
+
+            for search_url in search_urls:
+                try:
+                    page.goto(search_url, wait_until="domcontentloaded", timeout=60000)
+                    page.wait_for_timeout(3500)
+                    cards = self._extract_linkedin_cards(page)
+                    for card in cards[:25]:
+                        detail = self._collect_detail(context, card["job_url"])
+                        merged = self._merge_job_data(card, detail)
+                        source_job_id = merged["source_job_id"]
+                        results[source_job_id] = merged
+                except Exception:
+                    continue
+
+            context.close()
+            browser.close()
+
+        return list(results.values())
+
+    def _extract_linkedin_cards(self, page: Any) -> List[Dict[str, str]]:
+        payload = page.evaluate(
+            """
+            () => {
+              const items = [];
+              const cards = Array.from(document.querySelectorAll("li.jobs-search-results__list-item, li.scaffold-layout__list-item"));
+              for (const card of cards) {
+                const link = card.querySelector("a.job-card-list__title--link, a.job-card-container__link, a[href*='/jobs/view/']");
+                if (!link || !link.href) continue;
+                const titleEl = card.querySelector("a.job-card-list__title--link strong, a.job-card-list__title--link span, h3, .job-card-list__title");
+                const companyEl = card.querySelector(".job-card-container__company-name, .job-card-list__subtitle, .artdeco-entity-lockup__subtitle span");
+                const locationEl = card.querySelector(".job-card-container__metadata-item, .job-card-container__metadata-wrapper li, .job-card-container__metadata-item--workplace-type");
+                items.push({
+                  job_url: link.href,
+                  title: titleEl?.textContent?.trim() || link.textContent?.trim() || "",
+                  company: companyEl?.textContent?.trim() || "",
+                  location: locationEl?.textContent?.trim() || ""
+                });
+              }
+              return items;
+            }
+            """
+        )
+        cards: List[Dict[str, str]] = []
+        for item in payload:
+            title = self.clean_text(item.get("title", ""))
+            job_url = self._clean_linkedin_job_url(item.get("job_url", ""))
+            if not title or not job_url:
+                continue
+            cards.append(
+                {
+                    "title": title[:255],
+                    "company": self.clean_text(item.get("company", ""))[:255],
+                    "location": self.clean_text(item.get("location", ""))[:255],
+                    "job_url": job_url,
+                }
+            )
+        return cards
+
+    def _collect_detail(self, context: Any, job_url: str) -> Dict[str, str]:
+        page = context.new_page()
+        try:
+            page.goto(job_url, wait_until="domcontentloaded", timeout=60000)
+            page.wait_for_timeout(2500)
+            payload = page.evaluate(
+                """
+                () => {
+                  const text = (sel) => {
+                    const node = document.querySelector(sel);
+                    return node?.textContent?.trim() || "";
+                  };
+                  const descNode = document.querySelector(
+                    ".show-more-less-html__markup, .jobs-description-content__text, div.jobs-box__html-content, .jobs-description__content"
+                  );
+                  return {
+                    title:
+                      text(".job-details-jobs-unified-top-card__job-title") ||
+                      text(".top-card-layout__title") ||
+                      text("h1"),
+                    company:
+                      text(".job-details-jobs-unified-top-card__company-name a") ||
+                      text(".job-details-jobs-unified-top-card__company-name") ||
+                      text(".topcard__org-name-link") ||
+                      text(".topcard__flavor-row a"),
+                    location:
+                      text(".job-details-jobs-unified-top-card__bullet") ||
+                      text(".topcard__flavor--bullet") ||
+                      text(".job-details-jobs-unified-top-card__tertiary-description-container"),
+                    description:
+                      descNode?.textContent?.trim() || ""
+                  };
+                }
+                """
+            )
+            return {
+                "title": self.clean_text(payload.get("title", ""))[:255],
+                "company": self.clean_text(payload.get("company", ""))[:255],
+                "location": self.clean_text(payload.get("location", ""))[:255],
+                "description": self.clean_text(payload.get("description", ""))[:5000],
+            }
+        except Exception:
+            return {"title": "", "company": "", "location": "", "description": ""}
+        finally:
+            page.close()
+
+    def _merge_job_data(self, card: Dict[str, str], detail: Dict[str, str]) -> Dict[str, str]:
+        title = detail["title"] or card["title"]
+        company = detail["company"] or card["company"] or "Unknown Company"
+        location = detail["location"] or card["location"] or "Unknown"
+        description = detail["description"] or f"{title} at {company} in {location}"
+        job_url = card["job_url"]
+        source_job_id = self.extract_source_job_id(job_url, title, company, location)
+        return {
+            "source_job_id": source_job_id,
+            "title": title[:255],
+            "company": company[:255],
+            "location": location[:255],
+            "country": self.derive_country(location),
+            "description": description[:5000],
+            "apply_url": job_url,
+            "source_url": job_url,
+            "content_hash": self.build_hash(source_job_id, title, company, location, description),
+        }
+
+    def _clean_linkedin_job_url(self, raw_url: str) -> str:
+        if not raw_url:
+            return ""
+        parsed = urlparse(raw_url)
+        clean = parsed
+        if not parsed.netloc:
+            clean = urlparse(urljoin("https://www.linkedin.com", raw_url))
+        path_match = re.search(r"/jobs/view/(\\d+)", clean.path)
+        if path_match:
+            canonical_path = f"/jobs/view/{path_match.group(1)}/"
+            return urlunparse((clean.scheme or "https", clean.netloc or "www.linkedin.com", canonical_path, "", "", ""))
+        return urlunparse((clean.scheme or "https", clean.netloc or "www.linkedin.com", clean.path, "", "", ""))

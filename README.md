@@ -49,6 +49,19 @@ Key `.env` fields:
 
 Multiple search pages can be configured as comma-separated URLs.
 
+## V1.0 Recommended Source Mode
+
+Current stable recommendation:
+
+- Primary: `linkedin_auth`, `liepin_auth`
+- Deferred: `job51_auth` (keep disabled until source-specific parser tuning is complete)
+
+Recommended `.env` values for V1.0:
+
+- `LINKEDIN_AUTH_ENABLED=true`
+- `LIEPIN_AUTH_ENABLED=true`
+- `JOB51_AUTH_ENABLED=false`
+
 ## LinkedIn Job Alerts via IMAP (Fallback)
 
 If direct authenticated collection is temporarily unavailable, keep this fallback enabled.

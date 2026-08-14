@@ -12,6 +12,15 @@ type JobCard = {
   source: string;
 };
 
+type JobDetail = JobCard & {
+  description: string;
+  country?: string | null;
+  updated_at?: string | null;
+  first_seen_at?: string | null;
+  last_seen_at?: string | null;
+  source_url: string;
+};
+
 type SummaryResponse = {
   window_hours: number;
   total_new_jobs: number;
@@ -27,6 +36,8 @@ export default function HomePage() {
   const [query, setQuery] = useState("");
   const [source, setSource] = useState("");
   const [minScore, setMinScore] = useState(0);
+  const [selectedJob, setSelectedJob] = useState<JobDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   const loadJobs = async () => {
     const params = new URLSearchParams();
@@ -62,6 +73,23 @@ export default function HomePage() {
       setSummary(payload);
     } catch {
       setSummary(null);
+    }
+  };
+
+  const loadJobDetail = async (jobId: number) => {
+    setDetailLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/jobs/${jobId}`, { cache: "no-store" });
+      if (!response.ok) {
+        setSelectedJob(null);
+        return;
+      }
+      const payload: JobDetail = await response.json();
+      setSelectedJob(payload);
+    } catch {
+      setSelectedJob(null);
+    } finally {
+      setDetailLoading(false);
     }
   };
 
@@ -170,11 +198,51 @@ export default function HomePage() {
                 <a className="button small" href={job.apply_url} target="_blank">
                   Apply Now
                 </a>
+                <button className="button small detail-btn" onClick={() => void loadJobDetail(job.id)}>
+                  View Details
+                </button>
               </div>
             </article>
           ))
         )}
       </section>
+
+      {(selectedJob || detailLoading) && (
+        <section className="detail-overlay" onClick={() => setSelectedJob(null)}>
+          <article className="detail-panel glass" onClick={(event) => event.stopPropagation()}>
+            {detailLoading || !selectedJob ? (
+              <p className="detail-loading">Loading full job details...</p>
+            ) : (
+              <>
+                <div className="detail-header">
+                  <div>
+                    <p className="job-company">{selectedJob.company}</p>
+                    <h2>{selectedJob.title}</h2>
+                    <p className="job-meta">
+                      {selectedJob.location} · {selectedJob.source}
+                    </p>
+                  </div>
+                  <button className="button small detail-close" onClick={() => setSelectedJob(null)}>
+                    Close
+                  </button>
+                </div>
+                <div className="detail-actions">
+                  <a className="button small primary" href={selectedJob.apply_url} target="_blank">
+                    Apply Now
+                  </a>
+                  <a className="button small" href={selectedJob.source_url} target="_blank">
+                    Open Source
+                  </a>
+                </div>
+                <div className="detail-description">
+                  <h3>Description</h3>
+                  <p>{selectedJob.description || "No description available."}</p>
+                </div>
+              </>
+            )}
+          </article>
+        </section>
+      )}
     </main>
   );
 }
