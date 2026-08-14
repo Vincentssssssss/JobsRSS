@@ -41,7 +41,7 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
 
     def is_job_url(self, url: str) -> bool:
         lowered = url.lower()
-        return "linkedin.com/jobs/view/" in lowered or "linkedin.com/jobs/search/" in lowered
+        return "linkedin.com/jobs/view/" in lowered
 
     def fetch_raw(self) -> List[Dict[str, Any]]:
         if not self.is_enabled():
@@ -113,6 +113,8 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
             job_url = self._clean_linkedin_job_url(item.get("job_url", ""))
             if not title or not job_url:
                 continue
+            if "/jobs/view/" not in job_url:
+                continue
             cards.append(
                 {
                     "title": title[:255],
@@ -180,7 +182,7 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
         company = detail["company"] or card["company"] or "Unknown Company"
         location = detail["location"] or card["location"] or fallback_location or "Unknown"
         location = self._normalize_location(location)
-        description = detail["description"] or f"{title} at {company} in {location}"
+        description = self._clean_description(detail["description"]) or f"{title} at {company} in {location}"
         job_url = card["job_url"]
         source_job_id = self.extract_source_job_id(job_url, title, company, location)
         return {
@@ -207,6 +209,29 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
             canonical_path = f"/jobs/view/{path_match.group(1)}/"
             return urlunparse((clean.scheme or "https", clean.netloc or "www.linkedin.com", canonical_path, "", "", ""))
         return urlunparse((clean.scheme or "https", clean.netloc or "www.linkedin.com", clean.path, "", "", ""))
+
+    def _clean_description(self, text: str) -> str:
+        cleaned = self.clean_text(text)
+        if not cleaned:
+            return ""
+        lowered = cleaned.lower()
+        noise_markers = [
+            "skip to main content",
+            "join now",
+            "sign in",
+            "cookies",
+            "privacy policy",
+            "user agreement",
+            "跳到主要内容",
+            "登录",
+            "立即加入",
+            "cookie",
+        ]
+        if any(marker in lowered for marker in noise_markers):
+            return ""
+        if len(cleaned) > 3500:
+            cleaned = cleaned[:3500]
+        return cleaned
 
     def _extract_ld_job_fields(self, html: str) -> Dict[str, str]:
         soup = BeautifulSoup(html, "html.parser")
