@@ -10,6 +10,9 @@ class MicrosoftCollector(BaseCollector):
         source_type="company_site",
         collection_method="json",
         polling_interval_minutes=20,
+        search_configuration="config/source_queries.yaml:microsoft",
+        parser_name="microsoft-json-parser",
+        normalization_logic="app.normalization.normalizer.normalize_job",
     )
 
     def fetch_raw(self) -> List[Dict[str, Any]]:

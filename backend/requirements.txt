@@ -8,3 +8,4 @@ beautifulsoup4
 feedgen
 apscheduler
 pydantic-settings
+playwright

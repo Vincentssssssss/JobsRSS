@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     scheduler_platform_interval_minutes: int = 20
     scheduler_linkedin_email_interval_minutes: int = 15
     scheduler_linkedin_email_max_messages: int = 30
+    scheduler_digest_hour_utc: int = 1
+    scheduler_digest_minute_utc: int = 0
 
     high_match_threshold: int = 80
     allowed_origins: List[str] = Field(default_factory=lambda: ["http://localhost:3000"])
@@ -32,6 +34,39 @@ class Settings(BaseSettings):
     linkedin_email_password: Optional[str] = None
     linkedin_email_folder: str = "INBOX"
     linkedin_email_sender_filter: str = "jobs-noreply@linkedin.com"
+
+    linkedin_auth_enabled: bool = False
+    linkedin_auth_username: Optional[str] = None
+    linkedin_auth_password: Optional[str] = None
+    linkedin_auth_storage_state_path: Optional[str] = None
+    linkedin_search_urls: str = ""
+    linkedin_polling_interval_minutes: int = 20
+
+    job51_auth_enabled: bool = False
+    job51_auth_username: Optional[str] = None
+    job51_auth_password: Optional[str] = None
+    job51_auth_storage_state_path: Optional[str] = None
+    job51_search_urls: str = ""
+    job51_polling_interval_minutes: int = 20
+
+    liepin_auth_enabled: bool = False
+    liepin_auth_username: Optional[str] = None
+    liepin_auth_password: Optional[str] = None
+    liepin_auth_storage_state_path: Optional[str] = None
+    liepin_search_urls: str = ""
+    liepin_polling_interval_minutes: int = 20
+
+    digest_email_enabled: bool = False
+    digest_email_smtp_host: Optional[str] = None
+    digest_email_smtp_port: int = 587
+    digest_email_smtp_username: Optional[str] = None
+    digest_email_smtp_password: Optional[str] = None
+    digest_email_sender: Optional[str] = None
+    digest_email_recipients: str = ""
+    digest_email_use_tls: bool = True
+
+    def csv_items(self, value: str) -> List[str]:
+        return [item.strip() for item in value.split(",") if item.strip()]
 
 
 @lru_cache

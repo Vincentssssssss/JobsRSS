@@ -27,3 +27,13 @@ Use PostgreSQL.
 
 Reason:
 Relational job metadata, filtering, history and future pgvector support.
+
+---
+
+## ADR-004 Authenticated Platform Collection Mode
+
+Decision:
+Support an optional authenticated browser-collection mode for LinkedIn, 51job, and Liepin, while keeping email ingestion available as fallback.
+
+Reason:
+User workflow prefers direct account-based filtering from platform search pages. Implementation remains opt-in and disabled by default, with conservative scheduling and explicit credentials/session configuration.

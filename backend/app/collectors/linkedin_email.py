@@ -20,6 +20,9 @@ class LinkedInEmailCollector(BaseCollector):
         source_type="email",
         collection_method="imap",
         polling_interval_minutes=15,
+        search_configuration="linkedin-job-alert-mailbox",
+        parser_name="linkedin-alert-email-parser",
+        normalization_logic="app.normalization.normalizer.normalize_job",
     )
 
     def __init__(self) -> None:

@@ -23,9 +23,35 @@ Open:
 - RSS all: `http://localhost:8000/rss/all.xml`
 - Dashboard: `http://localhost:3000`
 
-## LinkedIn Job Alerts via IMAP
+## Authenticated Platform Collection (LinkedIn / 51job / Liepin)
 
-Phase 1 uses email ingestion instead of authenticated web automation.
+The portal supports direct account-based collection through Playwright automation.
+
+Recommended setup priority:
+
+1. Use `*_AUTH_STORAGE_STATE_PATH` with an existing logged-in browser session export.
+2. Use username/password only when login selectors are stable and permitted.
+
+Key `.env` fields:
+
+- LinkedIn:
+  - `LINKEDIN_AUTH_ENABLED=true`
+  - `LINKEDIN_AUTH_STORAGE_STATE_PATH=/absolute/path/to/linkedin_state.json`
+  - `LINKEDIN_SEARCH_URLS=https://www.linkedin.com/jobs/search/?keywords=Cloud%20Security%20Architect&location=Hong%20Kong`
+- 51job:
+  - `JOB51_AUTH_ENABLED=true`
+  - `JOB51_AUTH_STORAGE_STATE_PATH=/absolute/path/to/job51_state.json`
+  - `JOB51_SEARCH_URLS=https://search.51job.com/...`
+- Liepin:
+  - `LIEPIN_AUTH_ENABLED=true`
+  - `LIEPIN_AUTH_STORAGE_STATE_PATH=/absolute/path/to/liepin_state.json`
+  - `LIEPIN_SEARCH_URLS=https://www.liepin.com/...`
+
+Multiple search pages can be configured as comma-separated URLs.
+
+## LinkedIn Job Alerts via IMAP (Fallback)
+
+If direct authenticated collection is temporarily unavailable, keep this fallback enabled.
 
 1. Create a mailbox with IMAP enabled (for example Gmail or Outlook).
 2. Configure LinkedIn job alerts to deliver to that mailbox.
@@ -44,3 +70,21 @@ docker compose up -d --build
 ```
 
 When disabled or not fully configured, the LinkedIn email collector is skipped safely.
+
+## Daily 24h Digest Email
+
+Enable daily summary email for jobs discovered in the last 24 hours:
+
+- `DIGEST_EMAIL_ENABLED=true`
+- `DIGEST_EMAIL_SMTP_HOST`
+- `DIGEST_EMAIL_SMTP_PORT`
+- `DIGEST_EMAIL_SMTP_USERNAME`
+- `DIGEST_EMAIL_SMTP_PASSWORD`
+- `DIGEST_EMAIL_SENDER`
+- `DIGEST_EMAIL_RECIPIENTS=mail1@example.com,mail2@example.com`
+- `SCHEDULER_DIGEST_HOUR_UTC`
+- `SCHEDULER_DIGEST_MINUTE_UTC`
+
+The dashboard also exposes a portal summary endpoint:
+
+- `GET /jobs/summary/last-24h`

@@ -1,7 +1,8 @@
-from typing import List
+from datetime import datetime, timedelta, timezone
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -16,11 +17,52 @@ def list_jobs(
     db: Session = Depends(get_db),
     limit: int = Query(default=50, ge=1, le=200),
     min_score: float = Query(default=0, ge=0, le=100),
+    source: Optional[str] = Query(default=None),
+    q: Optional[str] = Query(default=None),
 ):
-    return (
-        db.query(Job)
-        .filter(Job.match_score >= min_score)
-        .order_by(desc(Job.posted_at), desc(Job.id))
-        .limit(limit)
+    query = db.query(Job).filter(Job.match_score >= min_score)
+    if source:
+        query = query.filter(Job.source == source)
+    if q:
+        like = f"%{q}%"
+        query = query.filter((Job.title.ilike(like)) | (Job.company.ilike(like)) | (Job.location.ilike(like)))
+    return query.order_by(desc(Job.posted_at), desc(Job.id)).limit(limit).all()
+
+
+@router.get("/summary/last-24h")
+def summary_last_24h(db: Session = Depends(get_db)):
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    total = db.query(func.count(Job.id)).filter(Job.first_seen_at >= cutoff).scalar() or 0
+    high_match = db.query(func.count(Job.id)).filter(Job.first_seen_at >= cutoff, Job.match_score >= 80).scalar() or 0
+    source_rows = (
+        db.query(Job.source, func.count(Job.id))
+        .filter(Job.first_seen_at >= cutoff)
+        .group_by(Job.source)
+        .order_by(desc(func.count(Job.id)))
         .all()
     )
+    top_jobs = (
+        db.query(Job)
+        .filter(Job.first_seen_at >= cutoff)
+        .order_by(desc(Job.match_score), desc(Job.posted_at), desc(Job.id))
+        .limit(20)
+        .all()
+    )
+    return {
+        "window_hours": 24,
+        "total_new_jobs": total,
+        "high_match_jobs": high_match,
+        "by_source": [{"source": row[0], "count": row[1]} for row in source_rows],
+        "top_jobs": [
+            {
+                "id": job.id,
+                "source": job.source,
+                "company": job.company,
+                "title": job.title,
+                "location": job.location,
+                "match_score": job.match_score,
+                "apply_url": job.apply_url,
+            }
+            for job in top_jobs
+        ],
+    }

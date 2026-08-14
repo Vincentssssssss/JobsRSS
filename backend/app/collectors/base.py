@@ -13,6 +13,9 @@ class CollectorMeta:
     source_type: str
     collection_method: str
     polling_interval_minutes: int
+    search_configuration: str = "default-profile"
+    parser_name: str = "default-parser"
+    normalization_logic: str = "unified-job-normalizer"
 
 
 class BaseCollector(ABC):
