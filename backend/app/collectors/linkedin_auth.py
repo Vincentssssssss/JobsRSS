@@ -1,6 +1,9 @@
+import json
 import re
 from typing import Any, Dict, List, Optional
-from urllib.parse import urljoin, urlparse, urlunparse
+from urllib.parse import parse_qs, urljoin, urlparse, urlunparse
+
+from bs4 import BeautifulSoup
 
 from app.collectors.authenticated_playwright import AuthenticatedPlaywrightCollector
 from app.collectors.base import CollectorMeta
@@ -64,12 +67,13 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
 
             for search_url in search_urls:
                 try:
+                    fallback_location = self._expected_location_from_search_url(search_url)
                     page.goto(search_url, wait_until="domcontentloaded", timeout=60000)
                     page.wait_for_timeout(3500)
                     cards = self._extract_linkedin_cards(page)
                     for card in cards[:25]:
                         detail = self._collect_detail(context, card["job_url"])
-                        merged = self._merge_job_data(card, detail)
+                        merged = self._merge_job_data(card, detail, fallback_location=fallback_location)
                         source_job_id = merged["source_job_id"]
                         results[source_job_id] = merged
                 except Exception:
@@ -124,6 +128,7 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
         try:
             page.goto(job_url, wait_until="domcontentloaded", timeout=60000)
             page.wait_for_timeout(2500)
+            html = page.content()
             payload = page.evaluate(
                 """
                 () => {
@@ -154,21 +159,27 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
                 }
                 """
             )
+            ld_payload = self._extract_ld_job_fields(html)
+            title = self.clean_text(payload.get("title", ""))[:255] or ld_payload.get("title", "")
+            company = self.clean_text(payload.get("company", ""))[:255] or ld_payload.get("company", "")
+            location = self.clean_text(payload.get("location", ""))[:255] or ld_payload.get("location", "")
+            description = self.clean_text(payload.get("description", ""))[:5000] or ld_payload.get("description", "")
             return {
-                "title": self.clean_text(payload.get("title", ""))[:255],
-                "company": self.clean_text(payload.get("company", ""))[:255],
-                "location": self.clean_text(payload.get("location", ""))[:255],
-                "description": self.clean_text(payload.get("description", ""))[:5000],
+                "title": title,
+                "company": company,
+                "location": self._normalize_location(location),
+                "description": description,
             }
         except Exception:
             return {"title": "", "company": "", "location": "", "description": ""}
         finally:
             page.close()
 
-    def _merge_job_data(self, card: Dict[str, str], detail: Dict[str, str]) -> Dict[str, str]:
+    def _merge_job_data(self, card: Dict[str, str], detail: Dict[str, str], fallback_location: str) -> Dict[str, str]:
         title = detail["title"] or card["title"]
         company = detail["company"] or card["company"] or "Unknown Company"
-        location = detail["location"] or card["location"] or "Unknown"
+        location = detail["location"] or card["location"] or fallback_location or "Unknown"
+        location = self._normalize_location(location)
         description = detail["description"] or f"{title} at {company} in {location}"
         job_url = card["job_url"]
         source_job_id = self.extract_source_job_id(job_url, title, company, location)
@@ -196,3 +207,76 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
             canonical_path = f"/jobs/view/{path_match.group(1)}/"
             return urlunparse((clean.scheme or "https", clean.netloc or "www.linkedin.com", canonical_path, "", "", ""))
         return urlunparse((clean.scheme or "https", clean.netloc or "www.linkedin.com", clean.path, "", "", ""))
+
+    def _extract_ld_job_fields(self, html: str) -> Dict[str, str]:
+        soup = BeautifulSoup(html, "html.parser")
+        scripts = soup.select("script[type='application/ld+json']")
+        for script in scripts:
+            raw = script.string or script.get_text()
+            if not raw:
+                continue
+            try:
+                data = json.loads(raw)
+            except Exception:
+                continue
+            objects = data if isinstance(data, list) else [data]
+            for item in objects:
+                if not isinstance(item, dict):
+                    continue
+                obj_type = str(item.get("@type", "")).lower()
+                if "jobposting" not in obj_type:
+                    continue
+                company = ""
+                hiring_org = item.get("hiringOrganization")
+                if isinstance(hiring_org, dict):
+                    company = str(hiring_org.get("name", "")).strip()
+                location = ""
+                job_location = item.get("jobLocation")
+                if isinstance(job_location, dict):
+                    address = job_location.get("address")
+                    if isinstance(address, dict):
+                        locality = str(address.get("addressLocality", "")).strip()
+                        region = str(address.get("addressRegion", "")).strip()
+                        country = str(address.get("addressCountry", "")).strip()
+                        location = " ".join(part for part in [locality, region, country] if part).strip()
+                description = self.clean_text(str(item.get("description", "")))
+                title = str(item.get("title", "")).strip()
+                return {
+                    "title": title[:255],
+                    "company": company[:255],
+                    "location": self._normalize_location(location)[:255],
+                    "description": description[:5000],
+                }
+        return {"title": "", "company": "", "location": "", "description": ""}
+
+    def _expected_location_from_search_url(self, search_url: str) -> str:
+        parsed = urlparse(search_url)
+        query = parse_qs(parsed.query)
+        for key in ("location", "geoId"):
+            values = query.get(key, [])
+            if values:
+                if key == "location":
+                    return self._normalize_location(values[0])
+                if key == "geoId":
+                    geo_map = {
+                        "102454443": "Singapore",
+                        "104305776": "Hong Kong",
+                        "102890883": "Shanghai",
+                    }
+                    mapped = geo_map.get(values[0])
+                    if mapped:
+                        return mapped
+        return "Unknown"
+
+    def _normalize_location(self, location: str) -> str:
+        text = self.clean_text(location)
+        if "·" in text:
+            text = text.split("·")[0].strip()
+        if "|" in text:
+            text = text.split("|")[0].strip()
+        # Common LinkedIn format: "Singapore, Singapore"
+        if "," in text:
+            head = text.split(",")[0].strip()
+            if head:
+                return head
+        return text
