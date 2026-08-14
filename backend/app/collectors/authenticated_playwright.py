@@ -1,4 +1,5 @@
 import re
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin, urlparse
@@ -60,6 +61,14 @@ class AuthenticatedPlaywrightCollector(BaseCollector):
 
     def normalize(self, raw: Dict[str, Any]) -> UnifiedJob:
         now = self.now()
+        posted_at = raw.get("posted_at")
+        if isinstance(posted_at, str):
+            try:
+                posted_at = datetime.fromisoformat(posted_at.replace("Z", "+00:00"))
+            except ValueError:
+                posted_at = None
+        if posted_at is None:
+            posted_at = now
         return UnifiedJob(
             source=self.meta.source_name,
             source_job_id=raw["source_job_id"],
@@ -70,7 +79,7 @@ class AuthenticatedPlaywrightCollector(BaseCollector):
             description=raw.get("description", ""),
             apply_url=raw["apply_url"],
             source_url=raw["source_url"],
-            posted_at=now,
+            posted_at=posted_at,
             updated_at=now,
             first_seen_at=now,
             last_seen_at=now,
@@ -111,6 +120,7 @@ class AuthenticatedPlaywrightCollector(BaseCollector):
             block_text = self.clean_text(anchor.parent.get_text(" ", strip=True)) if anchor.parent else title
             company = self.extract_company(block_text)
             location = self.extract_location(block_text)
+            posted_at = self.extract_posted_at(block_text)
             source_job_id = self.extract_source_job_id(full_url, title, company, location)
 
             cards.append(
@@ -123,6 +133,7 @@ class AuthenticatedPlaywrightCollector(BaseCollector):
                     "description": block_text[:2000],
                     "apply_url": full_url,
                     "source_url": full_url,
+                    "posted_at": posted_at,
                     "content_hash": self.build_hash(source_job_id, title, company, location, block_text),
                 }
             )
@@ -192,3 +203,41 @@ class AuthenticatedPlaywrightCollector(BaseCollector):
 
     def clean_text(self, text: str) -> str:
         return re.sub(r"\s+", " ", text).strip()
+
+    def extract_posted_at(self, text: str) -> Optional[str]:
+        lowered = text.lower()
+        now = datetime.now(timezone.utc)
+        patterns = [
+            (r"(\d+)\s*(minutes?|mins?|分钟)\s*ago", "minutes"),
+            (r"(\d+)\s*(hours?|hrs?|小时)\s*ago", "hours"),
+            (r"(\d+)\s*(days?|天)\s*ago", "days"),
+            (r"(\d+)\s*(weeks?|周)\s*ago", "weeks"),
+            (r"(\d+)\s*(个月)\s*前", "months"),
+            (r"(\d+)\s*(天)\s*前", "days"),
+            (r"(\d+)\s*(小时)\s*前", "hours"),
+            (r"(\d+)\s*(分钟)\s*前", "minutes"),
+        ]
+        if "just now" in lowered or "刚刚" in text:
+            return now.isoformat()
+        if "today" in lowered or "今天" in text:
+            return now.isoformat()
+
+        for pattern, unit in patterns:
+            match = re.search(pattern, lowered if "ago" in pattern else text)
+            if not match:
+                continue
+            value = int(match.group(1))
+            if unit == "minutes":
+                ts = now - timedelta(minutes=value)
+            elif unit == "hours":
+                ts = now - timedelta(hours=value)
+            elif unit == "days":
+                ts = now - timedelta(days=value)
+            elif unit == "weeks":
+                ts = now - timedelta(weeks=value)
+            elif unit == "months":
+                ts = now - timedelta(days=value * 30)
+            else:
+                continue
+            return ts.isoformat()
+        return None

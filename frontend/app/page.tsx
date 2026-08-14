@@ -10,6 +10,7 @@ type JobCard = {
   match_score: number;
   apply_url: string;
   source: string;
+  posted_at?: string;
 };
 
 type JobDetail = JobCard & {
@@ -33,15 +34,17 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000"
 export default function HomePage() {
   const [jobs, setJobs] = useState<JobCard[]>([]);
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
+  const [totalCount, setTotalCount] = useState(0);
   const [query, setQuery] = useState("");
   const [source, setSource] = useState("");
   const [minScore, setMinScore] = useState(0);
+  const [limit, setLimit] = useState(200);
   const [selectedJob, setSelectedJob] = useState<JobDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
   const loadJobs = async () => {
     const params = new URLSearchParams();
-    params.set("limit", "50");
+    params.set("limit", String(limit));
     params.set("min_score", String(minScore));
     if (query.trim()) {
       params.set("q", query.trim());
@@ -76,6 +79,28 @@ export default function HomePage() {
     }
   };
 
+  const loadCount = async () => {
+    const params = new URLSearchParams();
+    params.set("min_score", String(minScore));
+    if (query.trim()) {
+      params.set("q", query.trim());
+    }
+    if (source) {
+      params.set("source", source);
+    }
+    try {
+      const response = await fetch(`${API_BASE}/jobs/count?${params.toString()}`, { cache: "no-store" });
+      if (!response.ok) {
+        setTotalCount(0);
+        return;
+      }
+      const payload = await response.json();
+      setTotalCount(Number(payload.total || 0));
+    } catch {
+      setTotalCount(0);
+    }
+  };
+
   const loadJobDetail = async (jobId: number) => {
     setDetailLoading(true);
     try {
@@ -95,13 +120,17 @@ export default function HomePage() {
 
   useEffect(() => {
     const load = async () => {
-      await Promise.all([loadJobs(), loadSummary()]);
+      await Promise.all([loadJobs(), loadSummary(), loadCount()]);
     };
     void load();
-  }, [query, source, minScore]);
+  }, [query, source, minScore, limit]);
 
   const highMatchCount = useMemo(() => jobs.filter((job) => job.match_score >= 80).length, [jobs]);
-  const sourceOptions = useMemo(() => Array.from(new Set(jobs.map((job) => job.source))).sort(), [jobs]);
+  const sourceOptions = useMemo(() => {
+    const fromJobs = jobs.map((job) => job.source);
+    const fromSummary = summary?.by_source.map((item) => item.source) ?? [];
+    return Array.from(new Set([...fromJobs, ...fromSummary])).sort();
+  }, [jobs, summary]);
 
   return (
     <main className="page">
@@ -121,7 +150,7 @@ export default function HomePage() {
       <section className="stats">
         <div className="stat glass">
           <span>Total Loaded</span>
-          <strong>{jobs.length}</strong>
+          <strong>{totalCount}</strong>
         </div>
         <div className="stat glass">
           <span>High Match (80+)</span>
@@ -165,6 +194,15 @@ export default function HomePage() {
             <option value="80">80</option>
           </select>
         </div>
+        <div className="field">
+          <label>Fetch Limit</label>
+          <select value={String(limit)} onChange={(event) => setLimit(Number(event.target.value))}>
+            <option value="50">50</option>
+            <option value="100">100</option>
+            <option value="200">200</option>
+            <option value="500">500</option>
+          </select>
+        </div>
       </section>
 
       {summary && summary.by_source.length > 0 && (
@@ -192,6 +230,7 @@ export default function HomePage() {
                 <p className="job-meta">
                   {job.location} · {job.source}
                 </p>
+                {job.posted_at && <p className="job-meta">Posted: {new Date(job.posted_at).toLocaleString()}</p>}
               </div>
               <div className="job-right">
                 <span className="score">{Math.round(job.match_score)}</span>

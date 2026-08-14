@@ -96,11 +96,14 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
                 const titleEl = card.querySelector("a.job-card-list__title--link strong, a.job-card-list__title--link span, h3, .job-card-list__title");
                 const companyEl = card.querySelector(".job-card-container__company-name, .job-card-list__subtitle, .artdeco-entity-lockup__subtitle span");
                 const locationEl = card.querySelector(".job-card-container__metadata-item, .job-card-container__metadata-wrapper li, .job-card-container__metadata-item--workplace-type");
+                const timeEl = card.querySelector("time, .job-search-card__listdate");
                 items.push({
                   job_url: link.href,
                   title: titleEl?.textContent?.trim() || link.textContent?.trim() || "",
                   company: companyEl?.textContent?.trim() || "",
-                  location: locationEl?.textContent?.trim() || ""
+                  location: locationEl?.textContent?.trim() || "",
+                  listed_at_text: timeEl?.textContent?.trim() || "",
+                  listed_at_datetime: timeEl?.getAttribute("datetime") || ""
                 });
               }
               return items;
@@ -115,12 +118,14 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
                 continue
             if "/jobs/view/" not in job_url:
                 continue
+            posted_at = item.get("listed_at_datetime") or self.extract_posted_at(item.get("listed_at_text", ""))
             cards.append(
                 {
                     "title": title[:255],
                     "company": self.clean_text(item.get("company", ""))[:255],
                     "location": self.clean_text(item.get("location", ""))[:255],
                     "job_url": job_url,
+                    "posted_at": posted_at,
                 }
             )
         return cards
@@ -194,6 +199,7 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
             "description": description[:5000],
             "apply_url": job_url,
             "source_url": job_url,
+            "posted_at": card.get("posted_at"),
             "content_hash": self.build_hash(source_job_id, title, company, location, description),
         }
 

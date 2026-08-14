@@ -15,10 +15,11 @@ router = APIRouter(prefix="/jobs", tags=["jobs"])
 @router.get("", response_model=List[JobOut])
 def list_jobs(
     db: Session = Depends(get_db),
-    limit: int = Query(default=50, ge=1, le=200),
+    limit: int = Query(default=100, ge=1, le=500),
     min_score: float = Query(default=0, ge=0, le=100),
     source: Optional[str] = Query(default=None),
     q: Optional[str] = Query(default=None),
+    offset: int = Query(default=0, ge=0),
 ):
     query = db.query(Job).filter(Job.match_score >= min_score)
     if source:
@@ -26,7 +27,24 @@ def list_jobs(
     if q:
         like = f"%{q}%"
         query = query.filter((Job.title.ilike(like)) | (Job.company.ilike(like)) | (Job.location.ilike(like)))
-    return query.order_by(desc(Job.posted_at), desc(Job.id)).limit(limit).all()
+    return query.order_by(desc(Job.posted_at), desc(Job.id)).offset(offset).limit(limit).all()
+
+
+@router.get("/count")
+def jobs_count(
+    db: Session = Depends(get_db),
+    min_score: float = Query(default=0, ge=0, le=100),
+    source: Optional[str] = Query(default=None),
+    q: Optional[str] = Query(default=None),
+):
+    query = db.query(func.count(Job.id)).filter(Job.match_score >= min_score)
+    if source:
+        query = query.filter(Job.source == source)
+    if q:
+        like = f"%{q}%"
+        query = query.filter((Job.title.ilike(like)) | (Job.company.ilike(like)) | (Job.location.ilike(like)))
+    total = query.scalar() or 0
+    return {"total": total}
 
 
 @router.get("/summary/last-24h")
