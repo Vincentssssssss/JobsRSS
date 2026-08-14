@@ -1,5 +1,5 @@
 from functools import lru_cache
-from typing import List
+from typing import List, Optional
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -20,9 +20,18 @@ class Settings(BaseSettings):
     scheduler_company_interval_minutes: int = 20
     scheduler_platform_interval_minutes: int = 20
     scheduler_linkedin_email_interval_minutes: int = 15
+    scheduler_linkedin_email_max_messages: int = 30
 
     high_match_threshold: int = 80
     allowed_origins: List[str] = Field(default_factory=lambda: ["http://localhost:3000"])
+
+    linkedin_email_enabled: bool = False
+    linkedin_email_imap_host: Optional[str] = None
+    linkedin_email_imap_port: int = 993
+    linkedin_email_username: Optional[str] = None
+    linkedin_email_password: Optional[str] = None
+    linkedin_email_folder: str = "INBOX"
+    linkedin_email_sender_filter: str = "jobs-noreply@linkedin.com"
 
 
 @lru_cache
