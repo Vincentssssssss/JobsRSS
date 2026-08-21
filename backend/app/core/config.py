@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=False)
 
     app_name: str = "JobsRSS"
-    app_version: str = "1.1.0"
+    app_version: str = "1.5.0-beta"
     environment: str = "development"
     database_url: str = "postgresql+psycopg2://jobsrss:jobsrss@postgres:5432/jobsrss"
     rss_base_url: str = "http://localhost:8000"
