@@ -31,6 +31,22 @@ class Settings(BaseSettings):
     official_source_max_pages_per_source: int = 10
     official_source_stale_after_days: int = 30
     official_source_verify_tls: bool = True
+    llm_rerank_enabled: bool = False
+    llm_provider: str = "openai"
+    llm_api_key: Optional[str] = None
+    llm_base_url: Optional[str] = None
+    llm_model: str = "gpt-4o-mini"
+    llm_timeout_seconds: int = 30
+    llm_verify_tls: bool = True
+    llm_rerank_interval_minutes: int = 30
+    llm_max_jobs_per_run: int = 60
+    llm_min_rule_score: float = 20
+    llm_only_unscored: bool = True
+    llm_target_profile: str = (
+        "Senior cybersecurity roles focused on cloud security, application security, "
+        "IAM/PAM, SOC/SIEM, threat detection, vulnerability management, and "
+        "security architecture leadership."
+    )
 
     high_match_threshold: int = 80
     allowed_origins: List[str] = Field(default_factory=lambda: ["http://localhost:3000"])

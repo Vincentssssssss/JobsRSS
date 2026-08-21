@@ -21,3 +21,51 @@ def init_db() -> None:
                     "NOT NULL DEFAULT 'unclassified'"
                 )
             )
+            connection.execute(
+                text(
+                    "ALTER TABLE jobs "
+                    "ADD COLUMN IF NOT EXISTS llm_fit_score DOUBLE PRECISION"
+                )
+            )
+            connection.execute(
+                text(
+                    "ALTER TABLE jobs "
+                    "ADD COLUMN IF NOT EXISTS llm_verdict VARCHAR(32)"
+                )
+            )
+            connection.execute(
+                text(
+                    "ALTER TABLE jobs "
+                    "ADD COLUMN IF NOT EXISTS llm_role_family VARCHAR(128)"
+                )
+            )
+            connection.execute(
+                text(
+                    "ALTER TABLE jobs "
+                    "ADD COLUMN IF NOT EXISTS llm_match_reasons TEXT"
+                )
+            )
+            connection.execute(
+                text(
+                    "ALTER TABLE jobs "
+                    "ADD COLUMN IF NOT EXISTS llm_reject_reasons TEXT"
+                )
+            )
+            connection.execute(
+                text(
+                    "ALTER TABLE jobs "
+                    "ADD COLUMN IF NOT EXISTS llm_missing_skills TEXT"
+                )
+            )
+            connection.execute(
+                text(
+                    "ALTER TABLE jobs "
+                    "ADD COLUMN IF NOT EXISTS llm_model VARCHAR(128)"
+                )
+            )
+            connection.execute(
+                text(
+                    "ALTER TABLE jobs "
+                    "ADD COLUMN IF NOT EXISTS llm_last_evaluated_at TIMESTAMPTZ"
+                )
+            )

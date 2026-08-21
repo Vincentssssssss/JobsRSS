@@ -21,6 +21,8 @@ def list_jobs(
     q: Optional[str] = Query(default=None),
     offset: int = Query(default=0, ge=0),
     location_category: Optional[str] = Query(default=None),
+    min_llm_score: Optional[float] = Query(default=None, ge=0, le=100),
+    llm_verdict: Optional[str] = Query(default=None),
     status: Optional[str] = Query(default="active"),
 ):
     query = db.query(Job).filter(Job.match_score >= min_score)
@@ -33,6 +35,10 @@ def list_jobs(
         query = query.filter((Job.title.ilike(like)) | (Job.company.ilike(like)) | (Job.location.ilike(like)))
     if location_category:
         query = query.filter(Job.location_category == location_category)
+    if min_llm_score is not None:
+        query = query.filter(Job.llm_fit_score.is_not(None), Job.llm_fit_score >= min_llm_score)
+    if llm_verdict:
+        query = query.filter(Job.llm_verdict == llm_verdict)
     return query.order_by(desc(Job.posted_at), desc(Job.id)).offset(offset).limit(limit).all()
 
 
@@ -43,6 +49,8 @@ def jobs_count(
     source: Optional[str] = Query(default=None),
     q: Optional[str] = Query(default=None),
     location_category: Optional[str] = Query(default=None),
+    min_llm_score: Optional[float] = Query(default=None, ge=0, le=100),
+    llm_verdict: Optional[str] = Query(default=None),
     status: Optional[str] = Query(default="active"),
 ):
     query = db.query(func.count(Job.id)).filter(Job.match_score >= min_score)
@@ -55,6 +63,10 @@ def jobs_count(
         query = query.filter((Job.title.ilike(like)) | (Job.company.ilike(like)) | (Job.location.ilike(like)))
     if location_category:
         query = query.filter(Job.location_category == location_category)
+    if min_llm_score is not None:
+        query = query.filter(Job.llm_fit_score.is_not(None), Job.llm_fit_score >= min_llm_score)
+    if llm_verdict:
+        query = query.filter(Job.llm_verdict == llm_verdict)
     total = query.scalar() or 0
     return {"total": total}
 

@@ -37,6 +37,7 @@ def ingest_collector(db: Session, collector: BaseCollector) -> IngestStats:
                 .first()
             )
             if existing:
+                previous_hash = existing.content_hash
                 existing.last_seen_at = incoming.last_seen_at
                 existing_is_authoritative = bool(existing.enrichment_source)
                 incoming_is_authoritative = bool(incoming.enrichment_source)
@@ -70,6 +71,15 @@ def ingest_collector(db: Session, collector: BaseCollector) -> IngestStats:
                     existing.enrichment_source = incoming.enrichment_source
                 existing.match_score = score_job(existing.title, existing.description, existing.location)
                 existing.content_hash = _job_hash(existing)
+                if existing.content_hash != previous_hash:
+                    existing.llm_fit_score = None
+                    existing.llm_verdict = None
+                    existing.llm_role_family = None
+                    existing.llm_match_reasons = None
+                    existing.llm_reject_reasons = None
+                    existing.llm_missing_skills = None
+                    existing.llm_model = None
+                    existing.llm_last_evaluated_at = None
                 stats.duplicates += 1
                 continue
 

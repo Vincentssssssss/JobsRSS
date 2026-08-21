@@ -37,3 +37,13 @@ class Job(Base):
     location_category: Mapped[str] = mapped_column(
         String(32), default="unclassified", nullable=False
     )
+    llm_fit_score: Mapped[Optional[float]] = mapped_column(Float)
+    llm_verdict: Mapped[Optional[str]] = mapped_column(String(32))
+    llm_role_family: Mapped[Optional[str]] = mapped_column(String(128))
+    llm_match_reasons: Mapped[Optional[str]] = mapped_column(Text)
+    llm_reject_reasons: Mapped[Optional[str]] = mapped_column(Text)
+    llm_missing_skills: Mapped[Optional[str]] = mapped_column(Text)
+    llm_model: Mapped[Optional[str]] = mapped_column(String(128))
+    llm_last_evaluated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True)
+    )

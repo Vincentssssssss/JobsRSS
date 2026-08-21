@@ -10,6 +10,7 @@ from app.collectors.linkedin_auth import LinkedInAuthCollector
 from app.collectors.linkedin_email import LinkedInEmailCollector
 from app.core.config import get_settings
 from app.db.session import SessionLocal
+from app.matching.llm_reranker import run_llm_rerank
 from app.notifications.daily_digest import send_daily_digest
 from app.official.collectors.catalog import (
     OFFICIAL_COLLECTOR_FACTORIES,
@@ -101,6 +102,28 @@ def run_daily_digest_job() -> None:
         db.close()
 
 
+def run_llm_rerank_job() -> None:
+    settings = get_settings()
+    if not settings.llm_rerank_enabled:
+        logger.info("llm_rerank_skipped reason=disabled")
+        return
+    db = SessionLocal()
+    try:
+        stats = run_llm_rerank(db, settings=settings)
+        logger.info(
+            "llm_rerank_run scanned=%d updated=%d failed=%d provider=%s model=%s",
+            stats.scanned,
+            stats.updated,
+            stats.failed,
+            settings.llm_provider,
+            settings.llm_model,
+        )
+    except Exception:
+        logger.exception("llm_rerank_failed")
+    finally:
+        db.close()
+
+
 def start_scheduler() -> None:
     settings = get_settings()
     scheduler = BlockingScheduler(timezone="UTC")
@@ -140,6 +163,13 @@ def start_scheduler() -> None:
         max_instances=1,
         coalesce=True,
     )
+    scheduler.add_job(
+        run_llm_rerank_job,
+        trigger="interval",
+        minutes=settings.llm_rerank_interval_minutes,
+        max_instances=1,
+        coalesce=True,
+    )
     for index, source_id in enumerate(OFFICIAL_COLLECTOR_FACTORIES):
         scheduler.add_job(
             run_registered_official_collector,
@@ -158,4 +188,5 @@ def start_scheduler() -> None:
     run_linkedin_auth_collector()
     run_job51_auth_collector()
     run_liepin_auth_collector()
+    run_llm_rerank_job()
     scheduler.start()

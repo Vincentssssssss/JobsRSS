@@ -256,3 +256,61 @@ def test_closed_job_does_not_suppress_new_repost_with_new_source_id():
             .status
             == "active"
         )
+
+
+def test_content_change_resets_cached_llm_match():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    now = datetime.now(timezone.utc)
+
+    with Session(engine) as db:
+        db.add(
+            Job(
+                source="linkedin_auth",
+                source_job_id="llm-reset",
+                company="Acme",
+                title="Cloud Security Architect",
+                location="Shanghai",
+                country="China",
+                description="Initial description",
+                apply_url="https://jobs.acme.example/llm-reset",
+                source_url="https://jobs.acme.example/llm-reset",
+                posted_at=now,
+                updated_at=now,
+                first_seen_at=now,
+                last_seen_at=now,
+                content_hash="old-hash",
+                match_score=80,
+                status="active",
+                llm_fit_score=92,
+                llm_verdict="strong_fit",
+                llm_role_family="cloud_security",
+                llm_match_reasons="Existing reason",
+                llm_model="gpt-4o-mini",
+            )
+        )
+        db.commit()
+
+        refreshed = UnifiedJob(
+            source="linkedin_auth",
+            source_job_id="llm-reset",
+            company="Acme",
+            title="Cloud Security Architect",
+            location="Shanghai",
+            country="China",
+            description="Updated description with new responsibilities",
+            apply_url="https://jobs.acme.example/llm-reset",
+            source_url="https://jobs.acme.example/llm-reset",
+            posted_at=now,
+            updated_at=now,
+            first_seen_at=now,
+            last_seen_at=now,
+            content_hash="new-hash",
+        )
+        ingest_collector(db, StubCollector(refreshed))
+        stored = db.query(Job).filter(Job.source_job_id == "llm-reset").one()
+
+        assert stored.llm_fit_score is None
+        assert stored.llm_verdict is None
+        assert stored.llm_match_reasons is None
+        assert stored.llm_model is None

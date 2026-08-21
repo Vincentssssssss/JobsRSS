@@ -50,6 +50,51 @@ Official jobs are classified before publication:
 
 Only confirmed Shanghai and unclassified jobs are ingested.
 
+## LLM Targeted Matching (V2.1)
+
+The optional LLM reranker keeps broad source recall, then performs cybersecurity
+fit evaluation on active jobs. Results are stored on each job and can be
+filtered by API/UI.
+
+Supported provider modes:
+
+- `openai`: OpenAI Chat Completions API
+- `chatgpt`: alias of `openai` (OpenAI-compatible)
+- `codex`: alias of `openai` (OpenAI-compatible)
+- `qwen`: DashScope OpenAI-compatible endpoint
+
+Configuration:
+
+```env
+LLM_RERANK_ENABLED=true
+LLM_PROVIDER=openai
+LLM_API_KEY=your_api_key
+LLM_BASE_URL=
+LLM_MODEL=gpt-4o-mini
+LLM_TIMEOUT_SECONDS=30
+LLM_VERIFY_TLS=true
+LLM_RERANK_INTERVAL_MINUTES=30
+LLM_MAX_JOBS_PER_RUN=60
+LLM_MIN_RULE_SCORE=20
+LLM_ONLY_UNSCORED=true
+LLM_TARGET_PROFILE=Senior cybersecurity roles focused on cloud security...
+```
+
+Qwen example:
+
+```env
+LLM_PROVIDER=qwen
+LLM_API_KEY=your_dashscope_key
+LLM_MODEL=qwen-plus
+LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+```
+
+API filtering:
+
+- `GET /jobs?min_llm_score=70`
+- `GET /jobs?llm_verdict=strong_fit`
+- `GET /jobs/count?min_llm_score=70&llm_verdict=strong_fit`
+
 ## Authenticated Platform Collection (LinkedIn / 51job / Liepin)
 
 The portal supports direct account-based collection through Playwright automation.

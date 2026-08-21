@@ -37,6 +37,9 @@ class JobOut(BaseModel):
     source_url: str
     posted_at: Optional[datetime]
     match_score: float
+    llm_fit_score: Optional[float]
+    llm_verdict: Optional[str]
+    llm_role_family: Optional[str]
     status: str
     location_category: str
 
@@ -47,3 +50,8 @@ class JobDetail(JobOut):
     first_seen_at: Optional[datetime]
     last_seen_at: Optional[datetime]
     enrichment_source: Optional[str]
+    llm_match_reasons: Optional[str]
+    llm_reject_reasons: Optional[str]
+    llm_missing_skills: Optional[str]
+    llm_model: Optional[str]
+    llm_last_evaluated_at: Optional[datetime]

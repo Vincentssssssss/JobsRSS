@@ -12,6 +12,9 @@ type JobCard = {
   source: string;
   posted_at?: string;
   location_category: string;
+  llm_fit_score?: number | null;
+  llm_verdict?: string | null;
+  llm_role_family?: string | null;
 };
 
 type JobDetail = JobCard & {
@@ -21,6 +24,11 @@ type JobDetail = JobCard & {
   first_seen_at?: string | null;
   last_seen_at?: string | null;
   source_url: string;
+  llm_match_reasons?: string | null;
+  llm_reject_reasons?: string | null;
+  llm_missing_skills?: string | null;
+  llm_model?: string | null;
+  llm_last_evaluated_at?: string | null;
 };
 
 type SummaryResponse = {
@@ -48,6 +56,7 @@ export default function HomePage() {
   const [query, setQuery] = useState("");
   const [source, setSource] = useState("");
   const [minScore, setMinScore] = useState(0);
+  const [minLlmScore, setMinLlmScore] = useState("");
   const [limit, setLimit] = useState(500);
   const [locationCategory, setLocationCategory] = useState("");
   const [selectedJob, setSelectedJob] = useState<JobDetail | null>(null);
@@ -65,6 +74,9 @@ export default function HomePage() {
     }
     if (locationCategory) {
       params.set("location_category", locationCategory);
+    }
+    if (minLlmScore) {
+      params.set("min_llm_score", minLlmScore);
     }
     try {
       const response = await fetch(`${API_BASE}/jobs?${params.toString()}`, { cache: "no-store" });
@@ -104,6 +116,9 @@ export default function HomePage() {
     }
     if (locationCategory) {
       params.set("location_category", locationCategory);
+    }
+    if (minLlmScore) {
+      params.set("min_llm_score", minLlmScore);
     }
     try {
       const response = await fetch(`${API_BASE}/jobs/count?${params.toString()}`, { cache: "no-store" });
@@ -157,7 +172,7 @@ export default function HomePage() {
       await Promise.all([loadJobs(), loadSummary(), loadCount()]);
     };
     void load();
-  }, [query, source, minScore, limit, locationCategory]);
+  }, [query, source, minScore, minLlmScore, limit, locationCategory]);
 
   useEffect(() => {
     void loadOfficialSources();
@@ -242,6 +257,18 @@ export default function HomePage() {
           </select>
         </div>
         <div className="field">
+          <label>Min LLM Score</label>
+          <select
+            value={minLlmScore}
+            onChange={(event) => setMinLlmScore(event.target.value)}
+          >
+            <option value="">All</option>
+            <option value="60">60</option>
+            <option value="70">70</option>
+            <option value="80">80</option>
+          </select>
+        </div>
+        <div className="field">
           <label>Location Classification</label>
           <select
             value={locationCategory}
@@ -279,6 +306,11 @@ export default function HomePage() {
                 <p className="job-meta">
                   {job.location} · {job.source}
                 </p>
+                {job.llm_fit_score != null && (
+                  <p className="job-meta">
+                    LLM Fit: {Math.round(job.llm_fit_score)} ({job.llm_verdict || "n/a"})
+                  </p>
+                )}
                 <span className="location-badge">
                   {job.location_category === "confirmed_shanghai"
                     ? "Shanghai"
@@ -331,6 +363,18 @@ export default function HomePage() {
                   <h3>Description</h3>
                   <p>{selectedJob.description || "No description available."}</p>
                 </div>
+                {selectedJob.llm_match_reasons && (
+                  <div className="detail-description">
+                    <h3>LLM Match Reasons</h3>
+                    <p>{selectedJob.llm_match_reasons}</p>
+                  </div>
+                )}
+                {selectedJob.llm_reject_reasons && (
+                  <div className="detail-description">
+                    <h3>LLM Reject Reasons</h3>
+                    <p>{selectedJob.llm_reject_reasons}</p>
+                  </div>
+                )}
               </>
             )}
           </article>
