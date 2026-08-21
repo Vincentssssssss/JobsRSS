@@ -30,16 +30,25 @@ type SummaryResponse = {
   by_source: Array<{ source: string; count: number }>;
 };
 
+type OfficialSourcesResponse = {
+  sources: Array<{
+    source_id: string;
+    enabled: boolean;
+    operational: boolean;
+  }>;
+};
+
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 
 export default function HomePage() {
   const [jobs, setJobs] = useState<JobCard[]>([]);
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
+  const [officialSources, setOfficialSources] = useState<string[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [query, setQuery] = useState("");
   const [source, setSource] = useState("");
   const [minScore, setMinScore] = useState(0);
-  const [limit, setLimit] = useState(200);
+  const [limit, setLimit] = useState(500);
   const [locationCategory, setLocationCategory] = useState("");
   const [selectedJob, setSelectedJob] = useState<JobDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -109,6 +118,23 @@ export default function HomePage() {
     }
   };
 
+  const loadOfficialSources = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/sources/official`, { cache: "no-store" });
+      if (!response.ok) {
+        setOfficialSources([]);
+        return;
+      }
+      const payload: OfficialSourcesResponse = await response.json();
+      const sourceNames = payload.sources
+        .filter((item) => item.enabled && item.operational)
+        .map((item) => `official_${item.source_id}`);
+      setOfficialSources(sourceNames);
+    } catch {
+      setOfficialSources([]);
+    }
+  };
+
   const loadJobDetail = async (jobId: number) => {
     setDetailLoading(true);
     try {
@@ -133,12 +159,16 @@ export default function HomePage() {
     void load();
   }, [query, source, minScore, limit, locationCategory]);
 
+  useEffect(() => {
+    void loadOfficialSources();
+  }, []);
+
   const highMatchCount = useMemo(() => jobs.filter((job) => job.match_score >= 80).length, [jobs]);
   const sourceOptions = useMemo(() => {
     const fromJobs = jobs.map((job) => job.source);
     const fromSummary = summary?.by_source.map((item) => item.source) ?? [];
-    return Array.from(new Set([...fromJobs, ...fromSummary])).sort();
-  }, [jobs, summary]);
+    return Array.from(new Set([...fromJobs, ...fromSummary, ...officialSources])).sort();
+  }, [jobs, summary, officialSources]);
 
   return (
     <main className="page">

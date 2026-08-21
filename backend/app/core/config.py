@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     scheduler_linkedin_email_max_messages: int = 30
     scheduler_digest_hour_utc: int = 1
     scheduler_digest_minute_utc: int = 0
-    official_sources_enabled: bool = False
+    official_sources_enabled: bool = True
     official_source_interval_minutes: int = 360
     official_source_timeout_seconds: int = 30
     official_source_max_jobs_per_source: int = 50

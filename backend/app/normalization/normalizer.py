@@ -1,5 +1,6 @@
 import re
 
+from app.official.location import LocationCategory, classify_official_location
 from app.schemas.job import UnifiedJob
 
 
@@ -40,9 +41,19 @@ def normalize_text(value: str) -> str:
     return cleaned
 
 
+def normalize_location(value: str) -> str:
+    cleaned = normalize_text(value)
+    if (
+        classify_official_location(cleaned)
+        == LocationCategory.CONFIRMED_SHANGHAI
+    ):
+        return "上海"
+    return cleaned
+
+
 def normalize_job(job: UnifiedJob) -> UnifiedJob:
     job.title = normalize_text(job.title)
     job.company = normalize_text(job.company)
-    job.location = normalize_text(job.location)
+    job.location = normalize_location(job.location)
     job.description = normalize_text(job.description)
     return job
