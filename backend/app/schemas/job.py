@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class UnifiedJob(BaseModel):
@@ -21,9 +21,12 @@ class UnifiedJob(BaseModel):
     content_hash: str
     match_score: float = Field(default=0, ge=0, le=100)
     status: str = "active"
+    enrichment_source: Optional[str] = None
 
 
 class JobOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     source: str
     company: str
@@ -35,13 +38,10 @@ class JobOut(BaseModel):
     match_score: float
     status: str
 
-    class Config:
-        from_attributes = True
-
-
 class JobDetail(JobOut):
     country: Optional[str]
     description: str
     updated_at: Optional[datetime]
     first_seen_at: Optional[datetime]
     last_seen_at: Optional[datetime]
+    enrichment_source: Optional[str]

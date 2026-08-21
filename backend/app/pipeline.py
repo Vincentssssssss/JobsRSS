@@ -1,4 +1,6 @@
 from dataclasses import dataclass
+from hashlib import sha256
+from urllib.parse import urlparse
 
 from sqlalchemy.orm import Session
 
@@ -33,15 +35,38 @@ def ingest_collector(db: Session, collector: BaseCollector) -> IngestStats:
                 .first()
             )
             if existing:
-                if existing.content_hash != incoming.content_hash:
+                existing.last_seen_at = incoming.last_seen_at
+                existing_is_authoritative = bool(existing.enrichment_source)
+                incoming_is_authoritative = bool(incoming.enrichment_source)
+                allow_text_replacement = not existing_is_authoritative or incoming_is_authoritative
+                if incoming.title and allow_text_replacement:
                     existing.title = incoming.title
+                if allow_text_replacement and _should_replace_company(existing.company, incoming.company):
+                    existing.company = incoming.company
+                if allow_text_replacement and _should_replace_location(existing.location, incoming.location):
                     existing.location = incoming.location
+                if allow_text_replacement and incoming.country and incoming.country != "Unknown":
+                    existing.country = incoming.country
+                if (
+                    allow_text_replacement
+                    and _description_quality(incoming.description) >= _description_quality(existing.description)
+                ):
                     existing.description = incoming.description
+                if (
+                    (not existing_is_authoritative or incoming_is_authoritative)
+                    and _should_replace_apply_url(existing.apply_url, incoming.apply_url)
+                ):
                     existing.apply_url = incoming.apply_url
+                if incoming.source_url:
                     existing.source_url = incoming.source_url
-                    existing.updated_at = incoming.updated_at
-                    existing.content_hash = incoming.content_hash
-                    existing.match_score = incoming.match_score
+                if incoming.posted_at is not None:
+                    existing.posted_at = incoming.posted_at
+                existing.updated_at = incoming.updated_at
+                existing.status = incoming.status
+                if incoming.enrichment_source:
+                    existing.enrichment_source = incoming.enrichment_source
+                existing.match_score = score_job(existing.title, existing.description, existing.location)
+                existing.content_hash = _job_hash(existing)
                 stats.duplicates += 1
                 continue
 
@@ -68,6 +93,7 @@ def ingest_collector(db: Session, collector: BaseCollector) -> IngestStats:
                     content_hash=incoming.content_hash,
                     match_score=incoming.match_score,
                     status=incoming.status,
+                    enrichment_source=incoming.enrichment_source,
                 )
             )
             stats.new += 1
@@ -76,3 +102,55 @@ def ingest_collector(db: Session, collector: BaseCollector) -> IngestStats:
 
     db.commit()
     return stats
+
+
+def _is_placeholder(value: str, placeholders: set[str]) -> bool:
+    return not value or value.strip().lower() in placeholders
+
+
+def _should_replace_company(existing: str, incoming: str) -> bool:
+    if _is_placeholder(incoming, {"unknown company", "unknown"}):
+        return False
+    return bool(incoming) or _is_placeholder(existing, {"unknown company", "unknown"})
+
+
+def _should_replace_location(existing: str, incoming: str) -> bool:
+    if _is_placeholder(incoming, {"unknown"}):
+        return False
+    return bool(incoming) or _is_placeholder(existing, {"unknown"})
+
+
+def _description_quality(value: str) -> int:
+    if not value:
+        return 0
+    lowered = value.lower()
+    quality = min(len(value), 2000)
+    if " at unknown company in " in lowered or len(value) < 80:
+        quality -= 500
+    return quality
+
+
+def _should_replace_apply_url(existing: str, incoming: str) -> bool:
+    if not incoming:
+        return False
+    existing_host = (urlparse(existing).hostname or "").lower()
+    incoming_host = (urlparse(incoming).hostname or "").lower()
+    existing_is_linkedin = existing_host == "linkedin.com" or existing_host.endswith(".linkedin.com")
+    incoming_is_linkedin = incoming_host == "linkedin.com" or incoming_host.endswith(".linkedin.com")
+    if existing and not existing_is_linkedin and incoming_is_linkedin:
+        return False
+    return True
+
+
+def _job_hash(job: Job) -> str:
+    posted_at = job.posted_at.isoformat() if job.posted_at else ""
+    values = [
+        job.source_job_id,
+        job.title,
+        job.company,
+        job.location,
+        job.description,
+        job.apply_url,
+        posted_at,
+    ]
+    return sha256("||".join(values).encode("utf-8")).hexdigest()

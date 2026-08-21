@@ -33,3 +33,4 @@ class Job(Base):
     content_hash: Mapped[str] = mapped_column(String(128), nullable=False)
     match_score: Mapped[float] = mapped_column(Float, default=0, nullable=False)
     status: Mapped[str] = mapped_column(String(64), default="active", nullable=False)
+    enrichment_source: Mapped[Optional[str]] = mapped_column(String(64))

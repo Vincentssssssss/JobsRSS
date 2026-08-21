@@ -2,6 +2,7 @@ import smtplib
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from email.mime.text import MIMEText
+from html import escape
 from typing import List
 
 from sqlalchemy import desc
@@ -36,16 +37,19 @@ def build_24h_summary(db: Session) -> DigestSummary:
 
 
 def render_digest_html(summary: DigestSummary) -> str:
-    source_items = "".join(f"<li><strong>{source}</strong>: {count}</li>" for source, count in summary.by_source.items())
+    source_items = "".join(
+        f"<li><strong>{escape(source)}</strong>: {count}</li>"
+        for source, count in summary.by_source.items()
+    )
     rows = []
     for job in summary.jobs[:40]:
         rows.append(
             f"<tr>"
-            f"<td>{job.company}</td>"
-            f"<td>{job.title}</td>"
-            f"<td>{job.location}</td>"
+            f"<td>{escape(job.company)}</td>"
+            f"<td>{escape(job.title)}</td>"
+            f"<td>{escape(job.location)}</td>"
             f"<td>{int(job.match_score)}</td>"
-            f"<td><a href='{job.apply_url}'>Apply</a></td>"
+            f"<td><a href='{escape(job.apply_url, quote=True)}'>Apply</a></td>"
             f"</tr>"
         )
     table_rows = "".join(rows) if rows else "<tr><td colspan='5'>No jobs in the past 24 hours.</td></tr>"

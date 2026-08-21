@@ -2,6 +2,8 @@
 
 Phase 1 monorepo for a personal Job Intelligence platform.
 
+Current release: **v1.1.0**
+
 ## Services
 
 - `postgres`: persistent PostgreSQL database
@@ -48,6 +50,37 @@ Key `.env` fields:
   - `LIEPIN_SEARCH_URLS=https://www.liepin.com/...`
 
 Multiple search pages can be configured as comma-separated URLs.
+
+## LinkedIn Official-Source Enrichment
+
+V1.1 uses LinkedIn for discovery, then enriches eligible jobs from the external
+company career page or ATS linked by the job's Apply action.
+
+Supported structured enrichment includes:
+
+- Workday
+- Greenhouse
+- Lever
+- SmartRecruiters
+- SuccessFactors
+
+V1.1 live fetching is restricted to recognized ATS domains. Generic company
+career pages are retained as a future opt-in capability after per-domain
+allowlisting is added.
+
+Field priority:
+
+1. Official ATS/company career page
+2. LinkedIn job detail page
+3. LinkedIn search card
+
+The LinkedIn URL remains the source URL, while `apply_url` uses the official
+application URL when enrichment succeeds.
+
+Configuration:
+
+- `LINKEDIN_EXTERNAL_ENRICHMENT_ENABLED=true`
+- `LINKEDIN_EXTERNAL_ENRICHMENT_TIMEOUT_SECONDS=20`
 
 ## V1.0 Recommended Source Mode
 

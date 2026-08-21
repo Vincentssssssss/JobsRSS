@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=False)
 
     app_name: str = "JobsRSS"
+    app_version: str = "1.1.0"
     environment: str = "development"
     database_url: str = "postgresql+psycopg2://jobsrss:jobsrss@postgres:5432/jobsrss"
     rss_base_url: str = "http://localhost:8000"
@@ -41,6 +42,8 @@ class Settings(BaseSettings):
     linkedin_auth_storage_state_path: Optional[str] = None
     linkedin_search_urls: str = ""
     linkedin_polling_interval_minutes: int = 20
+    linkedin_external_enrichment_enabled: bool = True
+    linkedin_external_enrichment_timeout_seconds: int = 20
 
     job51_auth_enabled: bool = False
     job51_auth_username: Optional[str] = None

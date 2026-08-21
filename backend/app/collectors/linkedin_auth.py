@@ -7,6 +7,11 @@ from bs4 import BeautifulSoup
 
 from app.collectors.authenticated_playwright import AuthenticatedPlaywrightCollector
 from app.collectors.base import CollectorMeta
+from app.enrichment.external_job import (
+    ExternalJobEnricher,
+    EnrichedJobData,
+    merge_job_fields,
+)
 
 
 class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
@@ -20,6 +25,12 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
         normalization_logic="app.normalization.normalizer.normalize_job",
     )
     base_domain = "linkedin.com"
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.external_enricher = ExternalJobEnricher(
+            timeout_seconds=self.settings.linkedin_external_enrichment_timeout_seconds
+        )
 
     def is_enabled(self) -> bool:
         return self.settings.linkedin_auth_enabled
@@ -113,7 +124,8 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
         cards: List[Dict[str, str]] = []
         for item in payload:
             title = self.clean_text(item.get("title", ""))
-            job_url = self._clean_linkedin_job_url(item.get("job_url", ""))
+            original_job_url = item.get("job_url", "")
+            job_url = self._clean_linkedin_job_url(original_job_url)
             if not title or not job_url:
                 continue
             if "/jobs/view/" not in job_url:
@@ -122,7 +134,10 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
             cards.append(
                 {
                     "title": title[:255],
-                    "company": self.clean_text(item.get("company", ""))[:255],
+                    "company": (
+                        self.clean_text(item.get("company", ""))
+                        or self._company_from_job_url(original_job_url)
+                    )[:255],
                     "location": self.clean_text(item.get("location", ""))[:255],
                     "job_url": job_url,
                     "posted_at": posted_at,
@@ -130,7 +145,7 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
             )
         return cards
 
-    def _collect_detail(self, context: Any, job_url: str) -> Dict[str, str]:
+    def _collect_detail(self, context: Any, job_url: str) -> Dict[str, Any]:
         page = context.new_page()
         try:
             page.goto(job_url, wait_until="domcontentloaded", timeout=60000)
@@ -171,24 +186,55 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
             company = self.clean_text(payload.get("company", ""))[:255] or ld_payload.get("company", "")
             location = self.clean_text(payload.get("location", ""))[:255] or ld_payload.get("location", "")
             description = self.clean_text(payload.get("description", ""))[:5000] or ld_payload.get("description", "")
+            external_apply_url = self._discover_external_apply_url(page)
+            official = self._collect_official_job(external_apply_url)
             return {
                 "title": title,
                 "company": company,
                 "location": self._normalize_location(location),
                 "description": description,
+                "external_apply_url": external_apply_url,
+                "official": official,
             }
         except Exception:
-            return {"title": "", "company": "", "location": "", "description": ""}
+            return {
+                "title": "",
+                "company": "",
+                "location": "",
+                "description": "",
+                "external_apply_url": "",
+                "official": None,
+            }
         finally:
             page.close()
 
-    def _merge_job_data(self, card: Dict[str, str], detail: Dict[str, str], fallback_location: str) -> Dict[str, str]:
+    def _merge_job_data(self, card: Dict[str, str], detail: Dict[str, Any], fallback_location: str) -> Dict[str, Any]:
         title = detail["title"] or card["title"]
-        company = detail["company"] or card["company"] or "Unknown Company"
+        job_url = card["job_url"]
+        company = (
+            detail["company"]
+            or card["company"]
+            or self._company_from_job_url(job_url)
+            or "Unknown Company"
+        )
         location = detail["location"] or card["location"] or fallback_location or "Unknown"
         location = self._normalize_location(location)
         description = self._clean_description(detail["description"]) or f"{title} at {company} in {location}"
-        job_url = card["job_url"]
+        base = {
+            "title": title,
+            "company": company,
+            "location": location,
+            "description": description,
+            "job_url": job_url,
+            "source_url": job_url,
+            "apply_url": detail.get("external_apply_url") or job_url,
+            "posted_at": card.get("posted_at"),
+        }
+        enriched = merge_job_fields(base, detail.get("official"))
+        title = enriched["title"]
+        company = enriched["company"]
+        location = self._normalize_location(enriched["location"])
+        description = self._clean_description(enriched["description"]) or f"{title} at {company} in {location}"
         source_job_id = self.extract_source_job_id(job_url, title, company, location)
         return {
             "source_job_id": source_job_id,
@@ -197,10 +243,23 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
             "location": location[:255],
             "country": self.derive_country(location),
             "description": description[:5000],
-            "apply_url": job_url,
+            "apply_url": enriched["apply_url"],
             "source_url": job_url,
-            "posted_at": card.get("posted_at"),
-            "content_hash": self.build_hash(source_job_id, title, company, location, description),
+            "posted_at": enriched.get("posted_at"),
+            "enrichment_source": (
+                detail["official"].provider if detail.get("official") else None
+            ),
+            "content_hash": self.build_hash(
+                source_job_id,
+                title,
+                company,
+                location,
+                description,
+                enriched["apply_url"],
+                enriched.get("posted_at").isoformat()
+                if hasattr(enriched.get("posted_at"), "isoformat")
+                else str(enriched.get("posted_at") or ""),
+            ),
         }
 
     def _clean_linkedin_job_url(self, raw_url: str) -> str:
@@ -210,11 +269,50 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
         clean = parsed
         if not parsed.netloc:
             clean = urlparse(urljoin("https://www.linkedin.com", raw_url))
-        path_match = re.search(r"/jobs/view/(\\d+)", clean.path)
+        path_match = re.search(r"/jobs/view/(?:.*-)?(\d+)/?$", clean.path)
         if path_match:
             canonical_path = f"/jobs/view/{path_match.group(1)}/"
             return urlunparse((clean.scheme or "https", clean.netloc or "www.linkedin.com", canonical_path, "", "", ""))
         return urlunparse((clean.scheme or "https", clean.netloc or "www.linkedin.com", clean.path, "", "", ""))
+
+    def _company_from_job_url(self, job_url: str) -> str:
+        slug = urlparse(job_url).path.rstrip("/").split("/")[-1]
+        match = re.search(r"-at-(.+?)-\d+$", slug)
+        if not match:
+            return ""
+        words = [word for word in match.group(1).split("-") if word]
+        return " ".join(word.upper() if word in {"aws", "ibm", "dbs", "sap"} else word.title() for word in words)
+
+    def _discover_external_apply_url(self, page: Any) -> str:
+        candidates = page.evaluate(
+            """
+            () => Array.from(document.querySelectorAll("a[href]"))
+              .filter((link) => {
+                const text = (link.textContent || "").trim().toLowerCase();
+                const klass = String(link.className || "").toLowerCase();
+                return text === "apply" || text.includes("apply on company") || klass.includes("apply-button");
+              })
+              .map((link) => link.href)
+            """
+        )
+        for candidate in candidates:
+            if self._is_external_apply_url(candidate):
+                return candidate
+        return ""
+
+    def _is_external_apply_url(self, url: str) -> bool:
+        if not ExternalJobEnricher.is_safe_public_url(url):
+            return False
+        host = (urlparse(url).hostname or "").lower()
+        return not (host == "linkedin.com" or host.endswith(".linkedin.com"))
+
+    def _collect_official_job(self, official_url: str) -> Optional[EnrichedJobData]:
+        if not self.settings.linkedin_external_enrichment_enabled or not official_url:
+            return None
+        if not ExternalJobEnricher.is_supported_ats_url(official_url, resolve_dns=True):
+            return None
+        enriched = self.external_enricher.enrich(official_url)
+        return enriched if enriched and enriched.has_authoritative_content else None
 
     def _clean_description(self, text: str) -> str:
         cleaned = self.clean_text(text)

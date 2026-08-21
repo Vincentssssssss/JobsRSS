@@ -67,8 +67,6 @@ class AuthenticatedPlaywrightCollector(BaseCollector):
                 posted_at = datetime.fromisoformat(posted_at.replace("Z", "+00:00"))
             except ValueError:
                 posted_at = None
-        if posted_at is None:
-            posted_at = now
         return UnifiedJob(
             source=self.meta.source_name,
             source_job_id=raw["source_job_id"],
@@ -85,6 +83,7 @@ class AuthenticatedPlaywrightCollector(BaseCollector):
             last_seen_at=now,
             content_hash=raw["content_hash"],
             status="active",
+            enrichment_source=raw.get("enrichment_source"),
         )
 
     def is_enabled(self) -> bool:

@@ -8,7 +8,7 @@ from app.core.config import get_settings
 from app.db.init_db import init_db
 
 settings = get_settings()
-app = FastAPI(title=settings.app_name)
+app = FastAPI(title=settings.app_name, version=settings.app_version)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
