@@ -100,17 +100,32 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
             """
             () => {
               const items = [];
-              const cards = Array.from(document.querySelectorAll("li.jobs-search-results__list-item, li.scaffold-layout__list-item"));
-              for (const card of cards) {
-                const link = card.querySelector("a.job-card-list__title--link, a.job-card-container__link, a[href*='/jobs/view/']");
-                if (!link || !link.href) continue;
+              const links = Array.from(document.querySelectorAll("a[href*='/jobs/view/']"));
+              for (const link of links) {
+                if (!link.href) continue;
+                const card =
+                  link.closest("[data-job-id], li, article, .job-card-container, .artdeco-entity-lockup") ||
+                  link.parentElement;
+                if (!card) continue;
                 const titleEl = card.querySelector("a.job-card-list__title--link strong, a.job-card-list__title--link span, h3, .job-card-list__title");
-                const companyEl = card.querySelector(".job-card-container__company-name, .job-card-list__subtitle, .artdeco-entity-lockup__subtitle span");
-                const locationEl = card.querySelector(".job-card-container__metadata-item, .job-card-container__metadata-wrapper li, .job-card-container__metadata-item--workplace-type");
+                const companyEl = card.querySelector(
+                  ".job-card-container__company-name, .job-card-list__subtitle, " +
+                  ".artdeco-entity-lockup__subtitle span, .artdeco-entity-lockup__subtitle, " +
+                  "[data-test-job-card-company-name]"
+                );
+                const locationEl = card.querySelector(
+                  ".job-card-container__metadata-item, .job-card-container__metadata-wrapper li, " +
+                  ".job-card-container__metadata-item--workplace-type, " +
+                  ".artdeco-entity-lockup__caption, [data-test-job-card-location]"
+                );
                 const timeEl = card.querySelector("time, .job-search-card__listdate");
                 items.push({
                   job_url: link.href,
-                  title: titleEl?.textContent?.trim() || link.textContent?.trim() || "",
+                  title:
+                    titleEl?.textContent?.trim() ||
+                    link.getAttribute("aria-label")?.trim() ||
+                    link.textContent?.trim() ||
+                    "",
                   company: companyEl?.textContent?.trim() || "",
                   location: locationEl?.textContent?.trim() || "",
                   listed_at_text: timeEl?.textContent?.trim() || "",
@@ -122,14 +137,18 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
             """
         )
         cards: List[Dict[str, str]] = []
+        seen_urls = set()
         for item in payload:
-            title = self.clean_text(item.get("title", ""))
             original_job_url = item.get("job_url", "")
             job_url = self._clean_linkedin_job_url(original_job_url)
+            title = self.clean_text(item.get("title", "")) or self._title_from_job_url(original_job_url)
             if not title or not job_url:
                 continue
             if "/jobs/view/" not in job_url:
                 continue
+            if job_url in seen_urls:
+                continue
+            seen_urls.add(job_url)
             posted_at = item.get("listed_at_datetime") or self.extract_posted_at(item.get("listed_at_text", ""))
             cards.append(
                 {
@@ -282,6 +301,15 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
             return ""
         words = [word for word in match.group(1).split("-") if word]
         return " ".join(word.upper() if word in {"aws", "ibm", "dbs", "sap"} else word.title() for word in words)
+
+    def _title_from_job_url(self, job_url: str) -> str:
+        slug = urlparse(job_url).path.rstrip("/").split("/")[-1]
+        slug = re.sub(r"-\d+$", "", slug)
+        if "-at-" in slug:
+            slug = slug.split("-at-", 1)[0]
+        words = [word for word in slug.split("-") if word]
+        special = {"ai": "AI", "iam": "IAM", "aws": "AWS", "api": "API", "devsecops": "DevSecOps"}
+        return " ".join(special.get(word, word.title()) for word in words)
 
     def _discover_external_apply_url(self, page: Any) -> str:
         candidates = page.evaluate(

@@ -27,3 +27,13 @@ def test_does_not_treat_search_urls_as_jobs():
 
     assert collector.is_job_url("https://www.linkedin.com/jobs/view/4451337319/")
     assert not collector.is_job_url("https://www.linkedin.com/jobs/search/?keywords=security")
+
+
+def test_extracts_title_from_linkedin_job_slug():
+    collector = LinkedInAuthCollector()
+
+    title = collector._title_from_job_url(
+        "https://sg.linkedin.com/jobs/view/devsecops-engineer-iam-at-acme-4451337319/"
+    )
+
+    assert title == "DevSecOps Engineer IAM"
