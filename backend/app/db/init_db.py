@@ -14,3 +14,10 @@ def init_db() -> None:
                     "ADD COLUMN IF NOT EXISTS enrichment_source VARCHAR(64)"
                 )
             )
+            connection.execute(
+                text(
+                    "ALTER TABLE jobs "
+                    "ADD COLUMN IF NOT EXISTS location_category VARCHAR(32) "
+                    "NOT NULL DEFAULT 'unclassified'"
+                )
+            )

@@ -34,3 +34,6 @@ class Job(Base):
     match_score: Mapped[float] = mapped_column(Float, default=0, nullable=False)
     status: Mapped[str] = mapped_column(String(64), default="active", nullable=False)
     enrichment_source: Mapped[Optional[str]] = mapped_column(String(64))
+    location_category: Mapped[str] = mapped_column(
+        String(32), default="unclassified", nullable=False
+    )

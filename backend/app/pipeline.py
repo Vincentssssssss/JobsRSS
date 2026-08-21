@@ -63,6 +63,7 @@ def ingest_collector(db: Session, collector: BaseCollector) -> IngestStats:
                     existing.posted_at = incoming.posted_at
                 existing.updated_at = incoming.updated_at
                 existing.status = incoming.status
+                existing.location_category = incoming.location_category
                 if incoming.enrichment_source:
                     existing.enrichment_source = incoming.enrichment_source
                 existing.match_score = score_job(existing.title, existing.description, existing.location)
@@ -94,6 +95,7 @@ def ingest_collector(db: Session, collector: BaseCollector) -> IngestStats:
                     match_score=incoming.match_score,
                     status=incoming.status,
                     enrichment_source=incoming.enrichment_source,
+                    location_category=incoming.location_category,
                 )
             )
             stats.new += 1

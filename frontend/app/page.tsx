@@ -11,6 +11,7 @@ type JobCard = {
   apply_url: string;
   source: string;
   posted_at?: string;
+  location_category: string;
 };
 
 type JobDetail = JobCard & {
@@ -39,6 +40,7 @@ export default function HomePage() {
   const [source, setSource] = useState("");
   const [minScore, setMinScore] = useState(0);
   const [limit, setLimit] = useState(200);
+  const [locationCategory, setLocationCategory] = useState("");
   const [selectedJob, setSelectedJob] = useState<JobDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
@@ -51,6 +53,9 @@ export default function HomePage() {
     }
     if (source) {
       params.set("source", source);
+    }
+    if (locationCategory) {
+      params.set("location_category", locationCategory);
     }
     try {
       const response = await fetch(`${API_BASE}/jobs?${params.toString()}`, { cache: "no-store" });
@@ -88,6 +93,9 @@ export default function HomePage() {
     if (source) {
       params.set("source", source);
     }
+    if (locationCategory) {
+      params.set("location_category", locationCategory);
+    }
     try {
       const response = await fetch(`${API_BASE}/jobs/count?${params.toString()}`, { cache: "no-store" });
       if (!response.ok) {
@@ -123,7 +131,7 @@ export default function HomePage() {
       await Promise.all([loadJobs(), loadSummary(), loadCount()]);
     };
     void load();
-  }, [query, source, minScore, limit]);
+  }, [query, source, minScore, limit, locationCategory]);
 
   const highMatchCount = useMemo(() => jobs.filter((job) => job.match_score >= 80).length, [jobs]);
   const sourceOptions = useMemo(() => {
@@ -203,6 +211,17 @@ export default function HomePage() {
             <option value="500">500</option>
           </select>
         </div>
+        <div className="field">
+          <label>Location Classification</label>
+          <select
+            value={locationCategory}
+            onChange={(event) => setLocationCategory(event.target.value)}
+          >
+            <option value="">All</option>
+            <option value="confirmed_shanghai">Confirmed Shanghai</option>
+            <option value="unclassified">Unclassified</option>
+          </select>
+        </div>
       </section>
 
       {summary && summary.by_source.length > 0 && (
@@ -230,6 +249,11 @@ export default function HomePage() {
                 <p className="job-meta">
                   {job.location} · {job.source}
                 </p>
+                <span className="location-badge">
+                  {job.location_category === "confirmed_shanghai"
+                    ? "Shanghai"
+                    : "Location unclassified"}
+                </span>
                 {job.posted_at && <p className="job-meta">Posted: {new Date(job.posted_at).toLocaleString()}</p>}
               </div>
               <div className="job-right">

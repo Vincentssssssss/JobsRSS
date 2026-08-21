@@ -22,6 +22,7 @@ class UnifiedJob(BaseModel):
     match_score: float = Field(default=0, ge=0, le=100)
     status: str = "active"
     enrichment_source: Optional[str] = None
+    location_category: str = "unclassified"
 
 
 class JobOut(BaseModel):
@@ -37,6 +38,7 @@ class JobOut(BaseModel):
     posted_at: Optional[datetime]
     match_score: float
     status: str
+    location_category: str
 
 class JobDetail(JobOut):
     country: Optional[str]

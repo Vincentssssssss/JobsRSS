@@ -185,6 +185,16 @@ body {
   font-size: 14px;
 }
 
+.location-badge {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: #f0f0f2;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .job-right {
   display: grid;
   gap: 10px;

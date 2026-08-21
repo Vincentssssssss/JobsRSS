@@ -20,6 +20,7 @@ def list_jobs(
     source: Optional[str] = Query(default=None),
     q: Optional[str] = Query(default=None),
     offset: int = Query(default=0, ge=0),
+    location_category: Optional[str] = Query(default=None),
 ):
     query = db.query(Job).filter(Job.match_score >= min_score)
     if source:
@@ -27,6 +28,8 @@ def list_jobs(
     if q:
         like = f"%{q}%"
         query = query.filter((Job.title.ilike(like)) | (Job.company.ilike(like)) | (Job.location.ilike(like)))
+    if location_category:
+        query = query.filter(Job.location_category == location_category)
     return query.order_by(desc(Job.posted_at), desc(Job.id)).offset(offset).limit(limit).all()
 
 
@@ -36,6 +39,7 @@ def jobs_count(
     min_score: float = Query(default=0, ge=0, le=100),
     source: Optional[str] = Query(default=None),
     q: Optional[str] = Query(default=None),
+    location_category: Optional[str] = Query(default=None),
 ):
     query = db.query(func.count(Job.id)).filter(Job.match_score >= min_score)
     if source:
@@ -43,6 +47,8 @@ def jobs_count(
     if q:
         like = f"%{q}%"
         query = query.filter((Job.title.ilike(like)) | (Job.company.ilike(like)) | (Job.location.ilike(like)))
+    if location_category:
+        query = query.filter(Job.location_category == location_category)
     total = query.scalar() or 0
     return {"total": total}
 
