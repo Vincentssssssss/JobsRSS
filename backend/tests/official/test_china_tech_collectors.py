@@ -1,3 +1,4 @@
+from app.official.collectors.alibaba import parse_alibaba_position
 from app.official.collectors.feishu_jobs import parse_feishu_jobs
 from app.official.collectors.huawei import parse_huawei_jobs
 from app.official.collectors.tencent import parse_tencent_jobs
@@ -80,3 +81,23 @@ def test_parses_shared_feishu_recruiting_payload():
     assert jobs[0]["source_job_id"] == "BD-200"
     assert jobs[0]["location_category"] == LocationCategory.CONFIRMED_SHANGHAI.value
     assert jobs[0]["source_url"].endswith("/experienced/position/BD-200/detail")
+
+
+def test_parses_alibaba_campus_position_detail():
+    detail = {
+        "content": {
+            "id": 199903220038,
+            "name": "阿里云安全工程师",
+            "description": "负责云平台安全架构。",
+            "requirement": "熟悉 IAM、DevSecOps 与应用安全。",
+            "workLocations": ["上海"],
+            "categoryName": "技术",
+            "batchName": "校园招聘",
+        }
+    }
+
+    job = parse_alibaba_position(detail)
+
+    assert job["source_job_id"] == "199903220038"
+    assert job["location_category"] == LocationCategory.CONFIRMED_SHANGHAI.value
+    assert "DevSecOps" in job["description"]

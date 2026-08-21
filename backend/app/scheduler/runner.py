@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 
@@ -11,15 +11,9 @@ from app.collectors.linkedin_email import LinkedInEmailCollector
 from app.core.config import get_settings
 from app.db.session import SessionLocal
 from app.notifications.daily_digest import send_daily_digest
-from app.official.collectors import (
-    AmazonOfficialCollector,
-    ByteDanceOfficialCollector,
-    GoogleOfficialCollector,
-    HuaweiOfficialCollector,
-    MicrosoftOfficialCollector,
-    RocheOfficialCollector,
-    TencentOfficialCollector,
-    XiaomiOfficialCollector,
+from app.official.collectors.catalog import (
+    OFFICIAL_COLLECTOR_FACTORIES,
+    create_official_collector,
 )
 from app.pipeline import ingest_collector
 
@@ -80,8 +74,9 @@ def run_liepin_auth_collector() -> None:
     _run_collector(LiepinAuthCollector())
 
 
-def _run_official_collector(collector: BaseCollector) -> None:
+def run_registered_official_collector(source_id: str) -> None:
     settings = get_settings()
+    collector = create_official_collector(source_id)
     if not settings.official_sources_enabled:
         logger.info(
             "collector_skipped source=%s reason=official_sources_disabled",
@@ -89,38 +84,6 @@ def _run_official_collector(collector: BaseCollector) -> None:
         )
         return
     _run_collector(collector)
-
-
-def run_amazon_official_collector() -> None:
-    _run_official_collector(AmazonOfficialCollector())
-
-
-def run_google_official_collector() -> None:
-    _run_official_collector(GoogleOfficialCollector())
-
-
-def run_microsoft_official_collector() -> None:
-    _run_official_collector(MicrosoftOfficialCollector())
-
-
-def run_tencent_official_collector() -> None:
-    _run_official_collector(TencentOfficialCollector())
-
-
-def run_huawei_official_collector() -> None:
-    _run_official_collector(HuaweiOfficialCollector())
-
-
-def run_xiaomi_official_collector() -> None:
-    _run_official_collector(XiaomiOfficialCollector())
-
-
-def run_bytedance_official_collector() -> None:
-    _run_official_collector(ByteDanceOfficialCollector())
-
-
-def run_roche_official_collector() -> None:
-    _run_official_collector(RocheOfficialCollector())
 
 
 def run_daily_digest_job() -> None:
@@ -177,23 +140,19 @@ def start_scheduler() -> None:
         max_instances=1,
         coalesce=True,
     )
-    for job_function in (
-        run_amazon_official_collector,
-        run_google_official_collector,
-        run_microsoft_official_collector,
-        run_tencent_official_collector,
-        run_huawei_official_collector,
-        run_xiaomi_official_collector,
-        run_bytedance_official_collector,
-        run_roche_official_collector,
-    ):
+    for index, source_id in enumerate(OFFICIAL_COLLECTOR_FACTORIES):
         scheduler.add_job(
-            job_function,
+            run_registered_official_collector,
             trigger="interval",
+            args=[source_id],
+            id=f"official_{source_id}",
             minutes=settings.official_source_interval_minutes,
             max_instances=1,
             coalesce=True,
-            next_run_time=datetime.now(timezone.utc),
+            next_run_time=(
+                datetime.now(timezone.utc)
+                + timedelta(seconds=index * 30)
+            ),
         )
     run_linkedin_email_collector()
     run_linkedin_auth_collector()

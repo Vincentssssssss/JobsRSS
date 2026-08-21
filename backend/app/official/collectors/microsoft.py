@@ -37,9 +37,14 @@ class MicrosoftOfficialCollector(OfficialCollectorBase):
                 )
             },
         ) as client:
-            for start in range(
-                0, settings.official_source_max_jobs_per_source, page_size
-            ):
+            starts = list(
+                range(
+                    0,
+                    settings.official_source_max_jobs_per_source,
+                    page_size,
+                )
+            )[: settings.official_source_max_pages_per_source]
+            for start in starts:
                 payload = _get_json_with_backoff(
                     client,
                     MICROSOFT_SEARCH_URL,

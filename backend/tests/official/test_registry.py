@@ -1,3 +1,4 @@
+from app.official.collectors.catalog import OFFICIAL_COLLECTOR_FACTORIES
 from app.official.registry import FIRST_WAVE_SOURCE_IDS, OFFICIAL_SOURCE_REGISTRY
 
 
@@ -37,3 +38,25 @@ def test_every_source_has_official_identity_and_category():
         assert source.company
         assert source.category in {"technology", "pharma", "biotech", "cro_cdmo"}
         assert source.career_url.startswith("https://")
+
+
+def test_hengrui_is_monitored_but_not_operational_without_job_inventory():
+    hengrui = next(
+        source for source in OFFICIAL_SOURCE_REGISTRY
+        if source.source_id == "hengrui"
+    )
+
+    assert hengrui.enabled
+    assert not hengrui.operational
+    assert hengrui.collection_method == "monitor_only_no_inventory"
+
+
+def test_every_operational_first_wave_source_has_collector_factory():
+    operational = {
+        source.source_id
+        for source in OFFICIAL_SOURCE_REGISTRY
+        if source.enabled and source.operational
+    }
+
+    assert set(OFFICIAL_COLLECTOR_FACTORIES) == operational
+    assert len(operational) == 15

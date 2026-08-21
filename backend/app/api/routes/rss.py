@@ -34,7 +34,13 @@ def _build_feed(title: str, jobs: list[Job]) -> str:
 
 @router.get("/all.xml")
 def rss_all(db: Session = Depends(get_db)):
-    jobs = db.query(Job).order_by(desc(Job.posted_at), desc(Job.id)).limit(200).all()
+    jobs = (
+        db.query(Job)
+        .filter(Job.status == "active")
+        .order_by(desc(Job.posted_at), desc(Job.id))
+        .limit(200)
+        .all()
+    )
     xml = _build_feed("all", jobs)
     return Response(content=xml, media_type="application/rss+xml")
 
@@ -44,7 +50,10 @@ def rss_high_match(db: Session = Depends(get_db)):
     settings = get_settings()
     jobs = (
         db.query(Job)
-        .filter(Job.match_score >= settings.high_match_threshold)
+        .filter(
+            Job.match_score >= settings.high_match_threshold,
+            Job.status == "active",
+        )
         .order_by(desc(Job.posted_at), desc(Job.id))
         .limit(200)
         .all()
@@ -57,7 +66,10 @@ def rss_high_match(db: Session = Depends(get_db)):
 def rss_by_company(company: str, db: Session = Depends(get_db)):
     jobs = (
         db.query(Job)
-        .filter(Job.company.ilike(f"%{company}%"))
+        .filter(
+            Job.company.ilike(f"%{company}%"),
+            Job.status == "active",
+        )
         .order_by(desc(Job.posted_at), desc(Job.id))
         .limit(200)
         .all()

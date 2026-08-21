@@ -30,7 +30,14 @@ class AmazonOfficialCollector(OfficialCollectorBase):
             verify=settings.official_source_verify_tls,
             headers={"User-Agent": "JobsRSS/2.0 (+personal job monitor)"},
         ) as client:
-            for offset in range(0, settings.official_source_max_jobs_per_source, page_size):
+            offsets = list(
+                range(
+                    0,
+                    settings.official_source_max_jobs_per_source,
+                    page_size,
+                )
+            )[: settings.official_source_max_pages_per_source]
+            for offset in offsets:
                 response = client.get(
                     AMAZON_SEARCH_URL,
                     params={

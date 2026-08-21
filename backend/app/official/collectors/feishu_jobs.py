@@ -48,9 +48,14 @@ class FeishuJobsOfficialCollector(OfficialCollectorBase):
                 **self.portal_headers,
             },
         ) as client:
-            for offset in range(
-                0, settings.official_source_max_jobs_per_source, page_size
-            ):
+            offsets = list(
+                range(
+                    0,
+                    settings.official_source_max_jobs_per_source,
+                    page_size,
+                )
+            )[: settings.official_source_max_pages_per_source]
+            for offset in offsets:
                 response = client.post(
                     urljoin(self.api_root, "/api/v1/search/job/posts"),
                     json={

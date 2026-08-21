@@ -10,6 +10,7 @@ class OfficialSourceSpec:
     enabled: bool = False
     wave: int = 2
     collection_method: str = "assessment_pending"
+    operational: bool = False
 
 
 FIRST_WAVE_SOURCE_IDS = {
@@ -48,6 +49,8 @@ def _source(
         enabled=enabled,
         wave=1 if enabled else 2,
         collection_method=collection_method,
+        operational=collection_method
+        not in {"assessment_pending", "monitor_only_no_inventory"},
     )
 
 
@@ -73,7 +76,13 @@ OFFICIAL_SOURCE_REGISTRY = [
         "https://apply.careers.microsoft.com/careers",
         "json",
     ),
-    _source("alibaba", "Alibaba / Alibaba Cloud", "technology", "https://www.alibabagroup.com/careers"),
+    _source(
+        "alibaba",
+        "Alibaba / Alibaba Cloud",
+        "technology",
+        "https://campus-talent.alibaba.com/campus/position",
+        "json_xsrf",
+    ),
     _source(
         "tencent",
         "Tencent / Tencent Cloud",
@@ -104,7 +113,13 @@ OFFICIAL_SOURCE_REGISTRY = [
     ),
     _source("apple", "Apple", "technology", "https://jobs.apple.com/"),
     _source("sap", "SAP", "technology", "https://jobs.sap.com/"),
-    _source("gsk", "GSK", "pharma", "https://jobs.gsk.com/"),
+    _source(
+        "gsk",
+        "GSK",
+        "pharma",
+        "https://app.mokahr.com/social-recruitment/gsk/148067",
+        "encrypted_json",
+    ),
     _source(
         "roche",
         "Roche",
@@ -114,12 +129,48 @@ OFFICIAL_SOURCE_REGISTRY = [
     ),
     _source("astrazeneca", "AstraZeneca", "pharma", "https://careers.astrazeneca.com/"),
     _source("novartis", "Novartis", "pharma", "https://www.novartis.com/careers"),
-    _source("wuxi_apptec", "WuXi AppTec / 药明康德", "cro_cdmo", "https://www.wuxiappteccareers.com/jobs/"),
-    _source("wuxi_biologics", "WuXi Biologics / 药明生物", "cro_cdmo", "https://www.wuxibiologics.com/join-us/"),
-    _source("hengrui", "Hengrui Medicine / 恒瑞医药", "pharma", "https://www.hengrui.com/"),
-    _source("fosun_pharma", "Fosun Pharma / 复星医药", "pharma", "https://www.fosunpharma.com/"),
-    _source("ct_tianqing", "Chia Tai Tianqing / 正大天晴", "pharma", "https://www.cttq.com/"),
-    _source("yunnan_baiyao", "Yunnan Baiyao / 云南白药", "pharma", "https://www.yunnanbaiyao.com.cn/"),
+    _source(
+        "wuxi_apptec",
+        "WuXi AppTec / 药明康德",
+        "cro_cdmo",
+        "https://wuxiapptec.zhiye.com/social/jobs",
+        "json",
+    ),
+    _source(
+        "wuxi_biologics",
+        "WuXi Biologics / 药明生物",
+        "cro_cdmo",
+        "https://job.wuxibiologics.com.cn/social/",
+        "encrypted_json",
+    ),
+    _source(
+        "hengrui",
+        "Hengrui Medicine / 恒瑞医药",
+        "pharma",
+        "https://www.hengrui.com/development/recruit.html",
+        "monitor_only_no_inventory",
+    ),
+    _source(
+        "fosun_pharma",
+        "Fosun Pharma / 复星医药",
+        "pharma",
+        "https://fosunpharma.zhiye.com/social",
+        "server_rendered_html",
+    ),
+    _source(
+        "ct_tianqing",
+        "Chia Tai Tianqing / 正大天晴",
+        "pharma",
+        "https://cttq.zhiye.com/social",
+        "json",
+    ),
+    _source(
+        "yunnan_baiyao",
+        "Yunnan Baiyao / 云南白药",
+        "pharma",
+        "https://zhaopin.ynby.cn/",
+        "json",
+    ),
     _source("hansoh", "Hansoh Pharma / 翰森制药", "pharma", "https://www.hspharm.com/"),
     _source("qilu_pharma", "Qilu Pharmaceutical / 齐鲁制药", "pharma", "https://www.qilu-pharma.com/"),
     _source("yangtze_river", "Yangtze River Pharmaceutical / 扬子江药业", "pharma", "https://www.yangzijiang.com/"),

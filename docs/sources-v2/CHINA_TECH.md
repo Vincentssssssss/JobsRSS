@@ -15,7 +15,7 @@ web APIs and must be monitored for schema changes.
 - Alibaba Cloud requires dynamically discovered leaf department codes.
 - Limitation: no verified equivalent social-hire API; batches and department
   codes change by campaign.
-- Status: endpoint contract clarification in progress before production enablement.
+- Live campus connector smoke test passed with Shanghai multi-location roles.
 
 ## Tencent / Tencent Cloud
 
@@ -38,7 +38,8 @@ web APIs and must be monitored for schema changes.
 - Identity: `advertisementId`.
 - Cloud-family hint: `jobFamilyCodeList=["J23"]`.
 - Limitation: gateway headers and request context are implementation details.
-- Status: response contract revalidation in progress before production enablement.
+- Live connector smoke test passed after applying the complete gateway request
+  header context.
 
 ## Xiaomi
 

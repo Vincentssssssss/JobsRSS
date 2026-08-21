@@ -24,7 +24,7 @@ def build_24h_summary(db: Session) -> DigestSummary:
     cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
     jobs = (
         db.query(Job)
-        .filter(Job.first_seen_at >= cutoff)
+        .filter(Job.first_seen_at >= cutoff, Job.status == "active")
         .order_by(desc(Job.match_score), desc(Job.posted_at), desc(Job.id))
         .limit(200)
         .all()

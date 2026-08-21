@@ -8,9 +8,11 @@ Assessment date: 2026-08-21
 - China careers: `https://app.mokahr.com/social-recruitment/gsk/148067`
 - Recommended source: China Moka board because the global board is incomplete
   for Mainland China.
-- Shanghai location IDs must be discovered from Moka filter aggregations.
-- Moka list/detail APIs return an encrypted frontend envelope.
-- Status: implementation pending verified decryption contract.
+- Shanghai location IDs are applied to the Moka list request.
+- Moka list/detail APIs return an AES-128-CBC encrypted frontend envelope.
+- The IV is read dynamically from portal `#init-data`; each response supplies
+  its own key. No cryptographic material is hardcoded.
+- Live connector smoke test passed with Shanghai/Pudong jobs.
 - Fallbacks: GSK Workday and official sitemap for reconciliation only.
 
 ## Roche

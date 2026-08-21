@@ -17,6 +17,9 @@ GOOGLE_SEARCH_URL = (
     "?location=Shanghai%2C%20China&sort_by=date"
 )
 GOOGLE_ROOT = "https://www.google.com"
+GOOGLE_CAREERS_ROOT = (
+    "https://www.google.com/about/careers/applications/"
+)
 GOOGLE_JOB_PATH = re.compile(
     r"/about/careers/applications/jobs/results/(\d+)-[^?#]+"
 )
@@ -36,7 +39,7 @@ class GoogleOfficialCollector(OfficialCollectorBase):
             timeout=settings.official_source_timeout_seconds,
             verify=settings.official_source_verify_tls,
             headers={"User-Agent": "JobsRSS/2.0 (+personal job monitor)"},
-            follow_redirects=True,
+            follow_redirects=False,
         ) as client:
             listing_response = client.get(GOOGLE_SEARCH_URL)
             listing_response.raise_for_status()
@@ -56,10 +59,18 @@ def discover_google_job_links(html: str) -> List[str]:
     links: List[str] = []
     for anchor in soup.select("a[href]"):
         href = str(anchor.get("href") or "")
-        full_url = urljoin(GOOGLE_ROOT, href)
-        if GOOGLE_JOB_PATH.search(full_url):
+        full_url = urljoin(GOOGLE_CAREERS_ROOT, href)
+        parsed = httpx.URL(full_url)
+        if (
+            parsed.scheme == "https"
+            and parsed.host == "www.google.com"
+            and GOOGLE_JOB_PATH.search(full_url)
+        ):
             links.append(full_url.split("?", 1)[0].split("#", 1)[0])
-    decoded = unescape(html).replace("\\/", "/")
+    decoded = "\n".join(
+        script.get_text() for script in soup.select("script")
+    )
+    decoded = unescape(decoded).replace("\\/", "/")
     for match in re.finditer(
         r"(?:/about/careers/applications/)?jobs/results/(\d+)-([a-z0-9-]+)",
         decoded,

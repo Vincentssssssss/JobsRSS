@@ -1,3 +1,4 @@
+import math
 from typing import Any, Dict, List
 
 import httpx
@@ -30,7 +31,13 @@ class TencentOfficialCollector(OfficialCollectorBase):
         ) as client:
             for page_index in range(
                 1,
-                (settings.official_source_max_jobs_per_source // page_size) + 2,
+                min(
+                    math.ceil(
+                        settings.official_source_max_jobs_per_source / page_size
+                    ),
+                    settings.official_source_max_pages_per_source,
+                )
+                + 1,
             ):
                 response = client.get(
                     TENCENT_SEARCH_URL,

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
@@ -29,6 +29,15 @@ class StubCollector(BaseCollector):
 
     def collect(self):
         return [self.job]
+
+
+class StubOfficialCollector(StubCollector):
+    meta = CollectorMeta(
+        source_name="official_test_company",
+        source_type="company_site",
+        collection_method="test",
+        polling_interval_minutes=360,
+    )
 
 
 def test_existing_job_receives_enriched_company_country_and_posted_time():
@@ -144,3 +153,106 @@ def test_fallback_refresh_does_not_replace_existing_authoritative_fields():
         assert stored.description == official_description
         assert stored.apply_url == "https://jobs.acme.com/456"
         assert stored.posted_at is not None
+
+
+def test_stale_official_job_is_closed_after_successful_source_run():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    old_time = datetime.now(timezone.utc) - timedelta(days=45)
+
+    with Session(engine) as db:
+        db.add(
+            Job(
+                source="official_test_company",
+                source_job_id="old",
+                company="Acme",
+                title="Old role",
+                location="Shanghai",
+                country="China",
+                description="Old role",
+                apply_url="https://jobs.acme.example/old",
+                source_url="https://jobs.acme.example/old",
+                posted_at=old_time,
+                updated_at=old_time,
+                first_seen_at=old_time,
+                last_seen_at=old_time,
+                content_hash="old",
+                match_score=0,
+                status="active",
+                location_category="confirmed_shanghai",
+            )
+        )
+        db.commit()
+
+        current = UnifiedJob(
+            source="official_test_company",
+            source_job_id="current",
+            company="Acme",
+            title="Current role",
+            location="Shanghai",
+            country="China",
+            description="Current role",
+            apply_url="https://jobs.acme.example/current",
+            source_url="https://jobs.acme.example/current",
+            content_hash="current",
+            location_category="confirmed_shanghai",
+        )
+        ingest_collector(db, StubOfficialCollector(current))
+
+        stale = db.query(Job).filter(Job.source_job_id == "old").one()
+        assert stale.status == "closed"
+
+
+def test_closed_job_does_not_suppress_new_repost_with_new_source_id():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    now = datetime.now(timezone.utc)
+
+    with Session(engine) as db:
+        db.add(
+            Job(
+                source="official_test_company",
+                source_job_id="closed-id",
+                company="Acme",
+                title="Cloud Security Architect",
+                location="Shanghai",
+                country="China",
+                description="Previous posting",
+                apply_url="https://jobs.acme.example/closed",
+                source_url="https://jobs.acme.example/closed",
+                posted_at=now,
+                updated_at=now,
+                first_seen_at=now,
+                last_seen_at=now,
+                content_hash="closed",
+                match_score=80,
+                status="closed",
+                location_category="confirmed_shanghai",
+            )
+        )
+        db.commit()
+
+        repost = UnifiedJob(
+            source="official_test_company",
+            source_job_id="repost-id",
+            company="Acme",
+            title="Cloud Security Architect",
+            location="Shanghai",
+            country="China",
+            description="New posting",
+            apply_url="https://jobs.acme.example/repost",
+            source_url="https://jobs.acme.example/repost",
+            content_hash="repost",
+            location_category="confirmed_shanghai",
+        )
+        stats = ingest_collector(db, StubOfficialCollector(repost))
+
+        assert stats.new == 1
+        assert db.query(Job).count() == 2
+        assert (
+            db.query(Job)
+            .filter(Job.source_job_id == "repost-id")
+            .one()
+            .status
+            == "active"
+        )

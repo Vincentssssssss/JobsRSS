@@ -19,6 +19,7 @@ def list_official_sources():
                 "enabled": source.enabled,
                 "wave": source.wave,
                 "collection_method": source.collection_method,
+                "operational": source.operational,
             }
             for source in OFFICIAL_SOURCE_REGISTRY
         ],

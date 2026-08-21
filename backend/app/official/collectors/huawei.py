@@ -28,9 +28,16 @@ class HuaweiOfficialCollector(OfficialCollectorBase):
                 "X-HW-ID": HUAWEI_APP_ID,
                 "x-jalor-tenantAlias": "hcm",
                 "x-language": "zh_CN",
+                "x-Referer": "https://career.huawei.com/cn",
+                "x-alb-gray": "prod",
                 "Origin": "https://career.huawei.com",
-                "Referer": "https://career.huawei.com/",
-                "User-Agent": "JobsRSS/2.0 (+personal job monitor)",
+                "Referer": (
+                    "https://career.huawei.com/cn/"
+                    "social-recruitment-job-list/"
+                ),
+                "Accept": "application/json, text/plain, */*",
+                "Content-Type": "application/json;charset=UTF-8",
+                "User-Agent": "Mozilla/5.0",
             },
             json={
                 "curPage": 1,
@@ -122,6 +129,11 @@ def _find_items(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
         payload.get("data"),
         payload.get("result"),
     ]
+    data = payload.get("data")
+    if isinstance(data, dict):
+        candidates.extend(
+            [data.get("result"), data.get("list"), data.get("content")]
+        )
     result = payload.get("result")
     if isinstance(result, dict):
         candidates.extend(

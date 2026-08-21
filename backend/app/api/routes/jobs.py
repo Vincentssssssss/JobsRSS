@@ -21,8 +21,11 @@ def list_jobs(
     q: Optional[str] = Query(default=None),
     offset: int = Query(default=0, ge=0),
     location_category: Optional[str] = Query(default=None),
+    status: Optional[str] = Query(default="active"),
 ):
     query = db.query(Job).filter(Job.match_score >= min_score)
+    if status:
+        query = query.filter(Job.status == status)
     if source:
         query = query.filter(Job.source == source)
     if q:
@@ -40,8 +43,11 @@ def jobs_count(
     source: Optional[str] = Query(default=None),
     q: Optional[str] = Query(default=None),
     location_category: Optional[str] = Query(default=None),
+    status: Optional[str] = Query(default="active"),
 ):
     query = db.query(func.count(Job.id)).filter(Job.match_score >= min_score)
+    if status:
+        query = query.filter(Job.status == status)
     if source:
         query = query.filter(Job.source == source)
     if q:
@@ -56,18 +62,32 @@ def jobs_count(
 @router.get("/summary/last-24h")
 def summary_last_24h(db: Session = Depends(get_db)):
     cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
-    total = db.query(func.count(Job.id)).filter(Job.first_seen_at >= cutoff).scalar() or 0
-    high_match = db.query(func.count(Job.id)).filter(Job.first_seen_at >= cutoff, Job.match_score >= 80).scalar() or 0
+    total = (
+        db.query(func.count(Job.id))
+        .filter(Job.first_seen_at >= cutoff, Job.status == "active")
+        .scalar()
+        or 0
+    )
+    high_match = (
+        db.query(func.count(Job.id))
+        .filter(
+            Job.first_seen_at >= cutoff,
+            Job.match_score >= 80,
+            Job.status == "active",
+        )
+        .scalar()
+        or 0
+    )
     source_rows = (
         db.query(Job.source, func.count(Job.id))
-        .filter(Job.first_seen_at >= cutoff)
+        .filter(Job.first_seen_at >= cutoff, Job.status == "active")
         .group_by(Job.source)
         .order_by(desc(func.count(Job.id)))
         .all()
     )
     top_jobs = (
         db.query(Job)
-        .filter(Job.first_seen_at >= cutoff)
+        .filter(Job.first_seen_at >= cutoff, Job.status == "active")
         .order_by(desc(Job.match_score), desc(Job.posted_at), desc(Job.id))
         .limit(20)
         .all()

@@ -1,10 +1,12 @@
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from urllib.parse import urlparse
 
 from sqlalchemy.orm import Session
 
 from app.collectors.base import BaseCollector
+from app.core.config import get_settings
 from app.dedup.service import is_probable_duplicate
 from app.matching.scorer import score_job
 from app.models.job import Job
@@ -71,7 +73,15 @@ def ingest_collector(db: Session, collector: BaseCollector) -> IngestStats:
                 stats.duplicates += 1
                 continue
 
-            probable = db.query(Job).filter(Job.company == incoming.company, Job.location == incoming.location).all()
+            probable = (
+                db.query(Job)
+                .filter(
+                    Job.company == incoming.company,
+                    Job.location == incoming.location,
+                    Job.status == "active",
+                )
+                .all()
+            )
             if any(is_probable_duplicate(item, incoming) for item in probable):
                 stats.duplicates += 1
                 continue
@@ -102,6 +112,19 @@ def ingest_collector(db: Session, collector: BaseCollector) -> IngestStats:
         except Exception:
             stats.errors += 1
 
+    if collector.meta.source_name.startswith("official_"):
+        cutoff = datetime.now(timezone.utc) - timedelta(
+            days=get_settings().official_source_stale_after_days
+        )
+        (
+            db.query(Job)
+            .filter(
+                Job.source == collector.meta.source_name,
+                Job.status == "active",
+                Job.last_seen_at < cutoff,
+            )
+            .update({"status": "closed"}, synchronize_session=False)
+        )
     db.commit()
     return stats
 

@@ -120,3 +120,12 @@ def test_microsoft_json_request_retries_rate_limit(monkeypatch):
 
     assert payload == {"positions": []}
     assert calls == 2
+
+
+def test_google_discovery_rejects_external_job_shaped_url():
+    html = (
+        '<a href="http://169.254.169.254/about/careers/applications/'
+        'jobs/results/123456789012-security">metadata</a>'
+    )
+
+    assert discover_google_job_links(html) == []

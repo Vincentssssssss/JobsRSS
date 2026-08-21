@@ -2,7 +2,7 @@
 
 Phase 1 monorepo for a personal Job Intelligence platform.
 
-Current release: **v1.5.0-beta**
+Current release: **v2.0.0-beta**
 
 ## Services
 
@@ -24,6 +24,31 @@ Open:
 - Jobs API: `http://localhost:8000/jobs`
 - RSS all: `http://localhost:8000/rss/all.xml`
 - Dashboard: `http://localhost:3000`
+- Official source registry: `http://localhost:8000/sources/official`
+
+## V2 Official Career Sources
+
+V2 adds a 38-company registry and 16-source first wave. Fifteen first-wave
+sources have operational collectors; Hengrui remains monitor-only because its
+official site does not expose a current, stable job inventory.
+
+Enable official collection:
+
+```env
+OFFICIAL_SOURCES_ENABLED=true
+OFFICIAL_SOURCE_INTERVAL_MINUTES=360
+OFFICIAL_SOURCE_MAX_JOBS_PER_SOURCE=50
+OFFICIAL_SOURCE_MAX_PAGES_PER_SOURCE=10
+OFFICIAL_SOURCE_STALE_AFTER_DAYS=30
+```
+
+Official jobs are classified before publication:
+
+- `confirmed_shanghai`: explicitly includes Shanghai/上海.
+- `unclassified`: broad China/APAC/Greater China/Remote or missing location.
+- `excluded`: explicit non-Shanghai location.
+
+Only confirmed Shanghai and unclassified jobs are ingested.
 
 ## Authenticated Platform Collection (LinkedIn / 51job / Liepin)
 
