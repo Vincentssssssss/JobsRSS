@@ -13,8 +13,13 @@ from app.db.session import SessionLocal
 from app.notifications.daily_digest import send_daily_digest
 from app.official.collectors import (
     AmazonOfficialCollector,
+    ByteDanceOfficialCollector,
     GoogleOfficialCollector,
+    HuaweiOfficialCollector,
     MicrosoftOfficialCollector,
+    RocheOfficialCollector,
+    TencentOfficialCollector,
+    XiaomiOfficialCollector,
 )
 from app.pipeline import ingest_collector
 
@@ -98,6 +103,26 @@ def run_microsoft_official_collector() -> None:
     _run_official_collector(MicrosoftOfficialCollector())
 
 
+def run_tencent_official_collector() -> None:
+    _run_official_collector(TencentOfficialCollector())
+
+
+def run_huawei_official_collector() -> None:
+    _run_official_collector(HuaweiOfficialCollector())
+
+
+def run_xiaomi_official_collector() -> None:
+    _run_official_collector(XiaomiOfficialCollector())
+
+
+def run_bytedance_official_collector() -> None:
+    _run_official_collector(ByteDanceOfficialCollector())
+
+
+def run_roche_official_collector() -> None:
+    _run_official_collector(RocheOfficialCollector())
+
+
 def run_daily_digest_job() -> None:
     settings = get_settings()
     if not settings.digest_email_enabled:
@@ -156,6 +181,11 @@ def start_scheduler() -> None:
         run_amazon_official_collector,
         run_google_official_collector,
         run_microsoft_official_collector,
+        run_tencent_official_collector,
+        run_huawei_official_collector,
+        run_xiaomi_official_collector,
+        run_bytedance_official_collector,
+        run_roche_official_collector,
     ):
         scheduler.add_job(
             job_function,

@@ -54,6 +54,8 @@ def parse_source_datetime(value: Any) -> Optional[datetime]:
     if isinstance(value, datetime):
         return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
     if isinstance(value, (int, float)):
+        if value > 10_000_000_000:
+            value = value / 1000
         return datetime.fromtimestamp(value, tz=timezone.utc)
     text = str(value).strip().replace("Z", "+00:00")
     for parser in (
