@@ -8,10 +8,14 @@ from app.collectors.job51_auth import Job51AuthCollector
 from app.collectors.liepin_auth import LiepinAuthCollector
 from app.collectors.linkedin_auth import LinkedInAuthCollector
 from app.collectors.linkedin_email import LinkedInEmailCollector
-from app.collectors.microsoft import MicrosoftCollector
 from app.core.config import get_settings
 from app.db.session import SessionLocal
 from app.notifications.daily_digest import send_daily_digest
+from app.official.collectors import (
+    AmazonOfficialCollector,
+    GoogleOfficialCollector,
+    MicrosoftOfficialCollector,
+)
 from app.pipeline import ingest_collector
 
 logger = logging.getLogger(__name__)
@@ -37,10 +41,6 @@ def _run_collector(collector: BaseCollector) -> None:
         logger.exception("collector_run_failed source=%s", collector.meta.source_name)
     finally:
         db.close()
-
-
-def run_microsoft_collector() -> None:
-    _run_collector(MicrosoftCollector())
 
 
 def run_linkedin_email_collector() -> None:
@@ -75,6 +75,29 @@ def run_liepin_auth_collector() -> None:
     _run_collector(LiepinAuthCollector())
 
 
+def _run_official_collector(collector: BaseCollector) -> None:
+    settings = get_settings()
+    if not settings.official_sources_enabled:
+        logger.info(
+            "collector_skipped source=%s reason=official_sources_disabled",
+            collector.meta.source_name,
+        )
+        return
+    _run_collector(collector)
+
+
+def run_amazon_official_collector() -> None:
+    _run_official_collector(AmazonOfficialCollector())
+
+
+def run_google_official_collector() -> None:
+    _run_official_collector(GoogleOfficialCollector())
+
+
+def run_microsoft_official_collector() -> None:
+    _run_official_collector(MicrosoftOfficialCollector())
+
+
 def run_daily_digest_job() -> None:
     settings = get_settings()
     if not settings.digest_email_enabled:
@@ -93,13 +116,6 @@ def run_daily_digest_job() -> None:
 def start_scheduler() -> None:
     settings = get_settings()
     scheduler = BlockingScheduler(timezone="UTC")
-    scheduler.add_job(
-        run_microsoft_collector,
-        trigger="interval",
-        minutes=settings.scheduler_company_interval_minutes,
-        max_instances=1,
-        coalesce=True,
-    )
     scheduler.add_job(
         run_linkedin_email_collector,
         trigger="interval",
@@ -136,7 +152,19 @@ def start_scheduler() -> None:
         max_instances=1,
         coalesce=True,
     )
-    run_microsoft_collector()
+    for job_function in (
+        run_amazon_official_collector,
+        run_google_official_collector,
+        run_microsoft_official_collector,
+    ):
+        scheduler.add_job(
+            job_function,
+            trigger="interval",
+            minutes=settings.official_source_interval_minutes,
+            max_instances=1,
+            coalesce=True,
+            next_run_time=datetime.now(timezone.utc),
+        )
     run_linkedin_email_collector()
     run_linkedin_auth_collector()
     run_job51_auth_collector()

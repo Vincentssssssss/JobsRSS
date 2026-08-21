@@ -37,6 +37,7 @@ def _source(
     company: str,
     category: str,
     career_url: str,
+    collection_method: str = "assessment_pending",
 ) -> OfficialSourceSpec:
     enabled = source_id in FIRST_WAVE_SOURCE_IDS
     return OfficialSourceSpec(
@@ -46,13 +47,32 @@ def _source(
         career_url=career_url,
         enabled=enabled,
         wave=1 if enabled else 2,
+        collection_method=collection_method,
     )
 
 
 OFFICIAL_SOURCE_REGISTRY = [
-    _source("amazon_aws", "Amazon / AWS", "technology", "https://www.amazon.jobs/"),
-    _source("google", "Google", "technology", "https://www.google.com/about/careers/applications/jobs/results/"),
-    _source("microsoft", "Microsoft", "technology", "https://jobs.careers.microsoft.com/global/en/search"),
+    _source(
+        "amazon_aws",
+        "Amazon / AWS",
+        "technology",
+        "https://www.amazon.jobs/",
+        "json",
+    ),
+    _source(
+        "google",
+        "Google",
+        "technology",
+        "https://www.google.com/about/careers/applications/jobs/results/",
+        "server_rendered_html",
+    ),
+    _source(
+        "microsoft",
+        "Microsoft",
+        "technology",
+        "https://apply.careers.microsoft.com/careers",
+        "json",
+    ),
     _source("alibaba", "Alibaba / Alibaba Cloud", "technology", "https://www.alibabagroup.com/careers"),
     _source("tencent", "Tencent / Tencent Cloud", "technology", "https://careers.tencent.com/"),
     _source("huawei", "Huawei / Huawei Cloud", "technology", "https://career.huawei.com/"),
@@ -89,3 +109,14 @@ OFFICIAL_SOURCE_REGISTRY = [
     _source("asychem", "Asymchem / 凯莱英", "cro_cdmo", "https://www.asymchem.com/"),
     _source("porton", "Porton Pharma / 博腾股份", "cro_cdmo", "https://www.portonpharma.com/"),
 ]
+
+OFFICIAL_SOURCE_BY_ID = {
+    source.source_id: source for source in OFFICIAL_SOURCE_REGISTRY
+}
+
+
+def get_official_source(source_id: str) -> OfficialSourceSpec:
+    try:
+        return OFFICIAL_SOURCE_BY_ID[source_id]
+    except KeyError as exc:
+        raise ValueError(f"Unknown official source: {source_id}") from exc
