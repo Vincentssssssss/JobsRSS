@@ -44,6 +44,8 @@ class Settings(BaseSettings):
     linkedin_polling_interval_minutes: int = 20
     linkedin_external_enrichment_enabled: bool = True
     linkedin_external_enrichment_timeout_seconds: int = 20
+    linkedin_strict_location_filter: bool = True
+    linkedin_allowed_locations: str = "Singapore,Hong Kong,Shanghai,Hangzhou"
 
     job51_auth_enabled: bool = False
     job51_auth_username: Optional[str] = None

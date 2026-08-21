@@ -85,6 +85,14 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
                     for card in cards[:25]:
                         detail = self._collect_detail(context, card["job_url"])
                         merged = self._merge_job_data(card, detail, fallback_location=fallback_location)
+                        if (
+                            self.settings.linkedin_strict_location_filter
+                            and not self._is_allowed_location(
+                                merged["location"],
+                                self.settings.csv_items(self.settings.linkedin_allowed_locations),
+                            )
+                        ):
+                            continue
                         source_job_id = merged["source_job_id"]
                         results[source_job_id] = merged
                 except Exception:
@@ -437,3 +445,20 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
             if head:
                 return head
         return text
+
+    def _is_allowed_location(self, location: str, allowed_locations: List[str]) -> bool:
+        normalized = self.clean_text(location).lower()
+        if not normalized or normalized == "unknown":
+            return False
+        aliases = {
+            "singapore": {"singapore", "新加坡"},
+            "hong kong": {"hong kong", "香港"},
+            "shanghai": {"shanghai", "上海"},
+            "hangzhou": {"hangzhou", "杭州"},
+        }
+        for allowed in allowed_locations:
+            key = self.clean_text(allowed).lower()
+            candidates = aliases.get(key, {key})
+            if any(candidate in normalized for candidate in candidates):
+                return True
+        return False

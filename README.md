@@ -81,6 +81,40 @@ Configuration:
 
 - `LINKEDIN_EXTERNAL_ENRICHMENT_ENABLED=true`
 - `LINKEDIN_EXTERNAL_ENRICHMENT_TIMEOUT_SECONDS=20`
+- `LINKEDIN_STRICT_LOCATION_FILTER=true`
+- `LINKEDIN_ALLOWED_LOCATIONS=Singapore,Hong Kong,Shanghai,Hangzhou`
+
+With strict filtering enabled, LinkedIn jobs outside Singapore, Hong Kong,
+Shanghai, and Hangzhou are discarded before database ingestion.
+
+## Refreshing Liepin Login State
+
+Start a dedicated Chrome debugging session on macOS:
+
+```bash
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  --remote-debugging-port=9222 \
+  --user-data-dir=/tmp/chrome-jobsrss-profile
+```
+
+Log in to Liepin in that Chrome window. In another terminal:
+
+```bash
+cd backend
+source .venv/bin/activate
+python scripts/export_storage_state.py \
+  --site liepin \
+  --out ../secrets/liepin_state.json
+```
+
+The exporter keeps only Liepin cookies/origins, writes the file with mode
+`0600`, and never commits it. Docker should mount `./secrets:/secrets:ro`, and
+`.env` should contain:
+
+```env
+LIEPIN_AUTH_ENABLED=true
+LIEPIN_AUTH_STORAGE_STATE_PATH=/secrets/liepin_state.json
+```
 
 ## V1.0 Recommended Source Mode
 

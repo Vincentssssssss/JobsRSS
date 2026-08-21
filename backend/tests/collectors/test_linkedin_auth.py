@@ -37,3 +37,21 @@ def test_extracts_title_from_linkedin_job_slug():
     )
 
     assert title == "DevSecOps Engineer IAM"
+
+
+def test_strict_location_filter_accepts_only_configured_markets():
+    collector = LinkedInAuthCollector()
+    allowed = ["Singapore", "Hong Kong", "Shanghai", "Hangzhou"]
+
+    assert collector._is_allowed_location("Singapore", allowed)
+    assert collector._is_allowed_location("新加坡", allowed)
+    assert collector._is_allowed_location("Hong Kong SAR", allowed)
+    assert collector._is_allowed_location("香港特别行政区", allowed)
+    assert collector._is_allowed_location("上海市", allowed)
+    assert collector._is_allowed_location("Hangzhou, Zhejiang, China", allowed)
+    assert collector._is_allowed_location("杭州市", allowed)
+
+    assert not collector._is_allowed_location("Beijing", allowed)
+    assert not collector._is_allowed_location("Shenzhen", allowed)
+    assert not collector._is_allowed_location("Remote - APAC", allowed)
+    assert not collector._is_allowed_location("Unknown", allowed)
