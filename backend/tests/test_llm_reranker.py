@@ -8,6 +8,7 @@ from app.db.session import Base
 from app.matching.llm_reranker import (
     LLMMatchResult,
     _build_auth_headers,
+    create_llm_client,
     resolve_base_url,
     run_llm_rerank,
 )
@@ -73,10 +74,42 @@ def test_auth_header_uses_api_key_for_azure_base_url():
     assert "Authorization" not in headers
 
 
+def test_auth_header_uses_api_key_for_foundry_services_base_url():
+    headers = _build_auth_headers(
+        "secret",
+        "https://foundry0805.services.ai.azure.com/openai/v1",
+    )
+    assert headers["api-key"] == "secret"
+    assert "Authorization" not in headers
+
+
 def test_auth_header_uses_bearer_for_openai_base_url():
     headers = _build_auth_headers("secret", "https://api.openai.com/v1")
     assert headers["Authorization"] == "Bearer secret"
     assert "api-key" not in headers
+
+
+def test_create_llm_client_allows_default_credential_without_api_key(monkeypatch):
+    monkeypatch.setattr(
+        "app.matching.llm_reranker._build_azure_default_credential",
+        lambda enabled: object() if enabled else None,
+    )
+    settings = SimpleNamespace(
+        llm_rerank_enabled=True,
+        llm_api_key=None,
+        llm_provider="openai",
+        llm_base_url="https://foundry0805.services.ai.azure.com/openai/v1",
+        llm_model="gpt-5.6-luna",
+        llm_api_version=None,
+        llm_timeout_seconds=30,
+        llm_verify_tls=True,
+        llm_azure_use_default_credential=True,
+        llm_azure_scope="https://ai.azure.com/.default",
+    )
+
+    client = create_llm_client(settings)
+
+    assert client is not None
 
 
 def test_run_llm_rerank_updates_job_fields():

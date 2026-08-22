@@ -103,6 +103,20 @@ LLM_API_VERSION=
 When the base URL host ends with `.openai.azure.com`, the reranker
 automatically uses `api-key` authentication header.
 
+Azure AI Foundry + Entra ID example:
+
+```env
+LLM_PROVIDER=openai
+LLM_API_KEY=
+LLM_MODEL=gpt-5.6-luna
+LLM_BASE_URL=https://<project>.services.ai.azure.com/openai/v1
+LLM_AZURE_USE_DEFAULT_CREDENTIAL=true
+LLM_AZURE_SCOPE=https://ai.azure.com/.default
+```
+
+When `LLM_AZURE_USE_DEFAULT_CREDENTIAL=true`, the reranker fetches a bearer token
+from `DefaultAzureCredential` and uses `Authorization: Bearer <token>`.
+
 API filtering:
 
 - `GET /jobs?min_llm_score=70`

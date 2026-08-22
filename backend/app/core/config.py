@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     llm_api_key: Optional[str] = None
     llm_base_url: Optional[str] = None
     llm_api_version: Optional[str] = None
+    llm_azure_use_default_credential: bool = False
+    llm_azure_scope: str = "https://ai.azure.com/.default"
     llm_model: str = "gpt-4o-mini"
     llm_timeout_seconds: int = 30
     llm_verify_tls: bool = True

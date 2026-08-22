@@ -49,6 +49,8 @@ class OpenAICompatibleClient:
         api_version: Optional[str],
         timeout_seconds: int,
         verify_tls: bool,
+        azure_use_default_credential: bool = False,
+        azure_scope: str = "https://ai.azure.com/.default",
     ) -> None:
         self.api_key = api_key
         self.model = model
@@ -56,6 +58,11 @@ class OpenAICompatibleClient:
         self.api_version = api_version
         self.timeout_seconds = timeout_seconds
         self.verify_tls = verify_tls
+        self.azure_use_default_credential = azure_use_default_credential
+        self.azure_scope = azure_scope
+        self._azure_credential = _build_azure_default_credential(
+            azure_use_default_credential
+        )
 
     def evaluate_job(self, job: Job, target_profile: str) -> LLMMatchResult:
         messages = _build_messages(job, target_profile)
@@ -69,7 +76,7 @@ class OpenAICompatibleClient:
             timeout=self.timeout_seconds,
             verify=self.verify_tls,
             follow_redirects=True,
-            headers=_build_auth_headers(self.api_key, self.base_url),
+            headers=self._build_request_headers(),
         ) as client:
             response = client.post(
                 f"{self.base_url}/chat/completions",
@@ -82,6 +89,15 @@ class OpenAICompatibleClient:
             )
             response.raise_for_status()
         return _parse_match_result(response.json())
+
+    def _build_request_headers(self) -> Dict[str, str]:
+        if self.azure_use_default_credential:
+            token = _get_azure_bearer_token(self._azure_credential, self.azure_scope)
+            return {
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            }
+        return _build_auth_headers(self.api_key, self.base_url)
 
 
 def resolve_base_url(provider: str, configured_base_url: Optional[str]) -> str:
@@ -99,7 +115,7 @@ def create_llm_client(settings: Optional[Settings] = None) -> Optional[LLMClient
     settings = settings or get_settings()
     if not settings.llm_rerank_enabled:
         return None
-    if not settings.llm_api_key:
+    if not settings.llm_api_key and not settings.llm_azure_use_default_credential:
         return None
     base_url = resolve_base_url(settings.llm_provider, settings.llm_base_url)
     return OpenAICompatibleClient(
@@ -109,6 +125,8 @@ def create_llm_client(settings: Optional[Settings] = None) -> Optional[LLMClient
         api_version=settings.llm_api_version,
         timeout_seconds=settings.llm_timeout_seconds,
         verify_tls=settings.llm_verify_tls,
+        azure_use_default_credential=settings.llm_azure_use_default_credential,
+        azure_scope=settings.llm_azure_scope,
     )
 
 
@@ -249,4 +267,25 @@ def _is_azure_openai_base_url(base_url: str) -> bool:
         host = (urlparse(base_url).hostname or "").lower()
     except ValueError:
         return False
-    return host.endswith(".openai.azure.com")
+    return host.endswith(".openai.azure.com") or host.endswith(
+        ".services.ai.azure.com"
+    )
+
+
+def _build_azure_default_credential(enabled: bool) -> Optional[Any]:
+    if not enabled:
+        return None
+    try:
+        from azure.identity import DefaultAzureCredential
+    except ImportError as exc:
+        raise RuntimeError(
+            "LLM_AZURE_USE_DEFAULT_CREDENTIAL=true requires azure-identity package."
+        ) from exc
+    return DefaultAzureCredential()
+
+
+def _get_azure_bearer_token(credential: Optional[Any], scope: str) -> str:
+    if credential is None:
+        raise RuntimeError("Azure default credential is not initialized.")
+    token = credential.get_token(scope)
+    return token.token

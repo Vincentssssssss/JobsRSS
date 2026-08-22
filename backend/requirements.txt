@@ -10,3 +10,4 @@ apscheduler
 pydantic-settings
 playwright
 cryptography
+azure-identity
