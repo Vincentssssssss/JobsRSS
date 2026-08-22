@@ -1,7 +1,9 @@
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, Optional, Protocol
+from urllib.parse import urlparse
 
 import httpx
 from sqlalchemy import desc
@@ -9,6 +11,8 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.models.job import Job
+
+logger = logging.getLogger(__name__)
 
 
 class LLMClient(Protocol):
@@ -42,12 +46,14 @@ class OpenAICompatibleClient:
         api_key: str,
         model: str,
         base_url: str,
+        api_version: Optional[str],
         timeout_seconds: int,
         verify_tls: bool,
     ) -> None:
         self.api_key = api_key
         self.model = model
         self.base_url = base_url.rstrip("/")
+        self.api_version = api_version
         self.timeout_seconds = timeout_seconds
         self.verify_tls = verify_tls
 
@@ -63,14 +69,16 @@ class OpenAICompatibleClient:
             timeout=self.timeout_seconds,
             verify=self.verify_tls,
             follow_redirects=True,
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-            },
+            headers=_build_auth_headers(self.api_key, self.base_url),
         ) as client:
             response = client.post(
                 f"{self.base_url}/chat/completions",
                 json=payload,
+                params=(
+                    {"api-version": self.api_version}
+                    if self.api_version
+                    else None
+                ),
             )
             response.raise_for_status()
         return _parse_match_result(response.json())
@@ -98,6 +106,7 @@ def create_llm_client(settings: Optional[Settings] = None) -> Optional[LLMClient
         api_key=settings.llm_api_key,
         model=settings.llm_model,
         base_url=base_url,
+        api_version=settings.llm_api_version,
         timeout_seconds=settings.llm_timeout_seconds,
         verify_tls=settings.llm_verify_tls,
     )
@@ -133,8 +142,14 @@ def run_llm_rerank(
             result = client.evaluate_job(job, settings.llm_target_profile)
             _apply_match(job, result, client.model)
             stats.updated += 1
-        except Exception:
+        except Exception as exc:
             stats.failed += 1
+            logger.warning(
+                "llm_rerank_item_failed job_id=%s source=%s error=%s",
+                job.id,
+                job.source,
+                str(exc),
+            )
     db.commit()
     return stats
 
@@ -218,3 +233,20 @@ def _normalize_verdict(value: str) -> str:
     if normalized in {"strong_fit", "possible_fit", "not_fit"}:
         return normalized
     return "not_fit"
+
+
+def _build_auth_headers(api_key: str, base_url: str) -> Dict[str, str]:
+    headers = {"Content-Type": "application/json"}
+    if _is_azure_openai_base_url(base_url):
+        headers["api-key"] = api_key
+        return headers
+    headers["Authorization"] = f"Bearer {api_key}"
+    return headers
+
+
+def _is_azure_openai_base_url(base_url: str) -> bool:
+    try:
+        host = (urlparse(base_url).hostname or "").lower()
+    except ValueError:
+        return False
+    return host.endswith(".openai.azure.com")

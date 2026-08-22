@@ -70,6 +70,7 @@ LLM_RERANK_ENABLED=true
 LLM_PROVIDER=openai
 LLM_API_KEY=your_api_key
 LLM_BASE_URL=
+LLM_API_VERSION=
 LLM_MODEL=gpt-4o-mini
 LLM_TIMEOUT_SECONDS=30
 LLM_VERIFY_TLS=true
@@ -88,6 +89,19 @@ LLM_API_KEY=your_dashscope_key
 LLM_MODEL=qwen-plus
 LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 ```
+
+Azure OpenAI example:
+
+```env
+LLM_PROVIDER=openai
+LLM_API_KEY=your_azure_key
+LLM_MODEL=<your-azure-deployment-name>
+LLM_BASE_URL=https://<resource>.openai.azure.com/openai/v1
+LLM_API_VERSION=
+```
+
+When the base URL host ends with `.openai.azure.com`, the reranker
+automatically uses `api-key` authentication header.
 
 API filtering:
 

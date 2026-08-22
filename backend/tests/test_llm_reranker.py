@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.db.session import Base
 from app.matching.llm_reranker import (
     LLMMatchResult,
+    _build_auth_headers,
     resolve_base_url,
     run_llm_rerank,
 )
@@ -61,6 +62,21 @@ def test_resolve_base_url_for_supported_providers():
         == "https://dashscope.aliyuncs.com/compatible-mode/v1"
     )
     assert resolve_base_url("openai", "https://proxy.example/v1") == "https://proxy.example/v1"
+
+
+def test_auth_header_uses_api_key_for_azure_base_url():
+    headers = _build_auth_headers(
+        "secret",
+        "https://foundry0805.openai.azure.com/openai/v1",
+    )
+    assert headers["api-key"] == "secret"
+    assert "Authorization" not in headers
+
+
+def test_auth_header_uses_bearer_for_openai_base_url():
+    headers = _build_auth_headers("secret", "https://api.openai.com/v1")
+    assert headers["Authorization"] == "Bearer secret"
+    assert "api-key" not in headers
 
 
 def test_run_llm_rerank_updates_job_fields():

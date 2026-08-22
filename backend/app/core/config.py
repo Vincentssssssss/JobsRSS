@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     llm_provider: str = "openai"
     llm_api_key: Optional[str] = None
     llm_base_url: Optional[str] = None
+    llm_api_version: Optional[str] = None
     llm_model: str = "gpt-4o-mini"
     llm_timeout_seconds: int = 30
     llm_verify_tls: bool = True
