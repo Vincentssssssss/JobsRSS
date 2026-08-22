@@ -101,6 +101,7 @@ def test_create_llm_client_allows_default_credential_without_api_key(monkeypatch
         llm_base_url="https://foundry0805.services.ai.azure.com/openai/v1",
         llm_model="gpt-5.6-luna",
         llm_api_version=None,
+        llm_temperature=None,
         llm_timeout_seconds=30,
         llm_verify_tls=True,
         llm_azure_use_default_credential=True,

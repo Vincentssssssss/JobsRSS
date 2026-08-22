@@ -47,6 +47,7 @@ class OpenAICompatibleClient:
         model: str,
         base_url: str,
         api_version: Optional[str],
+        temperature: Optional[float],
         timeout_seconds: int,
         verify_tls: bool,
         azure_use_default_credential: bool = False,
@@ -56,6 +57,7 @@ class OpenAICompatibleClient:
         self.model = model
         self.base_url = base_url.rstrip("/")
         self.api_version = api_version
+        self.temperature = temperature
         self.timeout_seconds = timeout_seconds
         self.verify_tls = verify_tls
         self.azure_use_default_credential = azure_use_default_credential
@@ -68,10 +70,11 @@ class OpenAICompatibleClient:
         messages = _build_messages(job, target_profile)
         payload = {
             "model": self.model,
-            "temperature": 0,
             "messages": messages,
             "response_format": {"type": "json_object"},
         }
+        if self.temperature is not None:
+            payload["temperature"] = self.temperature
         with httpx.Client(
             timeout=self.timeout_seconds,
             verify=self.verify_tls,
@@ -123,6 +126,7 @@ def create_llm_client(settings: Optional[Settings] = None) -> Optional[LLMClient
         model=settings.llm_model,
         base_url=base_url,
         api_version=settings.llm_api_version,
+        temperature=settings.llm_temperature,
         timeout_seconds=settings.llm_timeout_seconds,
         verify_tls=settings.llm_verify_tls,
         azure_use_default_credential=settings.llm_azure_use_default_credential,

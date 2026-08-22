@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     llm_azure_use_default_credential: bool = False
     llm_azure_scope: str = "https://ai.azure.com/.default"
     llm_model: str = "gpt-4o-mini"
+    llm_temperature: Optional[float] = None
     llm_timeout_seconds: int = 30
     llm_verify_tls: bool = True
     llm_rerank_interval_minutes: int = 30
