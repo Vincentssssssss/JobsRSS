@@ -62,7 +62,7 @@ export default function HomePage() {
   const [query, setQuery] = useState("");
   const [source, setSource] = useState("");
   const [minScore, setMinScore] = useState(0);
-  const [minLlmScore, setMinLlmScore] = useState("");
+  const [minLlmScore, setMinLlmScore] = useState("60");
   const [limit, setLimit] = useState(500);
   const [locationCategory, setLocationCategory] = useState("");
   const [selectedJob, setSelectedJob] = useState<JobDetail | null>(null);
@@ -246,7 +246,7 @@ export default function HomePage() {
           </select>
         </div>
         <div className="field">
-          <label>Min Score</label>
+          <label>Rule Score</label>
           <select value={String(minScore)} onChange={(event) => setMinScore(Number(event.target.value))}>
             <option value="0">0</option>
             <option value="60">60</option>
@@ -263,7 +263,7 @@ export default function HomePage() {
           </select>
         </div>
         <div className="field">
-          <label>Min LLM Score</label>
+          <label>AI Score</label>
           <select
             value={minLlmScore}
             onChange={(event) => setMinLlmScore(event.target.value)}
@@ -325,7 +325,9 @@ export default function HomePage() {
                 {job.posted_at && <p className="job-meta">Posted: {new Date(job.posted_at).toLocaleString()}</p>}
               </div>
               <div className="job-right">
-                <span className="score">{Math.round(job.match_score)}</span>
+                <span className="score">
+                  {job.llm_fit_score != null ? `AI ${Math.round(job.llm_fit_score)}` : `Rule ${Math.round(job.match_score)}`}
+                </span>
                 <a className="button small" href={job.apply_url} target="_blank">
                   Apply Now
                 </a>
