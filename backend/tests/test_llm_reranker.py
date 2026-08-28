@@ -30,16 +30,31 @@ class FakeLLMClient:
         )
 
 
-def _make_job(*, source_job_id: str, match_score: float, llm_fit_score=None) -> Job:
+class FailIfCalledClient:
+    model = "never-call"
+
+    def evaluate_job(self, job: Job, target_profile: str) -> LLMMatchResult:
+        raise AssertionError("LLM client should not be called for early-career jobs")
+
+
+def _make_job(
+    *,
+    source_job_id: str,
+    match_score: float,
+    llm_fit_score=None,
+    description: str = "Responsible for cloud security architecture and threat detection.",
+    title: str = "Cloud Security Engineer",
+    source: str = "official_alibaba",
+) -> Job:
     now = datetime.now(timezone.utc)
     return Job(
-        source="official_alibaba",
+        source=source,
         source_job_id=source_job_id,
         company="Alibaba",
-        title="Cloud Security Engineer",
+        title=title,
         location="上海",
         country="China",
-        description="Responsible for cloud security architecture and threat detection.",
+        description=description,
         apply_url=f"https://example.com/{source_job_id}",
         source_url=f"https://example.com/{source_job_id}",
         posted_at=now,
@@ -168,3 +183,41 @@ def test_run_llm_rerank_respects_score_and_unscored_filters():
         assert eligible.llm_fit_score == 84
         assert already.llm_fit_score == 60
         assert low.llm_fit_score is None
+
+
+def test_run_llm_rerank_hard_rejects_early_career_jobs_without_llm_call():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    settings = SimpleNamespace(
+        llm_min_rule_score=0,
+        llm_only_unscored=True,
+        llm_max_jobs_per_run=10,
+        llm_target_profile="Experienced cybersecurity architect roles only",
+        llm_reject_early_career=True,
+    )
+
+    with Session(engine) as db:
+        db.add(
+            _make_job(
+                source_job_id="campus-1",
+                match_score=80,
+                title="安全技术工程师",
+                description=(
+                    "Basic Information\n"
+                    "Graduation Dates: 2026-11-01 - 2027-10-31\n"
+                    "Hiring Program: Alibaba 2027 Graduate Recruitment"
+                ),
+                source="official_alibaba",
+            )
+        )
+        db.commit()
+
+        stats = run_llm_rerank(db, settings=settings, client=FailIfCalledClient())
+        stored = db.query(Job).filter(Job.source_job_id == "campus-1").one()
+
+        assert stats.scanned == 1
+        assert stats.updated == 1
+        assert stats.failed == 0
+        assert stored.llm_fit_score == 0
+        assert stored.llm_verdict == "not_fit"
+        assert stored.llm_role_family == "early_career_program"

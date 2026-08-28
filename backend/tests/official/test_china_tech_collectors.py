@@ -93,6 +93,8 @@ def test_parses_alibaba_campus_position_detail():
             "workLocations": ["上海"],
             "categoryName": "技术",
             "batchName": "校园招聘",
+            "graduationDates": "2026-11-01 - 2027-10-31",
+            "hiringProgram": "Alibaba 2027 Graduate Recruitment",
         }
     }
 
@@ -101,3 +103,5 @@ def test_parses_alibaba_campus_position_detail():
     assert job["source_job_id"] == "199903220038"
     assert job["location_category"] == LocationCategory.CONFIRMED_SHANGHAI.value
     assert "DevSecOps" in job["description"]
+    assert "Batch Name: 校园招聘" in job["description"]
+    assert "Graduation Dates: 2026-11-01 - 2027-10-31" in job["description"]

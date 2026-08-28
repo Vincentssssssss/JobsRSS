@@ -117,11 +117,15 @@ def parse_alibaba_position(payload: Dict[str, Any]) -> Dict[str, Any] | None:
     category = classify_official_location(location)
     if category == LocationCategory.EXCLUDED:
         return None
-    description = "\n\n".join(
+    body_sections = [
         _clean_html(str(value))
         for value in (item.get("description"), item.get("requirement"))
         if value
-    )
+    ]
+    metadata_lines = _build_alibaba_metadata_lines(item)
+    if metadata_lines:
+        body_sections.append("\n".join(metadata_lines))
+    description = "\n\n".join(section for section in body_sections if section)
     source_url = f"{ALIBABA_PORTAL}/{source_job_id}"
     company = "Alibaba / Alibaba Cloud"
     return {
@@ -160,3 +164,17 @@ def _alibaba_batches(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 def _clean_html(value: str) -> str:
     return BeautifulSoup(value, "html.parser").get_text("\n", strip=True)
+
+
+def _build_alibaba_metadata_lines(item: Dict[str, Any]) -> List[str]:
+    metadata_fields = [
+        ("Batch Name", item.get("batchName")),
+        ("Hiring Program", item.get("hiringProgram") or item.get("projectName")),
+        ("Graduation Dates", item.get("graduationDates") or item.get("graduationDate")),
+    ]
+    lines: List[str] = []
+    for label, raw_value in metadata_fields:
+        value = str(raw_value or "").strip()
+        if value:
+            lines.append(f"{label}: {value}")
+    return lines

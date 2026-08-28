@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     llm_max_jobs_per_run: int = 60
     llm_min_rule_score: float = 20
     llm_only_unscored: bool = True
+    llm_reject_early_career: bool = True
     llm_target_profile: str = (
         "Senior cybersecurity roles focused on cloud security, application security, "
         "IAM/PAM, SOC/SIEM, threat detection, vulnerability management, and "

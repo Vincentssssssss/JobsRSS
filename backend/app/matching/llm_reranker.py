@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, Optional, Protocol
@@ -13,6 +14,31 @@ from app.core.config import Settings, get_settings
 from app.models.job import Job
 
 logger = logging.getLogger(__name__)
+_EARLY_CAREER_REGEXES = [
+    re.compile(r"\b(?:20\d{2}|21\d{2})\s*(?:届|graduate|graduates?)\b", re.IGNORECASE),
+    re.compile(r"\bgraduation\s*dates?\b", re.IGNORECASE),
+]
+_EARLY_CAREER_KEYWORDS = {
+    "校招",
+    "校园招聘",
+    "应届",
+    "应届生",
+    "实习",
+    "实习生",
+    "管培生",
+    "fresh graduate",
+    "new grad",
+    "graduate recruitment",
+    "campus recruitment",
+    "campus hire",
+    "campus hiring",
+    "campus talent",
+    "entry level",
+    "internship",
+    "intern",
+    "graduate program",
+    "management trainee",
+}
 
 
 class LLMClient(Protocol):
@@ -160,6 +186,19 @@ def run_llm_rerank(
 
     for job in jobs:
         stats.scanned += 1
+        early_career_markers = (
+            _early_career_markers(job)
+            if getattr(settings, "llm_reject_early_career", True)
+            else []
+        )
+        if early_career_markers:
+            _apply_match(
+                job,
+                _build_early_career_reject_result(early_career_markers),
+                "heuristic-early-career-guard",
+            )
+            stats.updated += 1
+            continue
         try:
             result = client.evaluate_job(job, settings.llm_target_profile)
             _apply_match(job, result, client.model)
@@ -255,6 +294,50 @@ def _normalize_verdict(value: str) -> str:
     if normalized in {"strong_fit", "possible_fit", "not_fit"}:
         return normalized
     return "not_fit"
+
+
+def _early_career_markers(job: Job) -> list[str]:
+    haystack = " ".join(
+        part
+        for part in [
+            str(job.title or ""),
+            str(job.description or ""),
+            str(job.company or ""),
+            str(job.apply_url or ""),
+            str(job.source_url or ""),
+        ]
+        if part
+    )
+    lowered = haystack.lower()
+
+    markers = [keyword for keyword in sorted(_EARLY_CAREER_KEYWORDS) if keyword in lowered]
+    for pattern in _EARLY_CAREER_REGEXES:
+        if pattern.search(haystack):
+            markers.append(pattern.pattern)
+
+    if "campus-talent.alibaba.com" in lowered:
+        markers.append("alibaba-campus-portal")
+
+    deduped: list[str] = []
+    for marker in markers:
+        if marker not in deduped:
+            deduped.append(marker)
+    return deduped
+
+
+def _build_early_career_reject_result(markers: Iterable[str]) -> LLMMatchResult:
+    marker_text = ", ".join(markers)
+    return LLMMatchResult(
+        fit_score=0.0,
+        verdict="not_fit",
+        role_family="early_career_program",
+        match_reasons=[],
+        reject_reasons=[
+            "Hard rejected as early-career/campus role.",
+            f"Detected markers: {marker_text}",
+        ],
+        missing_skills=[],
+    )
 
 
 def _build_auth_headers(api_key: str, base_url: str) -> Dict[str, str]:
