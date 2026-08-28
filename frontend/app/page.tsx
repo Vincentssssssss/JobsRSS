@@ -63,6 +63,7 @@ export default function HomePage() {
   const [source, setSource] = useState("");
   const [minScore, setMinScore] = useState(0);
   const [minLlmScore, setMinLlmScore] = useState("60");
+  const [aiPrecisionMode, setAiPrecisionMode] = useState(true);
   const [limit, setLimit] = useState(500);
   const [locationCategory, setLocationCategory] = useState("");
   const [selectedJob, setSelectedJob] = useState<JobDetail | null>(null);
@@ -71,7 +72,7 @@ export default function HomePage() {
   const loadJobs = async () => {
     const params = new URLSearchParams();
     params.set("limit", String(limit));
-    params.set("min_score", String(minScore));
+    params.set("min_score", aiPrecisionMode ? "0" : String(minScore));
     if (query.trim()) {
       params.set("q", query.trim());
     }
@@ -81,7 +82,10 @@ export default function HomePage() {
     if (locationCategory) {
       params.set("location_category", locationCategory);
     }
-    if (minLlmScore) {
+    if (aiPrecisionMode) {
+      params.set("llm_verdict", "strong_fit,possible_fit");
+      params.set("min_llm_score", minLlmScore || "60");
+    } else if (minLlmScore) {
       params.set("min_llm_score", minLlmScore);
     }
     try {
@@ -113,7 +117,7 @@ export default function HomePage() {
 
   const loadCount = async () => {
     const params = new URLSearchParams();
-    params.set("min_score", String(minScore));
+    params.set("min_score", aiPrecisionMode ? "0" : String(minScore));
     if (query.trim()) {
       params.set("q", query.trim());
     }
@@ -123,7 +127,10 @@ export default function HomePage() {
     if (locationCategory) {
       params.set("location_category", locationCategory);
     }
-    if (minLlmScore) {
+    if (aiPrecisionMode) {
+      params.set("llm_verdict", "strong_fit,possible_fit");
+      params.set("min_llm_score", minLlmScore || "60");
+    } else if (minLlmScore) {
       params.set("min_llm_score", minLlmScore);
     }
     try {
@@ -178,7 +185,7 @@ export default function HomePage() {
       await Promise.all([loadJobs(), loadSummary(), loadCount()]);
     };
     void load();
-  }, [query, source, minScore, minLlmScore, limit, locationCategory]);
+  }, [query, source, minScore, minLlmScore, aiPrecisionMode, limit, locationCategory]);
 
   useEffect(() => {
     void loadOfficialSources();
@@ -246,8 +253,31 @@ export default function HomePage() {
           </select>
         </div>
         <div className="field">
+          <label>AI Precision Mode</label>
+          <select
+            value={aiPrecisionMode ? "on" : "off"}
+            onChange={(event) => {
+              const enabled = event.target.value === "on";
+              setAiPrecisionMode(enabled);
+              if (enabled) {
+                setMinScore(0);
+                if (!minLlmScore) {
+                  setMinLlmScore("60");
+                }
+              }
+            }}
+          >
+            <option value="on">On (AI-only final filter)</option>
+            <option value="off">Off (manual rule + AI mix)</option>
+          </select>
+        </div>
+        <div className="field">
           <label>Rule Score</label>
-          <select value={String(minScore)} onChange={(event) => setMinScore(Number(event.target.value))}>
+          <select
+            disabled={aiPrecisionMode}
+            value={String(minScore)}
+            onChange={(event) => setMinScore(Number(event.target.value))}
+          >
             <option value="0">0</option>
             <option value="60">60</option>
             <option value="80">80</option>

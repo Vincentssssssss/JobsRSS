@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import desc, func
+from sqlalchemy import desc, false, func
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -11,6 +11,18 @@ from app.presentation.description_sections import split_description_sections
 from app.schemas.job import JobDetail, JobOut
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
+ALLOWED_LLM_VERDICTS = {"strong_fit", "possible_fit", "not_fit"}
+
+
+def _parse_llm_verdicts(value: Optional[str]) -> list[str]:
+    if not value:
+        return []
+    verdicts = []
+    for item in value.split(","):
+        normalized = item.strip().lower()
+        if normalized and normalized in ALLOWED_LLM_VERDICTS and normalized not in verdicts:
+            verdicts.append(normalized)
+    return verdicts
 
 
 @router.get("", response_model=List[JobOut])
@@ -26,6 +38,7 @@ def list_jobs(
     llm_verdict: Optional[str] = Query(default=None),
     status: Optional[str] = Query(default="active"),
 ):
+    llm_verdicts = _parse_llm_verdicts(llm_verdict)
     query = db.query(Job).filter(Job.match_score >= min_score)
     if status:
         query = query.filter(Job.status == status)
@@ -39,7 +52,10 @@ def list_jobs(
     if min_llm_score is not None:
         query = query.filter(Job.llm_fit_score.is_not(None), Job.llm_fit_score >= min_llm_score)
     if llm_verdict:
-        query = query.filter(Job.llm_verdict == llm_verdict)
+        if llm_verdicts:
+            query = query.filter(Job.llm_verdict.in_(llm_verdicts))
+        else:
+            query = query.filter(false())
     return query.order_by(desc(Job.posted_at), desc(Job.id)).offset(offset).limit(limit).all()
 
 
@@ -54,6 +70,7 @@ def jobs_count(
     llm_verdict: Optional[str] = Query(default=None),
     status: Optional[str] = Query(default="active"),
 ):
+    llm_verdicts = _parse_llm_verdicts(llm_verdict)
     query = db.query(func.count(Job.id)).filter(Job.match_score >= min_score)
     if status:
         query = query.filter(Job.status == status)
@@ -67,7 +84,10 @@ def jobs_count(
     if min_llm_score is not None:
         query = query.filter(Job.llm_fit_score.is_not(None), Job.llm_fit_score >= min_llm_score)
     if llm_verdict:
-        query = query.filter(Job.llm_verdict == llm_verdict)
+        if llm_verdicts:
+            query = query.filter(Job.llm_verdict.in_(llm_verdicts))
+        else:
+            query = query.filter(false())
     total = query.scalar() or 0
     return {"total": total}
 
