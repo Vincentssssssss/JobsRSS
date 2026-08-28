@@ -85,12 +85,11 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
                     for card in cards[:25]:
                         detail = self._collect_detail(context, card["job_url"])
                         merged = self._merge_job_data(card, detail, fallback_location=fallback_location)
-                        if (
-                            self.settings.linkedin_strict_location_filter
-                            and not self._is_allowed_location(
-                                merged["location"],
-                                self.settings.csv_items(self.settings.linkedin_allowed_locations),
-                            )
+                        if not self._passes_strict_location_filter(
+                            merged,
+                            self.settings.csv_items(
+                                self.settings.linkedin_allowed_locations
+                            ),
                         ):
                             continue
                         source_job_id = merged["source_job_id"]
@@ -244,8 +243,11 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
             or self._company_from_job_url(job_url)
             or "Unknown Company"
         )
-        location = detail["location"] or card["location"] or fallback_location or "Unknown"
-        location = self._normalize_location(location)
+        location, location_source = self._resolve_location(
+            detail_location=detail["location"],
+            card_location=card["location"],
+            fallback_location=fallback_location,
+        )
         description = self._clean_description(detail["description"]) or f"{title} at {company} in {location}"
         base = {
             "title": title,
@@ -260,7 +262,11 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
         enriched = merge_job_fields(base, detail.get("official"))
         title = enriched["title"]
         company = enriched["company"]
-        location = self._normalize_location(enriched["location"])
+        enriched_location = self._normalize_location(enriched["location"])
+        if enriched_location:
+            location = enriched_location
+            if detail.get("official") is not None:
+                location_source = "official"
         description = self._clean_description(enriched["description"]) or f"{title} at {company} in {location}"
         source_job_id = self.extract_source_job_id(job_url, title, company, location)
         return {
@@ -273,6 +279,7 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
             "apply_url": enriched["apply_url"],
             "source_url": job_url,
             "posted_at": enriched.get("posted_at"),
+            "location_source": location_source,
             "enrichment_source": (
                 detail["official"].provider if detail.get("official") else None
             ),
@@ -445,6 +452,35 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
             if head:
                 return head
         return text
+
+    def _resolve_location(
+        self,
+        *,
+        detail_location: str,
+        card_location: str,
+        fallback_location: str,
+    ) -> tuple[str, str]:
+        normalized_detail = self._normalize_location(detail_location)
+        if normalized_detail:
+            return normalized_detail, "detail"
+        normalized_card = self._normalize_location(card_location)
+        if normalized_card:
+            return normalized_card, "card"
+        normalized_fallback = self._normalize_location(fallback_location)
+        if normalized_fallback and normalized_fallback.lower() != "unknown":
+            return normalized_fallback, "fallback"
+        return "Unknown", "unknown"
+
+    def _passes_strict_location_filter(
+        self,
+        merged: Dict[str, Any],
+        allowed_locations: List[str],
+    ) -> bool:
+        if not self.settings.linkedin_strict_location_filter:
+            return True
+        if merged.get("location_source") == "fallback":
+            return False
+        return self._is_allowed_location(merged.get("location", ""), allowed_locations)
 
     def _is_allowed_location(self, location: str, allowed_locations: List[str]) -> bool:
         normalized = self.clean_text(location).lower()

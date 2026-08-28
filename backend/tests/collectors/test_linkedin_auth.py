@@ -55,3 +55,38 @@ def test_strict_location_filter_accepts_only_configured_markets():
     assert not collector._is_allowed_location("Shenzhen", allowed)
     assert not collector._is_allowed_location("Remote - APAC", allowed)
     assert not collector._is_allowed_location("Unknown", allowed)
+
+
+def test_strict_filter_rejects_search_url_fallback_location():
+    collector = LinkedInAuthCollector()
+    allowed = ["Shanghai"]
+    merged = {
+        "location": "Shanghai",
+        "location_source": "fallback",
+    }
+
+    assert not collector._passes_strict_location_filter(merged, allowed)
+
+
+def test_merge_prefers_explicit_detail_location_over_search_fallback():
+    collector = LinkedInAuthCollector()
+    card = {
+        "title": "IAM Lead",
+        "company": "ICF",
+        "location": "",
+        "job_url": "https://www.linkedin.com/jobs/view/123456789/",
+        "posted_at": None,
+    }
+    detail = {
+        "title": "IAM Lead",
+        "company": "ICF",
+        "location": "Richmond, VA",
+        "description": "IAM leadership role.",
+        "external_apply_url": "",
+        "official": None,
+    }
+
+    merged = collector._merge_job_data(card, detail, fallback_location="Shanghai")
+
+    assert merged["location"] == "Richmond"
+    assert merged["location_source"] == "detail"
