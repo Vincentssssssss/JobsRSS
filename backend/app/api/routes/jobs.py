@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models.job import Job
+from app.presentation.description_sections import split_description_sections
 from app.schemas.job import JobDetail, JobOut
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -129,4 +130,9 @@ def get_job_detail(job_id: int, db: Session = Depends(get_db)):
     job = db.query(Job).filter(Job.id == job_id).first()
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
-    return job
+    detail = JobDetail.model_validate(job)
+    detail.description_sections = [
+        {"title": section.title, "lines": section.lines}
+        for section in split_description_sections(job.description)
+    ]
+    return detail

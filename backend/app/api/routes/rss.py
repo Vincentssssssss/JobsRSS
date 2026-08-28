@@ -1,4 +1,5 @@
 from datetime import timezone
+import re
 
 from fastapi import APIRouter, Depends, Response
 from feedgen.feed import FeedGenerator
@@ -10,6 +11,12 @@ from app.db.session import get_db
 from app.models.job import Job
 
 router = APIRouter(prefix="/rss", tags=["rss"])
+RSS_MEDIA_TYPE = "application/rss+xml; charset=utf-8"
+_INVALID_XML_CHARS = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F]")
+
+
+def _sanitize_feed_text(value: str) -> str:
+    return _INVALID_XML_CHARS.sub("", value or "")
 
 
 def _build_feed(title: str, jobs: list[Job]) -> str:
@@ -23,13 +30,22 @@ def _build_feed(title: str, jobs: list[Job]) -> str:
     for job in jobs:
         fe = fg.add_entry()
         fe.id(f"{job.source}:{job.source_job_id}")
-        fe.title(f"{job.company} - {job.title} ({job.location})")
+        fe.title(
+            _sanitize_feed_text(f"{job.company} - {job.title} ({job.location})")
+        )
         fe.link(href=job.apply_url)
-        fe.description(job.description[:500])
+        fe.description(_sanitize_feed_text(job.description[:500]))
         if job.posted_at:
             fe.pubDate(job.posted_at.astimezone(timezone.utc))
 
     return fg.rss_str(pretty=True).decode("utf-8")
+
+
+def _rss_response(xml: str) -> Response:
+    return Response(
+        content=xml.encode("utf-8"),
+        media_type=RSS_MEDIA_TYPE,
+    )
 
 
 @router.get("/all.xml")
@@ -42,7 +58,7 @@ def rss_all(db: Session = Depends(get_db)):
         .all()
     )
     xml = _build_feed("all", jobs)
-    return Response(content=xml, media_type="application/rss+xml")
+    return _rss_response(xml)
 
 
 @router.get("/high-match.xml")
@@ -59,7 +75,7 @@ def rss_high_match(db: Session = Depends(get_db)):
         .all()
     )
     xml = _build_feed("high-match", jobs)
-    return Response(content=xml, media_type="application/rss+xml")
+    return _rss_response(xml)
 
 
 @router.get("/company/{company}.xml")
@@ -75,4 +91,4 @@ def rss_by_company(company: str, db: Session = Depends(get_db)):
         .all()
     )
     xml = _build_feed(f"company/{company}", jobs)
-    return Response(content=xml, media_type="application/rss+xml")
+    return _rss_response(xml)

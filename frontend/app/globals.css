@@ -270,6 +270,27 @@ body {
   white-space: pre-wrap;
 }
 
+.description-sections {
+  display: grid;
+  gap: 12px;
+}
+
+.description-section h4 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+
+.description-section ul {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}
+
+.description-section li {
+  line-height: 1.5;
+}
+
 .detail-loading {
   margin: 0;
   color: var(--muted);

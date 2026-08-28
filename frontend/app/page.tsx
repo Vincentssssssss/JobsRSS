@@ -17,6 +17,11 @@ type JobCard = {
   llm_role_family?: string | null;
 };
 
+type DescriptionSection = {
+  title: string;
+  lines: string[];
+};
+
 type JobDetail = JobCard & {
   description: string;
   country?: string | null;
@@ -29,6 +34,7 @@ type JobDetail = JobCard & {
   llm_missing_skills?: string | null;
   llm_model?: string | null;
   llm_last_evaluated_at?: string | null;
+  description_sections?: DescriptionSection[] | null;
 };
 
 type SummaryResponse = {
@@ -361,7 +367,22 @@ export default function HomePage() {
                 </div>
                 <div className="detail-description">
                   <h3>Description</h3>
-                  <p>{selectedJob.description || "No description available."}</p>
+                  {selectedJob.description_sections && selectedJob.description_sections.length > 0 ? (
+                    <div className="description-sections">
+                      {selectedJob.description_sections.map((section, index) => (
+                        <section key={`${section.title}-${index}`} className="description-section">
+                          <h4>{section.title}</h4>
+                          <ul>
+                            {section.lines.map((line, lineIndex) => (
+                              <li key={`${index}-${lineIndex}`}>{line}</li>
+                            ))}
+                          </ul>
+                        </section>
+                      ))}
+                    </div>
+                  ) : (
+                    <p>{selectedJob.description || "No description available."}</p>
+                  )}
                 </div>
                 {selectedJob.llm_match_reasons && (
                   <div className="detail-description">

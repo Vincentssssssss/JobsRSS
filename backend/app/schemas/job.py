@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -43,6 +43,12 @@ class JobOut(BaseModel):
     status: str
     location_category: str
 
+
+class DescriptionSection(BaseModel):
+    title: str
+    lines: List[str]
+
+
 class JobDetail(JobOut):
     country: Optional[str]
     description: str
@@ -55,3 +61,4 @@ class JobDetail(JobOut):
     llm_missing_skills: Optional[str]
     llm_model: Optional[str]
     llm_last_evaluated_at: Optional[datetime]
+    description_sections: List[DescriptionSection] = Field(default_factory=list)
