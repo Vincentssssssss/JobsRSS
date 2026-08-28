@@ -7,7 +7,7 @@ from typing import Any, Dict, Iterable, Optional, Protocol
 from urllib.parse import urlparse
 
 import httpx
-from sqlalchemy import desc
+from sqlalchemy import and_, desc, or_
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
@@ -181,7 +181,12 @@ def run_llm_rerank(
         .order_by(desc(Job.posted_at), desc(Job.id))
     )
     if settings.llm_only_unscored:
-        query = query.filter(Job.llm_fit_score.is_(None))
+        query = query.filter(
+            or_(
+                Job.llm_fit_score.is_(None),
+                _early_career_candidates_filter(settings),
+            )
+        )
     jobs = query.limit(settings.llm_max_jobs_per_run).all()
 
     for job in jobs:
@@ -337,6 +342,25 @@ def _build_early_career_reject_result(markers: Iterable[str]) -> LLMMatchResult:
             f"Detected markers: {marker_text}",
         ],
         missing_skills=[],
+    )
+
+
+def _early_career_candidates_filter(settings: Settings | Any):
+    if not getattr(settings, "llm_reject_early_career", True):
+        return Job.id.is_(None)
+    return and_(
+        Job.llm_fit_score.is_not(None),
+        or_(Job.llm_verdict.is_(None), Job.llm_verdict != "not_fit"),
+        or_(
+            Job.title.ilike("%校招%"),
+            Job.title.ilike("%应届%"),
+            Job.title.ilike("%实习%"),
+            Job.description.ilike("%校园招聘%"),
+            Job.description.ilike("%Graduation Dates%"),
+            Job.description.ilike("%Graduate Recruitment%"),
+            Job.apply_url.ilike("%campus-talent.alibaba.com%"),
+            Job.source_url.ilike("%campus-talent.alibaba.com%"),
+        ),
     )
 
 

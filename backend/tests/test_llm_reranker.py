@@ -221,3 +221,41 @@ def test_run_llm_rerank_hard_rejects_early_career_jobs_without_llm_call():
         assert stored.llm_fit_score == 0
         assert stored.llm_verdict == "not_fit"
         assert stored.llm_role_family == "early_career_program"
+
+
+def test_run_llm_rerank_rechecks_scored_early_career_jobs_when_only_unscored_true():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    settings = SimpleNamespace(
+        llm_min_rule_score=0,
+        llm_only_unscored=True,
+        llm_max_jobs_per_run=10,
+        llm_target_profile="Experienced cybersecurity architect roles only",
+        llm_reject_early_career=True,
+    )
+
+    with Session(engine) as db:
+        db.add(
+            _make_job(
+                source_job_id="campus-2",
+                match_score=80,
+                llm_fit_score=82,
+                title="安全技术工程师",
+                description=(
+                    "Basic Information\n"
+                    "Graduation Dates: 2026-11-01 - 2027-10-31\n"
+                    "Hiring Program: Alibaba 2027 Graduate Recruitment"
+                ),
+                source="official_alibaba",
+            )
+        )
+        db.commit()
+
+        stats = run_llm_rerank(db, settings=settings, client=FailIfCalledClient())
+        stored = db.query(Job).filter(Job.source_job_id == "campus-2").one()
+
+        assert stats.scanned == 1
+        assert stats.updated == 1
+        assert stats.failed == 0
+        assert stored.llm_fit_score == 0
+        assert stored.llm_verdict == "not_fit"
