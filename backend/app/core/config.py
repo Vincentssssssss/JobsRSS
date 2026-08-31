@@ -75,6 +75,7 @@ class Settings(BaseSettings):
     linkedin_auth_username: Optional[str] = None
     linkedin_auth_password: Optional[str] = None
     linkedin_auth_storage_state_path: Optional[str] = None
+    linkedin_require_storage_state: bool = True
     linkedin_search_urls: str = ""
     linkedin_polling_interval_minutes: int = 20
     linkedin_auth_stale_after_days: int = 14

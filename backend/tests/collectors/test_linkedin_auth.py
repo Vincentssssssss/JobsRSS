@@ -161,6 +161,27 @@ def test_resolve_storage_state_path_returns_value_when_file_exists(monkeypatch, 
     assert collector._resolve_storage_state_path() == str(state_file)
 
 
+def test_fetch_raw_skips_when_storage_state_required_but_missing(monkeypatch):
+    collector = LinkedInAuthCollector()
+    monkeypatch.setattr(collector.settings, "linkedin_auth_enabled", True)
+    monkeypatch.setattr(
+        collector.settings,
+        "linkedin_search_urls",
+        "https://www.linkedin.com/jobs/search/?keywords=security&location=Shanghai",
+    )
+    monkeypatch.setattr(
+        collector.settings,
+        "linkedin_auth_storage_state_path",
+        "/tmp/non-existent-linkedin-state.json",
+    )
+    monkeypatch.setattr(collector.settings, "linkedin_require_storage_state", True)
+
+    items = collector.fetch_raw()
+
+    assert items == []
+    assert collector.skip_publish_due_to_missing_state is True
+
+
 def test_clean_description_prefers_role_content_over_company_intro():
     collector = LinkedInAuthCollector()
     raw = """

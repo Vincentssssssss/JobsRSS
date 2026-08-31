@@ -138,6 +138,7 @@ Key `.env` fields:
 - LinkedIn:
   - `LINKEDIN_AUTH_ENABLED=true`
   - `LINKEDIN_AUTH_STORAGE_STATE_PATH=/absolute/path/to/linkedin_state.json`
+  - `LINKEDIN_REQUIRE_STORAGE_STATE=true`
   - `LINKEDIN_SEARCH_URLS=https://www.linkedin.com/jobs/search/?keywords=Cloud%20Security%20Architect&location=Hong%20Kong`
 - 51job:
   - `JOB51_AUTH_ENABLED=true`
@@ -185,6 +186,48 @@ Configuration:
 
 With strict filtering enabled, LinkedIn jobs outside Singapore, Hong Kong,
 Shanghai, Jiangsu, and Zhejiang are discarded before database ingestion.
+
+## Refreshing LinkedIn Login State
+
+Start a dedicated Chrome debugging session:
+
+macOS:
+
+```bash
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  --remote-debugging-port=9222 \
+  --user-data-dir=/tmp/chrome-jobsrss-profile
+```
+
+Linux:
+
+```bash
+google-chrome \
+  --remote-debugging-port=9222 \
+  --user-data-dir=/tmp/chrome-jobsrss-profile
+```
+
+Log in to LinkedIn in that browser window, then export state:
+
+```bash
+cd backend
+source .venv/bin/activate
+python scripts/export_storage_state.py \
+  --site linkedin \
+  --out ../secrets/linkedin_state.json
+```
+
+Set `.env`:
+
+```env
+LINKEDIN_AUTH_ENABLED=true
+LINKEDIN_AUTH_STORAGE_STATE_PATH=/secrets/linkedin_state.json
+LINKEDIN_REQUIRE_STORAGE_STATE=true
+```
+
+When `LINKEDIN_REQUIRE_STORAGE_STATE=true` and the state file is missing, the
+LinkedIn collector is skipped safely and existing `linkedin_auth` active jobs
+are closed to avoid publishing stale cached results.
 
 ## Refreshing Liepin Login State
 

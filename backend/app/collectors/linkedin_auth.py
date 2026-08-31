@@ -119,6 +119,7 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
 
     def __init__(self) -> None:
         super().__init__()
+        self.skip_publish_due_to_missing_state = False
         self.external_enricher = ExternalJobEnricher(
             timeout_seconds=self.settings.linkedin_external_enrichment_timeout_seconds
         )
@@ -151,6 +152,15 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
         search_urls = self.get_search_urls()
         if not search_urls:
             return []
+        state_path = self._resolve_storage_state_path()
+        self.skip_publish_due_to_missing_state = False
+        if self.settings.linkedin_require_storage_state and not state_path:
+            self.skip_publish_due_to_missing_state = True
+            logger.warning(
+                "collector_skipped source=%s reason=missing_storage_state required=true",
+                self.meta.source_name,
+            )
+            return []
 
         from playwright.sync_api import sync_playwright
 
@@ -158,7 +168,6 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True, args=["--ignore-certificate-errors"])
             context_args: Dict[str, Any] = {"ignore_https_errors": True}
-            state_path = self._resolve_storage_state_path()
             if state_path:
                 context_args["storage_state"] = state_path
             context = browser.new_context(**context_args)

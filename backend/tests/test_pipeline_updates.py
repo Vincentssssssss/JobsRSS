@@ -40,6 +40,25 @@ class StubOfficialCollector(StubCollector):
     )
 
 
+class StubLinkedInMissingStateCollector(BaseCollector):
+    meta = CollectorMeta(
+        source_name="linkedin_auth",
+        source_type="job_platform",
+        collection_method="test",
+        polling_interval_minutes=20,
+    )
+    skip_publish_due_to_missing_state = True
+
+    def fetch_raw(self):
+        return []
+
+    def normalize(self, raw):
+        raise NotImplementedError
+
+    def collect(self):
+        return []
+
+
 def test_existing_job_receives_enriched_company_country_and_posted_time():
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
@@ -252,6 +271,40 @@ def test_stale_linkedin_job_is_closed_after_successful_linkedin_run():
 
         stale = db.query(Job).filter(Job.source_job_id == "old-li").one()
         assert stale.status == "closed"
+
+
+def test_linkedin_jobs_are_closed_when_state_missing_flag_is_set():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    now = datetime.now(timezone.utc)
+
+    with Session(engine) as db:
+        db.add(
+            Job(
+                source="linkedin_auth",
+                source_job_id="li-active",
+                company="Acme",
+                title="Security Architect",
+                location="Shanghai",
+                country="China",
+                description="Existing job",
+                apply_url="https://www.linkedin.com/jobs/view/123/",
+                source_url="https://www.linkedin.com/jobs/view/123/",
+                posted_at=now,
+                updated_at=now,
+                first_seen_at=now,
+                last_seen_at=now,
+                content_hash="li-active",
+                match_score=80,
+                status="active",
+            )
+        )
+        db.commit()
+
+        ingest_collector(db, StubLinkedInMissingStateCollector())
+        stored = db.query(Job).filter(Job.source_job_id == "li-active").one()
+
+        assert stored.status == "closed"
 
 
 def test_closed_job_does_not_suppress_new_repost_with_new_source_id():

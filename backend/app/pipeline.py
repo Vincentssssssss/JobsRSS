@@ -136,6 +136,15 @@ def ingest_collector(db: Session, collector: BaseCollector) -> IngestStats:
             .update({"status": "closed"}, synchronize_session=False)
         )
     if collector.meta.source_name == "linkedin_auth":
+        if getattr(collector, "skip_publish_due_to_missing_state", False):
+            (
+                db.query(Job)
+                .filter(
+                    Job.source == "linkedin_auth",
+                    Job.status == "active",
+                )
+                .update({"status": "closed"}, synchronize_session=False)
+            )
         cutoff = datetime.now(timezone.utc) - timedelta(
             days=get_settings().linkedin_auth_stale_after_days
         )
