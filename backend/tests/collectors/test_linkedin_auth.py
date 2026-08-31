@@ -108,13 +108,52 @@ def test_merge_prefers_explicit_detail_location_over_search_fallback():
 def test_collect_detail_prefers_jsonld_location_when_selectors_conflict():
     collector = LinkedInAuthCollector()
 
-    preferred = collector._prefer_detail_location(
+    preferred, source = collector._prefer_detail_location(
         payload_location_raw="上海 · 已转发的时间：2 周前 · 63 位会员点击了申请",
         payload_location="上海",
         ld_location="Richmond, VA, United States",
     )
 
     assert preferred == "Richmond"
+    assert source == "jsonld"
+
+
+def test_detail_location_with_only_meta_markers_is_marked_ambiguous():
+    collector = LinkedInAuthCollector()
+
+    preferred, source = collector._prefer_detail_location(
+        payload_location_raw="上海 · 已转发的时间：2 周前 · 63 位会员点击了申请",
+        payload_location="上海",
+        ld_location="",
+    )
+
+    assert preferred == ""
+    assert source == "ambiguous"
+
+
+def test_resolve_location_marks_card_equal_to_fallback_as_fallback():
+    collector = LinkedInAuthCollector()
+
+    location, source = collector._resolve_location(
+        detail_location="",
+        detail_location_source="unknown",
+        card_location="Shanghai",
+        fallback_location="Shanghai",
+    )
+
+    assert location == "Shanghai"
+    assert source == "fallback"
+
+
+def test_invalid_linkedin_promo_title_is_rejected_from_publish():
+    collector = LinkedInAuthCollector()
+    merged = {
+        "title": "加入领英",
+        "source_url": "https://www.linkedin.com/jobs/view/4434640258/",
+        "apply_url": "https://www.linkedin.com/jobs/view/4434640258/",
+    }
+
+    assert collector._is_publishable_job(merged) is False
 
 
 def test_normalize_respects_closed_status_from_raw():

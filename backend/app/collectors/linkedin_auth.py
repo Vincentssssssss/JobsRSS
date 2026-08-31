@@ -101,6 +101,16 @@ _DETAIL_LOCATION_META_MARKERS = {
     "小时前",
     "分钟",
 }
+_INVALID_TITLE_MARKERS = {
+    "join linkedin",
+    "加入领英",
+    "sign in",
+    "登录",
+    "register",
+    "立即加入",
+    "job alert",
+    "职位提醒",
+}
 
 logger = logging.getLogger(__name__)
 
@@ -190,6 +200,8 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
                     for card in cards[:25]:
                         detail = self._collect_detail(context, card["job_url"])
                         merged = self._merge_job_data(card, detail, fallback_location=fallback_location)
+                        if not self._is_publishable_job(merged):
+                            continue
                         source_job_id = merged["source_job_id"]
                         if not self._passes_strict_location_filter(
                             merged,
@@ -259,8 +271,16 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
         for item in payload:
             original_job_url = item.get("job_url", "")
             job_url = self._clean_linkedin_job_url(original_job_url)
-            title = self.clean_text(item.get("title", "")) or self._title_from_job_url(original_job_url)
+            raw_title = self.clean_text(item.get("title", ""))
+            fallback_title = self._title_from_job_url(original_job_url)
+            title = raw_title
+            if self._is_invalid_title(title) and fallback_title and not self._is_invalid_title(fallback_title):
+                title = fallback_title
+            if not title:
+                title = fallback_title
             if not title or not job_url:
+                continue
+            if self._is_invalid_title(title):
                 continue
             if "/jobs/view/" not in job_url:
                 continue
@@ -323,7 +343,7 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
             company = self.clean_text(payload.get("company", ""))[:255] or ld_payload.get("company", "")
             payload_location_raw = str(payload.get("location", "") or "")
             payload_location = self.clean_text(payload_location_raw)[:255]
-            location = self._prefer_detail_location(
+            location, detail_location_source = self._prefer_detail_location(
                 payload_location_raw=payload_location_raw,
                 payload_location=payload_location,
                 ld_location=ld_payload.get("location", ""),
@@ -335,6 +355,7 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
                 "title": title,
                 "company": company,
                 "location": self._normalize_location(location),
+                "detail_location_source": detail_location_source,
                 "description": description,
                 "external_apply_url": external_apply_url,
                 "official": official,
@@ -344,6 +365,7 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
                 "title": "",
                 "company": "",
                 "location": "",
+                "detail_location_source": "unknown",
                 "description": "",
                 "external_apply_url": "",
                 "official": None,
@@ -359,7 +381,11 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
         return normalized
 
     def _merge_job_data(self, card: Dict[str, str], detail: Dict[str, Any], fallback_location: str) -> Dict[str, Any]:
-        title = detail["title"] or card["title"]
+        title = self._select_preferred_title(
+            detail_title=detail["title"],
+            card_title=card["title"],
+            job_url=card["job_url"],
+        )
         job_url = card["job_url"]
         company = (
             detail["company"]
@@ -369,6 +395,7 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
         )
         location, location_source = self._resolve_location(
             detail_location=detail["location"],
+            detail_location_source=detail.get("detail_location_source", "unknown"),
             card_location=card["location"],
             fallback_location=fallback_location,
         )
@@ -419,6 +446,32 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
                 else str(enriched.get("posted_at") or ""),
             ),
         }
+
+    def _select_preferred_title(self, *, detail_title: str, card_title: str, job_url: str) -> str:
+        detail = self.clean_text(detail_title)
+        card = self.clean_text(card_title)
+        url_guess = self._title_from_job_url(job_url)
+        candidates = [detail, card, url_guess]
+        for candidate in candidates:
+            if candidate and not self._is_invalid_title(candidate):
+                return candidate
+        return detail or card or url_guess
+
+    def _is_invalid_title(self, title: str) -> bool:
+        normalized = self.clean_text(title).lower()
+        if not normalized:
+            return True
+        return any(marker in normalized for marker in _INVALID_TITLE_MARKERS)
+
+    def _is_publishable_job(self, merged: Dict[str, Any]) -> bool:
+        title = str(merged.get("title", ""))
+        if self._is_invalid_title(title):
+            return False
+        if "linkedin.com/jobs/search/" in str(merged.get("source_url", "")).lower():
+            return False
+        if "linkedin.com/jobs/search/" in str(merged.get("apply_url", "")).lower():
+            return False
+        return True
 
     def _clean_linkedin_job_url(self, raw_url: str) -> str:
         if not raw_url:
@@ -633,36 +686,51 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
         payload_location_raw: str,
         payload_location: str,
         ld_location: str,
-    ) -> str:
+    ) -> tuple[str, str]:
         normalized_payload = self._normalize_location(payload_location)
         normalized_ld = self._normalize_location(ld_location)
-        if not normalized_ld:
-            return normalized_payload
-        if not normalized_payload:
-            return normalized_ld
-        if normalized_payload.lower() == normalized_ld.lower():
-            return normalized_ld
         lowered_raw = payload_location_raw.lower()
-        if any(marker in lowered_raw for marker in _DETAIL_LOCATION_META_MARKERS):
-            return normalized_ld
+        has_meta_markers = any(marker in lowered_raw for marker in _DETAIL_LOCATION_META_MARKERS)
+        if not normalized_ld:
+            if has_meta_markers:
+                return "", "ambiguous"
+            return normalized_payload, "selector"
+        if not normalized_payload:
+            return normalized_ld, "jsonld"
+        if normalized_payload.lower() == normalized_ld.lower():
+            return normalized_ld, "jsonld"
+        if has_meta_markers:
+            return normalized_ld, "jsonld"
         # When card/detail selector output conflicts with JobPosting JSON-LD,
         # prefer JSON-LD to avoid false positives like Richmond->Shanghai.
-        return normalized_ld
+        return normalized_ld, "jsonld"
 
     def _resolve_location(
         self,
         *,
         detail_location: str,
+        detail_location_source: str,
         card_location: str,
         fallback_location: str,
     ) -> tuple[str, str]:
+        source = self.clean_text(detail_location_source).lower()
+        if source == "ambiguous":
+            return "Unknown", "ambiguous"
         normalized_detail = self._normalize_location(detail_location)
         if normalized_detail:
+            if source == "jsonld":
+                return normalized_detail, "detail_jsonld"
             return normalized_detail, "detail"
         normalized_card = self._normalize_location(card_location)
-        if normalized_card:
-            return normalized_card, "card"
         normalized_fallback = self._normalize_location(fallback_location)
+        if normalized_card:
+            if (
+                normalized_fallback
+                and normalized_fallback.lower() != "unknown"
+                and normalized_card.lower() == normalized_fallback.lower()
+            ):
+                return normalized_card, "fallback"
+            return normalized_card, "card"
         if normalized_fallback and normalized_fallback.lower() != "unknown":
             return normalized_fallback, "fallback"
         return "Unknown", "unknown"
@@ -674,7 +742,7 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
     ) -> bool:
         if not self.settings.linkedin_strict_location_filter:
             return True
-        if merged.get("location_source") == "fallback":
+        if merged.get("location_source") in {"fallback", "ambiguous", "unknown"}:
             return False
         return self._is_allowed_location(merged.get("location", ""), allowed_locations)
 
