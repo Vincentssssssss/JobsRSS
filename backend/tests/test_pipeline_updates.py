@@ -203,6 +203,57 @@ def test_stale_official_job_is_closed_after_successful_source_run():
         assert stale.status == "closed"
 
 
+def test_stale_linkedin_job_is_closed_after_successful_linkedin_run():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    old_time = datetime.now(timezone.utc) - timedelta(days=30)
+    current_time = datetime.now(timezone.utc)
+
+    with Session(engine) as db:
+        db.add(
+            Job(
+                source="linkedin_auth",
+                source_job_id="old-li",
+                company="Old Co",
+                title="Old role",
+                location="Shanghai",
+                country="China",
+                description="Old role",
+                apply_url="https://www.linkedin.com/jobs/view/111/",
+                source_url="https://www.linkedin.com/jobs/view/111/",
+                posted_at=old_time,
+                updated_at=old_time,
+                first_seen_at=old_time,
+                last_seen_at=old_time,
+                content_hash="old-li",
+                match_score=0,
+                status="active",
+            )
+        )
+        db.commit()
+
+        current = UnifiedJob(
+            source="linkedin_auth",
+            source_job_id="current-li",
+            company="Current Co",
+            title="Current role",
+            location="Shanghai",
+            country="China",
+            description="Current role",
+            apply_url="https://www.linkedin.com/jobs/view/222/",
+            source_url="https://www.linkedin.com/jobs/view/222/",
+            posted_at=current_time,
+            updated_at=current_time,
+            first_seen_at=current_time,
+            last_seen_at=current_time,
+            content_hash="current-li",
+        )
+        ingest_collector(db, StubCollector(current))
+
+        stale = db.query(Job).filter(Job.source_job_id == "old-li").one()
+        assert stale.status == "closed"
+
+
 def test_closed_job_does_not_suppress_new_repost_with_new_source_id():
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)

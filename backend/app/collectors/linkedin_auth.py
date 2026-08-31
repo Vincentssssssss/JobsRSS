@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qs, urljoin, urlparse, urlunparse
@@ -101,6 +102,8 @@ _DETAIL_LOCATION_META_MARKERS = {
     "分钟",
 }
 
+logger = logging.getLogger(__name__)
+
 
 class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
     meta = CollectorMeta(
@@ -155,13 +158,18 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True, args=["--ignore-certificate-errors"])
             context_args: Dict[str, Any] = {"ignore_https_errors": True}
-            state_path = self.get_storage_state_path()
+            state_path = self._resolve_storage_state_path()
             if state_path:
                 context_args["storage_state"] = state_path
             context = browser.new_context(**context_args)
             page = context.new_page()
 
             if not state_path:
+                logger.warning(
+                    "collector_login_without_storage_state source=%s mode=%s",
+                    self.meta.source_name,
+                    "credential_login_or_public",
+                )
                 self.perform_login(page)
 
             for search_url in search_urls:

@@ -17,6 +17,7 @@ def test_official_sources_enabled_by_default_for_v2(monkeypatch):
     assert "Jiangsu" in settings.linkedin_allowed_locations
     assert "Zhejiang" in settings.linkedin_allowed_locations
     assert "Hong Kong" in settings.llm_target_profile
+    assert settings.linkedin_auth_stale_after_days == 14
 
 
 def test_allowed_origins_accepts_csv_value(monkeypatch):

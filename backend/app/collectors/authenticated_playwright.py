@@ -1,4 +1,6 @@
 import re
+from pathlib import Path
+import logging
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from typing import Any, Dict, List, Optional
@@ -9,6 +11,8 @@ from bs4 import BeautifulSoup
 from app.collectors.base import BaseCollector
 from app.core.config import get_settings
 from app.schemas.job import UnifiedJob
+
+logger = logging.getLogger(__name__)
 
 
 class AuthenticatedPlaywrightCollector(BaseCollector):
@@ -37,7 +41,7 @@ class AuthenticatedPlaywrightCollector(BaseCollector):
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True, args=["--ignore-certificate-errors"])
             context_args: Dict[str, Any] = {}
-            state_path = self.get_storage_state_path()
+            state_path = self._resolve_storage_state_path()
             if state_path:
                 context_args["storage_state"] = state_path
             context = browser.new_context(ignore_https_errors=True, **context_args)
@@ -93,6 +97,19 @@ class AuthenticatedPlaywrightCollector(BaseCollector):
         raise NotImplementedError
 
     def get_storage_state_path(self) -> Optional[str]:
+        return None
+
+    def _resolve_storage_state_path(self) -> Optional[str]:
+        state_path = self.get_storage_state_path()
+        if not state_path:
+            return None
+        if Path(state_path).exists():
+            return state_path
+        logger.warning(
+            "collector_storage_state_missing source=%s path=%s fallback=login_or_public",
+            self.meta.source_name,
+            state_path,
+        )
         return None
 
     def perform_login(self, page: Any) -> None:

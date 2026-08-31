@@ -77,6 +77,7 @@ class Settings(BaseSettings):
     linkedin_auth_storage_state_path: Optional[str] = None
     linkedin_search_urls: str = ""
     linkedin_polling_interval_minutes: int = 20
+    linkedin_auth_stale_after_days: int = 14
     linkedin_external_enrichment_enabled: bool = True
     linkedin_external_enrichment_timeout_seconds: int = 20
     linkedin_strict_location_filter: bool = True

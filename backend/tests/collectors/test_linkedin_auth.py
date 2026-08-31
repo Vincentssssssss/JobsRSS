@@ -137,6 +137,30 @@ def test_normalize_respects_closed_status_from_raw():
     assert normalized.status == "closed"
 
 
+def test_resolve_storage_state_path_returns_none_when_missing(monkeypatch):
+    collector = LinkedInAuthCollector()
+    monkeypatch.setattr(
+        collector.settings,
+        "linkedin_auth_storage_state_path",
+        "/tmp/non-existent-linkedin-state.json",
+    )
+
+    assert collector._resolve_storage_state_path() is None
+
+
+def test_resolve_storage_state_path_returns_value_when_file_exists(monkeypatch, tmp_path):
+    collector = LinkedInAuthCollector()
+    state_file = tmp_path / "linkedin_state.json"
+    state_file.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(
+        collector.settings,
+        "linkedin_auth_storage_state_path",
+        str(state_file),
+    )
+
+    assert collector._resolve_storage_state_path() == str(state_file)
+
+
 def test_clean_description_prefers_role_content_over_company_intro():
     collector = LinkedInAuthCollector()
     raw = """
