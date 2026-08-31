@@ -52,7 +52,7 @@ type OfficialSourcesResponse = {
   }>;
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api/backend";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 
 export default function HomePage() {
   const [jobs, setJobs] = useState<JobCard[]>([]);
