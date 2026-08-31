@@ -19,6 +19,9 @@ def test_official_sources_enabled_by_default_for_v2(monkeypatch):
     assert "Hong Kong" in settings.llm_target_profile
     assert settings.linkedin_require_storage_state is True
     assert settings.linkedin_auth_stale_after_days == 14
+    assert settings.llm_request_max_retries == 2
+    assert settings.llm_request_retry_backoff_seconds == 1.5
+    assert settings.llm_abort_after_consecutive_failures == 8
 
 
 def test_allowed_origins_accepts_csv_value(monkeypatch):

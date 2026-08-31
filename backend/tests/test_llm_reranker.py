@@ -8,8 +8,10 @@ from app.db.session import Base
 from app.matching.llm_reranker import (
     LLMMatchResult,
     _build_auth_headers,
+    _is_retryable_status,
     _normalize_verdict,
     _parse_match_result,
+    _retry_delay_seconds,
     create_llm_client,
     resolve_base_url,
     run_llm_rerank,
@@ -111,6 +113,15 @@ def test_auth_header_uses_bearer_for_openai_base_url():
     headers = _build_auth_headers("secret", "https://api.openai.com/v1")
     assert headers["Authorization"] == "Bearer secret"
     assert "api-key" not in headers
+
+
+def test_retryable_status_and_backoff_helpers():
+    assert _is_retryable_status(500)
+    assert _is_retryable_status(429)
+    assert not _is_retryable_status(400)
+    assert _retry_delay_seconds(1.5, 0) == 1.5
+    assert _retry_delay_seconds(1.5, 1) == 3.0
+    assert _retry_delay_seconds(1.5, 2) == 6.0
 
 
 def test_parse_match_result_tolerates_json_fence_and_space_verdict():
@@ -348,3 +359,27 @@ def test_run_llm_rerank_enforces_early_career_guard_before_network_failures():
         assert campus.llm_verdict == "not_fit"
         assert campus.llm_model == "heuristic-early-career-guard"
         assert normal.llm_fit_score is None
+
+
+def test_run_llm_rerank_aborts_after_consecutive_failures_threshold():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    settings = SimpleNamespace(
+        llm_min_rule_score=0,
+        llm_only_unscored=False,
+        llm_max_jobs_per_run=10,
+        llm_target_profile="Experienced cybersecurity architect roles only",
+        llm_reject_early_career=False,
+        llm_abort_after_consecutive_failures=2,
+    )
+
+    with Session(engine) as db:
+        db.add(_make_job(source_job_id="n1", match_score=80, source="linkedin_auth"))
+        db.add(_make_job(source_job_id="n2", match_score=80, source="linkedin_auth"))
+        db.add(_make_job(source_job_id="n3", match_score=80, source="linkedin_auth"))
+        db.commit()
+
+        stats = run_llm_rerank(db, settings=settings, client=AlwaysFailClient())
+
+        assert stats.failed == 2
+        assert stats.scanned == 2

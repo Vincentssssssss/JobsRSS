@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, Optional, Protocol
@@ -15,6 +16,7 @@ from app.matching.early_career_guard import detect_early_career_markers
 from app.models.job import Job
 
 logger = logging.getLogger(__name__)
+_RETRYABLE_HTTP_STATUS = {408, 425, 429, 500, 502, 503, 504}
 _VERDICT_ALIAS_MAP = {
     "strong fit": "strong_fit",
     "strong-fit": "strong_fit",
@@ -73,6 +75,8 @@ class OpenAICompatibleClient:
         temperature: Optional[float],
         timeout_seconds: int,
         verify_tls: bool,
+        request_max_retries: int,
+        request_retry_backoff_seconds: float,
         azure_use_default_credential: bool = False,
         azure_scope: str = "https://ai.azure.com/.default",
     ) -> None:
@@ -83,6 +87,8 @@ class OpenAICompatibleClient:
         self.temperature = temperature
         self.timeout_seconds = timeout_seconds
         self.verify_tls = verify_tls
+        self.request_max_retries = max(0, request_max_retries)
+        self.request_retry_backoff_seconds = max(0.0, request_retry_backoff_seconds)
         self.azure_use_default_credential = azure_use_default_credential
         self.azure_scope = azure_scope
         self._azure_credential = _build_azure_default_credential(
@@ -98,22 +104,7 @@ class OpenAICompatibleClient:
         }
         if self.temperature is not None:
             payload["temperature"] = self.temperature
-        with httpx.Client(
-            timeout=self.timeout_seconds,
-            verify=self.verify_tls,
-            follow_redirects=True,
-            headers=self._build_request_headers(),
-        ) as client:
-            response = client.post(
-                f"{self.base_url}/chat/completions",
-                json=payload,
-                params=(
-                    {"api-version": self.api_version}
-                    if self.api_version
-                    else None
-                ),
-            )
-            response.raise_for_status()
+        response = self._post_chat_completions_with_retry(payload)
         return _parse_match_result(response.json())
 
     def _build_request_headers(self) -> Dict[str, str]:
@@ -124,6 +115,63 @@ class OpenAICompatibleClient:
                 "Content-Type": "application/json",
             }
         return _build_auth_headers(self.api_key, self.base_url)
+
+    def _post_chat_completions_with_retry(self, payload: Dict[str, Any]) -> httpx.Response:
+        attempts = self.request_max_retries + 1
+        last_error: Optional[Exception] = None
+        for attempt in range(attempts):
+            try:
+                with httpx.Client(
+                    timeout=self.timeout_seconds,
+                    verify=self.verify_tls,
+                    follow_redirects=True,
+                    headers=self._build_request_headers(),
+                ) as client:
+                    response = client.post(
+                        f"{self.base_url}/chat/completions",
+                        json=payload,
+                        params=(
+                            {"api-version": self.api_version}
+                            if self.api_version
+                            else None
+                        ),
+                    )
+                    response.raise_for_status()
+                    return response
+            except httpx.HTTPStatusError as exc:
+                last_error = exc
+                status = exc.response.status_code if exc.response is not None else None
+                if attempt >= self.request_max_retries or not _is_retryable_status(status):
+                    raise
+                delay = _retry_delay_seconds(self.request_retry_backoff_seconds, attempt)
+                logger.warning(
+                    "llm_request_retry attempt=%d/%d status=%s delay_seconds=%.1f model=%s",
+                    attempt + 1,
+                    attempts,
+                    status,
+                    delay,
+                    self.model,
+                )
+                if delay:
+                    time.sleep(delay)
+            except httpx.RequestError as exc:
+                last_error = exc
+                if attempt >= self.request_max_retries:
+                    raise
+                delay = _retry_delay_seconds(self.request_retry_backoff_seconds, attempt)
+                logger.warning(
+                    "llm_request_retry attempt=%d/%d error=%s delay_seconds=%.1f model=%s",
+                    attempt + 1,
+                    attempts,
+                    str(exc),
+                    delay,
+                    self.model,
+                )
+                if delay:
+                    time.sleep(delay)
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("LLM request failed without an exception.")
 
 
 def resolve_base_url(provider: str, configured_base_url: Optional[str]) -> str:
@@ -152,6 +200,10 @@ def create_llm_client(settings: Optional[Settings] = None) -> Optional[LLMClient
         temperature=settings.llm_temperature,
         timeout_seconds=settings.llm_timeout_seconds,
         verify_tls=settings.llm_verify_tls,
+        request_max_retries=getattr(settings, "llm_request_max_retries", 2),
+        request_retry_backoff_seconds=getattr(
+            settings, "llm_request_retry_backoff_seconds", 1.5
+        ),
         azure_use_default_credential=settings.llm_azure_use_default_credential,
         azure_scope=settings.llm_azure_scope,
     )
@@ -169,6 +221,10 @@ def run_llm_rerank(
     if client is None:
         return stats
 
+    abort_after_failures = max(
+        1, int(getattr(settings, "llm_abort_after_consecutive_failures", 8))
+    )
+    consecutive_failures = 0
     stats.updated += _enforce_early_career_guard(db, settings)
 
     query = (
@@ -207,19 +263,29 @@ def run_llm_rerank(
                 "heuristic-early-career-guard",
             )
             stats.updated += 1
+            consecutive_failures = 0
             continue
         try:
             result = client.evaluate_job(job, settings.llm_target_profile)
             _apply_match(job, result, client.model)
             stats.updated += 1
+            consecutive_failures = 0
         except Exception as exc:
             stats.failed += 1
+            consecutive_failures += 1
             logger.warning(
                 "llm_rerank_item_failed job_id=%s source=%s error=%s",
                 job.id,
                 job.source,
                 str(exc),
             )
+            if consecutive_failures >= abort_after_failures:
+                logger.error(
+                    "llm_rerank_aborted reason=consecutive_failures failures=%d threshold=%d",
+                    consecutive_failures,
+                    abort_after_failures,
+                )
+                break
     db.commit()
     return stats
 
@@ -459,6 +525,14 @@ def _build_auth_headers(api_key: str, base_url: str) -> Dict[str, str]:
         return headers
     headers["Authorization"] = f"Bearer {api_key}"
     return headers
+
+
+def _is_retryable_status(status_code: Optional[int]) -> bool:
+    return status_code in _RETRYABLE_HTTP_STATUS
+
+
+def _retry_delay_seconds(base_seconds: float, attempt: int) -> float:
+    return max(0.0, base_seconds) * (2 ** max(0, attempt))
 
 
 def _is_azure_openai_base_url(base_url: str) -> bool:

@@ -62,6 +62,17 @@ especially LinkedIn location mismatches and login-state drift.
 - Guard enforcement now runs before network LLM calls, so timeout events do not
   leave campus jobs in AI-positive states.
 
+### 8) LLM provider outage resilience
+
+- Added retry + exponential backoff for transient LLM request failures:
+  - status codes `408/425/429/500/502/503/504`,
+  - network-level `httpx.RequestError`.
+- Added rerank circuit-breaker:
+  - stop current rerank run after configured consecutive failures
+    (`LLM_ABORT_AFTER_CONSECUTIVE_FAILURES`, default `8`),
+  - reduce noisy logs and avoid long-running no-progress cycles during
+    upstream incidents.
+
 ## Configuration (recommended)
 
 ```env

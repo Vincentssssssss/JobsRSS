@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     llm_temperature: Optional[float] = None
     llm_timeout_seconds: int = 30
     llm_verify_tls: bool = True
+    llm_request_max_retries: int = 2
+    llm_request_retry_backoff_seconds: float = 1.5
+    llm_abort_after_consecutive_failures: int = 8
     llm_rerank_interval_minutes: int = 30
     llm_max_jobs_per_run: int = 60
     llm_min_rule_score: float = 20

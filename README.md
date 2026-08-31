@@ -75,6 +75,9 @@ LLM_MODEL=gpt-4o-mini
 LLM_TEMPERATURE=
 LLM_TIMEOUT_SECONDS=30
 LLM_VERIFY_TLS=true
+LLM_REQUEST_MAX_RETRIES=2
+LLM_REQUEST_RETRY_BACKOFF_SECONDS=1.5
+LLM_ABORT_AFTER_CONSECUTIVE_FAILURES=8
 LLM_RERANK_INTERVAL_MINUTES=30
 LLM_MAX_JOBS_PER_RUN=60
 LLM_MIN_RULE_SCORE=20
@@ -125,6 +128,9 @@ Early-career guard:
   rejected with `llm_verdict=not_fit` by deterministic rules.
 - This guard runs both during ingestion and before LLM network calls, so model
   timeouts do not leave early-career roles in AI-positive states.
+- LLM HTTP calls include retry with exponential backoff for transient status
+  codes (408/425/429/500/502/503/504), and rerank aborts early after too many
+  consecutive failures to avoid long outage loops.
 
 API filtering:
 
