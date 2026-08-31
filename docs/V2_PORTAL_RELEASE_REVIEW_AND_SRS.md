@@ -9,6 +9,8 @@
 3. 集中测试方案（可执行）  
 4. 简版软件需求说明书（SRS）供 review
 
+配套架构图见：`docs/V2_ARCHITECTURE_DIAGRAM.md`
+
 ---
 
 ## 2. 当前系统边界与总体结构
