@@ -45,6 +45,23 @@ especially LinkedIn location mismatches and login-state drift.
 - Added `LINKEDIN_AUTH_STALE_AFTER_DAYS` (default `14`).
 - LinkedIn rows not seen beyond this threshold are auto-closed.
 
+### 6) Build reliability under strict TLS/proxy networks
+
+- Hardened backend image dependency bootstrap:
+  - pip/self-upgrade step now uses retry + timeout + trusted hosts,
+  - avoids early failure in environments where certificate chains are partial
+    or proxied.
+
+### 7) System-level early-career guard (LLM-independent)
+
+- Added shared detector module used by both pipeline ingest and reranker.
+- Early-career/campus roles are immediately marked:
+  - `llm_fit_score = 0`,
+  - `llm_verdict = not_fit`,
+  - `llm_model = heuristic-early-career-guard`.
+- Guard enforcement now runs before network LLM calls, so timeout events do not
+  leave campus jobs in AI-positive states.
+
 ## Configuration (recommended)
 
 ```env

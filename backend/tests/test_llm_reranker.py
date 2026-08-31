@@ -39,6 +39,13 @@ class FailIfCalledClient:
         raise AssertionError("LLM client should not be called for early-career jobs")
 
 
+class AlwaysFailClient:
+    model = "always-fail"
+
+    def evaluate_job(self, job: Job, target_profile: str) -> LLMMatchResult:
+        raise TimeoutError("simulated timeout")
+
+
 def _make_job(
     *,
     source_job_id: str,
@@ -248,7 +255,7 @@ def test_run_llm_rerank_hard_rejects_early_career_jobs_without_llm_call():
         stats = run_llm_rerank(db, settings=settings, client=FailIfCalledClient())
         stored = db.query(Job).filter(Job.source_job_id == "campus-1").one()
 
-        assert stats.scanned == 1
+        assert stats.scanned == 0
         assert stats.updated == 1
         assert stats.failed == 0
         assert stored.llm_fit_score == 0
@@ -287,8 +294,57 @@ def test_run_llm_rerank_rechecks_scored_early_career_jobs_when_only_unscored_tru
         stats = run_llm_rerank(db, settings=settings, client=FailIfCalledClient())
         stored = db.query(Job).filter(Job.source_job_id == "campus-2").one()
 
-        assert stats.scanned == 1
+        assert stats.scanned == 0
         assert stats.updated == 1
         assert stats.failed == 0
         assert stored.llm_fit_score == 0
         assert stored.llm_verdict == "not_fit"
+
+
+def test_run_llm_rerank_enforces_early_career_guard_before_network_failures():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    settings = SimpleNamespace(
+        llm_min_rule_score=0,
+        llm_only_unscored=False,
+        llm_max_jobs_per_run=10,
+        llm_target_profile="Experienced cybersecurity architect roles only",
+        llm_reject_early_career=True,
+    )
+
+    with Session(engine) as db:
+        db.add(
+            _make_job(
+                source_job_id="campus-3",
+                match_score=80,
+                llm_fit_score=82,
+                description=(
+                    "Basic Information\n"
+                    "Graduation Dates: 2026-11-01 - 2027-10-31\n"
+                    "Hiring Program: Alibaba 2027 Graduate Recruitment"
+                ),
+                source="official_alibaba",
+            )
+        )
+        db.add(
+            _make_job(
+                source_job_id="normal-1",
+                match_score=80,
+                llm_fit_score=None,
+                title="Senior Cloud Security Architect",
+                description="Experienced role focused on cloud security and IAM.",
+                source="linkedin_auth",
+            )
+        )
+        db.commit()
+
+        stats = run_llm_rerank(db, settings=settings, client=AlwaysFailClient())
+        campus = db.query(Job).filter(Job.source_job_id == "campus-3").one()
+        normal = db.query(Job).filter(Job.source_job_id == "normal-1").one()
+
+        assert stats.updated == 1
+        assert stats.failed == 1
+        assert campus.llm_fit_score == 0
+        assert campus.llm_verdict == "not_fit"
+        assert campus.llm_model == "heuristic-early-career-guard"
+        assert normal.llm_fit_score is None

@@ -11,6 +11,7 @@ from sqlalchemy import and_, desc, or_
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
+from app.matching.early_career_guard import detect_early_career_markers
 from app.models.job import Job
 
 logger = logging.getLogger(__name__)
@@ -34,31 +35,6 @@ _VERDICT_ALIAS_MAP = {
     "可能匹配": "possible_fit",
     "较匹配": "possible_fit",
     "强匹配": "strong_fit",
-}
-_EARLY_CAREER_REGEXES = [
-    re.compile(r"\b(?:20\d{2}|21\d{2})\s*(?:届|graduate|graduates?)\b", re.IGNORECASE),
-    re.compile(r"\bgraduation\s*dates?\b", re.IGNORECASE),
-]
-_EARLY_CAREER_KEYWORDS = {
-    "校招",
-    "校园招聘",
-    "应届",
-    "应届生",
-    "实习",
-    "实习生",
-    "管培生",
-    "fresh graduate",
-    "new grad",
-    "graduate recruitment",
-    "campus recruitment",
-    "campus hire",
-    "campus hiring",
-    "campus talent",
-    "entry level",
-    "internship",
-    "intern",
-    "graduate program",
-    "management trainee",
 }
 
 
@@ -193,6 +169,8 @@ def run_llm_rerank(
     if client is None:
         return stats
 
+    stats.updated += _enforce_early_career_guard(db, settings)
+
     query = (
         db.query(Job)
         .filter(
@@ -218,6 +196,11 @@ def run_llm_rerank(
             else []
         )
         if early_career_markers:
+            if (
+                str(job.llm_verdict or "") == "not_fit"
+                and str(job.llm_model or "") == "heuristic-early-career-guard"
+            ):
+                continue
             _apply_match(
                 job,
                 _build_early_career_reject_result(early_career_markers),
@@ -388,32 +371,15 @@ def _as_string_list(value: Any) -> list[str]:
 
 
 def _early_career_markers(job: Job) -> list[str]:
-    haystack = " ".join(
-        part
-        for part in [
+    return detect_early_career_markers(
+        [
             str(job.title or ""),
             str(job.description or ""),
             str(job.company or ""),
             str(job.apply_url or ""),
             str(job.source_url or ""),
         ]
-        if part
     )
-    lowered = haystack.lower()
-
-    markers = [keyword for keyword in sorted(_EARLY_CAREER_KEYWORDS) if keyword in lowered]
-    for pattern in _EARLY_CAREER_REGEXES:
-        if pattern.search(haystack):
-            markers.append(pattern.pattern)
-
-    if "campus-talent.alibaba.com" in lowered:
-        markers.append("alibaba-campus-portal")
-
-    deduped: list[str] = []
-    for marker in markers:
-        if marker not in deduped:
-            deduped.append(marker)
-    return deduped
 
 
 def _build_early_career_reject_result(markers: Iterable[str]) -> LLMMatchResult:
@@ -448,6 +414,42 @@ def _early_career_candidates_filter(settings: Settings | Any):
             Job.source_url.ilike("%campus-talent.alibaba.com%"),
         ),
     )
+
+
+def _enforce_early_career_guard(db: Session, settings: Settings | Any) -> int:
+    if not getattr(settings, "llm_reject_early_career", True):
+        return 0
+    candidates = (
+        db.query(Job)
+        .filter(
+            Job.status == "active",
+            or_(Job.llm_verdict.is_(None), Job.llm_verdict != "not_fit"),
+            or_(
+                Job.title.ilike("%校招%"),
+                Job.title.ilike("%应届%"),
+                Job.title.ilike("%实习%"),
+                Job.title.ilike("%管培生%"),
+                Job.description.ilike("%校园招聘%"),
+                Job.description.ilike("%Graduation Dates%"),
+                Job.description.ilike("%Graduate Recruitment%"),
+                Job.apply_url.ilike("%campus-talent.alibaba.com%"),
+                Job.source_url.ilike("%campus-talent.alibaba.com%"),
+            ),
+        )
+        .all()
+    )
+    updated = 0
+    for job in candidates:
+        markers = _early_career_markers(job)
+        if not markers:
+            continue
+        _apply_match(
+            job,
+            _build_early_career_reject_result(markers),
+            "heuristic-early-career-guard",
+        )
+        updated += 1
+    return updated
 
 
 def _build_auth_headers(api_key: str, base_url: str) -> Dict[str, str]:

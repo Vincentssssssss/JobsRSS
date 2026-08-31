@@ -418,3 +418,41 @@ def test_content_change_resets_cached_llm_match():
         assert stored.llm_verdict is None
         assert stored.llm_match_reasons is None
         assert stored.llm_model is None
+
+
+def test_ingest_applies_early_career_guard_without_waiting_for_llm_rerank():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    now = datetime.now(timezone.utc)
+
+    with Session(engine) as db:
+        early_career = UnifiedJob(
+            source="official_alibaba",
+            source_job_id="campus-direct",
+            company="Alibaba / Alibaba Cloud",
+            title="安全技术工程师",
+            location="上海",
+            country="China",
+            description=(
+                "Basic Information\n"
+                "Graduation Dates: 2026-11-01 - 2027-10-31\n"
+                "Hiring Program: Alibaba 2027 Graduate Recruitment"
+            ),
+            apply_url="https://campus-talent.alibaba.com/campus/position/199907620043",
+            source_url="https://campus-talent.alibaba.com/campus/position/199907620043",
+            posted_at=now,
+            updated_at=now,
+            first_seen_at=now,
+            last_seen_at=now,
+            content_hash="campus-direct",
+            match_score=15,
+            status="active",
+            location_category="confirmed_shanghai",
+        )
+        ingest_collector(db, StubOfficialCollector(early_career))
+        stored = db.query(Job).filter(Job.source_job_id == "campus-direct").one()
+
+        assert stored.llm_fit_score == 0
+        assert stored.llm_verdict == "not_fit"
+        assert stored.llm_role_family == "early_career_program"
+        assert stored.llm_model == "heuristic-early-career-guard"

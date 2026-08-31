@@ -79,6 +79,7 @@ LLM_RERANK_INTERVAL_MINUTES=30
 LLM_MAX_JOBS_PER_RUN=60
 LLM_MIN_RULE_SCORE=20
 LLM_ONLY_UNSCORED=true
+LLM_REJECT_EARLY_CAREER=true
 LLM_TARGET_PROFILE=Senior cybersecurity roles focused on cloud security across Shanghai/Jiangsu/Zhejiang, Hong Kong, and Singapore...
 ```
 
@@ -117,6 +118,13 @@ LLM_AZURE_SCOPE=https://ai.azure.com/.default
 
 When `LLM_AZURE_USE_DEFAULT_CREDENTIAL=true`, the reranker fetches a bearer token
 from `DefaultAzureCredential` and uses `Authorization: Bearer <token>`.
+
+Early-career guard:
+
+- When `LLM_REJECT_EARLY_CAREER=true`, campus/new-grad/intern roles are hard
+  rejected with `llm_verdict=not_fit` by deterministic rules.
+- This guard runs both during ingestion and before LLM network calls, so model
+  timeouts do not leave early-career roles in AI-positive states.
 
 API filtering:
 

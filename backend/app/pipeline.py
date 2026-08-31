@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.collectors.base import BaseCollector
 from app.core.config import get_settings
 from app.dedup.service import is_probable_duplicate
+from app.matching.early_career_guard import detect_early_career_markers
 from app.matching.scorer import score_job
 from app.models.job import Job
 from app.normalization.normalizer import normalize_job
@@ -22,6 +23,7 @@ class IngestStats:
 
 
 def ingest_collector(db: Session, collector: BaseCollector) -> IngestStats:
+    settings = get_settings()
     stats = IngestStats()
     jobs = collector.collect()
     stats.found = len(jobs)
@@ -80,6 +82,7 @@ def ingest_collector(db: Session, collector: BaseCollector) -> IngestStats:
                     existing.llm_missing_skills = None
                     existing.llm_model = None
                     existing.llm_last_evaluated_at = None
+                _apply_early_career_guard(existing, settings.llm_reject_early_career)
                 stats.duplicates += 1
                 continue
 
@@ -96,35 +99,35 @@ def ingest_collector(db: Session, collector: BaseCollector) -> IngestStats:
                 stats.duplicates += 1
                 continue
 
-            db.add(
-                Job(
-                    source=incoming.source,
-                    source_job_id=incoming.source_job_id,
-                    company=incoming.company,
-                    title=incoming.title,
-                    location=incoming.location,
-                    country=incoming.country,
-                    description=incoming.description,
-                    apply_url=incoming.apply_url,
-                    source_url=incoming.source_url,
-                    posted_at=incoming.posted_at,
-                    updated_at=incoming.updated_at,
-                    first_seen_at=incoming.first_seen_at,
-                    last_seen_at=incoming.last_seen_at,
-                    content_hash=incoming.content_hash,
-                    match_score=incoming.match_score,
-                    status=incoming.status,
-                    enrichment_source=incoming.enrichment_source,
-                    location_category=incoming.location_category,
-                )
+            job = Job(
+                source=incoming.source,
+                source_job_id=incoming.source_job_id,
+                company=incoming.company,
+                title=incoming.title,
+                location=incoming.location,
+                country=incoming.country,
+                description=incoming.description,
+                apply_url=incoming.apply_url,
+                source_url=incoming.source_url,
+                posted_at=incoming.posted_at,
+                updated_at=incoming.updated_at,
+                first_seen_at=incoming.first_seen_at,
+                last_seen_at=incoming.last_seen_at,
+                content_hash=incoming.content_hash,
+                match_score=incoming.match_score,
+                status=incoming.status,
+                enrichment_source=incoming.enrichment_source,
+                location_category=incoming.location_category,
             )
+            _apply_early_career_guard(job, settings.llm_reject_early_career)
+            db.add(job)
             stats.new += 1
         except Exception:
             stats.errors += 1
 
     if collector.meta.source_name.startswith("official_"):
         cutoff = datetime.now(timezone.utc) - timedelta(
-            days=get_settings().official_source_stale_after_days
+            days=settings.official_source_stale_after_days
         )
         (
             db.query(Job)
@@ -146,7 +149,7 @@ def ingest_collector(db: Session, collector: BaseCollector) -> IngestStats:
                 .update({"status": "closed"}, synchronize_session=False)
             )
         cutoff = datetime.now(timezone.utc) - timedelta(
-            days=get_settings().linkedin_auth_stale_after_days
+            days=settings.linkedin_auth_stale_after_days
         )
         (
             db.query(Job)
@@ -211,3 +214,31 @@ def _job_hash(job: Job) -> str:
         posted_at,
     ]
     return sha256("||".join(values).encode("utf-8")).hexdigest()
+
+
+def _apply_early_career_guard(job: Job, enabled: bool) -> None:
+    if not enabled:
+        return
+    markers = detect_early_career_markers(
+        [
+            str(job.title or ""),
+            str(job.description or ""),
+            str(job.company or ""),
+            str(job.apply_url or ""),
+            str(job.source_url or ""),
+        ]
+    )
+    if not markers:
+        return
+    marker_text = ", ".join(markers)
+    job.llm_fit_score = 0.0
+    job.llm_verdict = "not_fit"
+    job.llm_role_family = "early_career_program"
+    job.llm_match_reasons = ""
+    job.llm_reject_reasons = (
+        "Hard rejected as early-career/campus role.\n"
+        f"Detected markers: {marker_text}"
+    )
+    job.llm_missing_skills = ""
+    job.llm_model = "heuristic-early-career-guard"
+    job.llm_last_evaluated_at = datetime.now(timezone.utc)
