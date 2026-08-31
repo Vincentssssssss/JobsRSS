@@ -14,6 +14,20 @@ function backendBases(): string[] {
   );
 }
 
+function formatError(error: unknown): string {
+  if (error instanceof Error) {
+    const cause = (error as Error & { cause?: unknown }).cause;
+    if (cause instanceof Error) {
+      return `${error.name}: ${error.message}; cause=${cause.name}: ${cause.message}`;
+    }
+    if (cause) {
+      return `${error.name}: ${error.message}; cause=${String(cause)}`;
+    }
+    return `${error.name}: ${error.message}`;
+  }
+  return String(error);
+}
+
 type RouteContext = {
   params: Promise<{ path: string[] }> | { path: string[] };
 };
@@ -27,28 +41,36 @@ export async function GET(request: Request, context: RouteContext): Promise<Resp
   const pathSegments = await getPathSegments(context);
   const incoming = new URL(request.url);
   const targetPath = `/${pathSegments.join("/")}${incoming.search}`;
-  const attempts: Array<{ target: string; error: string }> = [];
+  const attempts: Array<{ target: string; error: string; round: number }> = [];
+  const bases = backendBases();
+  const retryDelaysMs = [250, 800];
 
-  for (const base of backendBases()) {
-    const targetUrl = `${base}${targetPath}`;
-    try {
-      const response = await fetch(targetUrl, {
-        method: "GET",
-        cache: "no-store",
-        headers: {
-          Accept: request.headers.get("accept") || "application/json",
-        },
-      });
+  for (let round = 0; round <= retryDelaysMs.length; round += 1) {
+    for (const base of bases) {
+      const targetUrl = `${base}${targetPath}`;
+      try {
+        const response = await fetch(targetUrl, {
+          method: "GET",
+          cache: "no-store",
+          headers: {
+            Accept: request.headers.get("accept") || "application/json",
+          },
+          signal: AbortSignal.timeout(4000),
+        });
 
-      return new Response(response.body, {
-        status: response.status,
-        headers: {
-          "content-type": response.headers.get("content-type") || "application/json",
-          "cache-control": "no-store",
-        },
-      });
-    } catch (error) {
-      attempts.push({ target: targetUrl, error: String(error) });
+        return new Response(response.body, {
+          status: response.status,
+          headers: {
+            "content-type": response.headers.get("content-type") || "application/json",
+            "cache-control": "no-store",
+          },
+        });
+      } catch (error) {
+        attempts.push({ target: targetUrl, error: formatError(error), round: round + 1 });
+      }
+    }
+    if (round < retryDelaysMs.length) {
+      await new Promise((resolve) => setTimeout(resolve, retryDelaysMs[round]));
     }
   }
 
