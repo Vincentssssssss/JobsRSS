@@ -217,6 +217,18 @@ python scripts/export_storage_state.py \
   --out ../secrets/linkedin_state.json
 ```
 
+If CDP mode fails with `Browser context management is not supported`, use
+interactive mode (no CDP dependency):
+
+```bash
+cd backend
+source .venv/bin/activate
+python scripts/export_storage_state.py \
+  --site linkedin \
+  --mode interactive \
+  --out ../secrets/linkedin_state.json
+```
+
 Set `.env`:
 
 ```env
