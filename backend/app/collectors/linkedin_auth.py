@@ -13,6 +13,82 @@ from app.enrichment.external_job import (
     merge_job_fields,
 )
 
+_DESCRIPTION_NOISE_MARKERS = {
+    "skip to main content",
+    "join now",
+    "sign in",
+    "cookies",
+    "privacy policy",
+    "user agreement",
+    "跳到主要内容",
+    "登录",
+    "立即加入",
+    "cookie",
+}
+_DESCRIPTION_ROLE_SIGNALS = {
+    "responsibilities",
+    "responsibility",
+    "requirements",
+    "requirement",
+    "qualifications",
+    "qualification",
+    "what you'll do",
+    "what you will do",
+    "what we're looking for",
+    "about the role",
+    "security",
+    "network",
+    "platform",
+    "cloud",
+    "waf",
+    "ddos",
+    "firewall",
+    "ids",
+    "ips",
+    "iam",
+    "soc",
+    "siem",
+    "岗位职责",
+    "任职要求",
+    "职位要求",
+    "任职资格",
+    "职责",
+    "要求",
+    "资格",
+    "安全",
+    "网络",
+    "云",
+}
+_DESCRIPTION_INTRO_MARKERS = {
+    "founded in",
+    "who are we",
+    "what do we do",
+    "about us",
+    "about the company",
+    "our mission",
+    "our values",
+    "our team",
+    "economic and social value",
+    "membership club",
+}
+_DESCRIPTION_SPLIT_MARKERS = [
+    "Who are we?",
+    "What do we do?",
+    "Responsibilities",
+    "Responsibility",
+    "Requirements",
+    "Requirement",
+    "Qualifications",
+    "Qualification",
+    "What you'll do",
+    "What you will do",
+    "About the role",
+    "岗位职责",
+    "任职要求",
+    "职位要求",
+    "任职资格",
+]
+
 
 class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
     meta = CollectorMeta(
@@ -211,7 +287,7 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
             title = self.clean_text(payload.get("title", ""))[:255] or ld_payload.get("title", "")
             company = self.clean_text(payload.get("company", ""))[:255] or ld_payload.get("company", "")
             location = self.clean_text(payload.get("location", ""))[:255] or ld_payload.get("location", "")
-            description = self.clean_text(payload.get("description", ""))[:5000] or ld_payload.get("description", "")
+            description = (payload.get("description", "") or ld_payload.get("description", ""))[:8000]
             external_apply_url = self._discover_external_apply_url(page)
             official = self._collect_official_job(external_apply_url)
             return {
@@ -358,27 +434,77 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
         return enriched if enriched and enriched.has_authoritative_content else None
 
     def _clean_description(self, text: str) -> str:
-        cleaned = self.clean_text(text)
-        if not cleaned:
+        prepared = self._prepare_description_text(text)
+        if not prepared:
             return ""
-        lowered = cleaned.lower()
-        noise_markers = [
-            "skip to main content",
-            "join now",
-            "sign in",
-            "cookies",
-            "privacy policy",
-            "user agreement",
-            "跳到主要内容",
-            "登录",
-            "立即加入",
-            "cookie",
-        ]
-        if any(marker in lowered for marker in noise_markers):
+        lines = [self.clean_text(line) for line in prepared.split("\n")]
+        lines = [line for line in lines if line]
+        if not lines:
             return ""
+        filtered = [line for line in lines if not self._is_noise_line(line)]
+        if not filtered:
+            filtered = lines
+        curated = self._curate_role_lines(filtered)
+        cleaned = "\n".join(curated if curated else filtered)
         if len(cleaned) > 3500:
             cleaned = cleaned[:3500]
         return cleaned
+
+    def _prepare_description_text(self, text: str) -> str:
+        raw = (text or "").strip()
+        if not raw:
+            return ""
+        if "<" in raw and ">" in raw:
+            raw = BeautifulSoup(raw, "html.parser").get_text("\n", strip=True)
+        normalized = raw.replace("\r\n", "\n").replace("\r", "\n").replace("\u200b", "")
+        if "\n" not in normalized:
+            for marker in _DESCRIPTION_SPLIT_MARKERS:
+                normalized = re.sub(
+                    rf"\s*({re.escape(marker)})\s*",
+                    r"\n\1 ",
+                    normalized,
+                    flags=re.IGNORECASE,
+                )
+        return normalized.strip()
+
+    def _is_noise_line(self, line: str) -> bool:
+        lowered = line.lower()
+        return any(marker in lowered for marker in _DESCRIPTION_NOISE_MARKERS)
+
+    def _has_role_signal(self, line: str) -> bool:
+        lowered = line.lower()
+        return any(marker in lowered for marker in _DESCRIPTION_ROLE_SIGNALS)
+
+    def _is_intro_line(self, line: str) -> bool:
+        lowered = line.lower()
+        return any(marker in lowered for marker in _DESCRIPTION_INTRO_MARKERS)
+
+    def _curate_role_lines(self, lines: List[str]) -> List[str]:
+        if not lines:
+            return []
+        first_signal = next(
+            (index for index, line in enumerate(lines) if self._has_role_signal(line)),
+            None,
+        )
+        working_lines = lines[first_signal:] if first_signal is not None else lines
+
+        curated: List[str] = []
+        keep_next = 0
+        for line in working_lines:
+            has_role_signal = self._has_role_signal(line)
+            if self._is_intro_line(line) and not has_role_signal:
+                continue
+            if has_role_signal:
+                curated.append(line)
+                keep_next = 2
+                continue
+            if keep_next > 0:
+                curated.append(line)
+                keep_next -= 1
+                continue
+            if re.match(r"^\s*(?:[-*•●·▪◦]|\d+[.)]|[a-zA-Z][.)])\s*", line):
+                curated.append(line)
+        return curated
 
     def _extract_ld_job_fields(self, html: str) -> Dict[str, str]:
         soup = BeautifulSoup(html, "html.parser")

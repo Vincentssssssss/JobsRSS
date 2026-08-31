@@ -90,3 +90,39 @@ def test_merge_prefers_explicit_detail_location_over_search_fallback():
 
     assert merged["location"] == "Richmond"
     assert merged["location_source"] == "detail"
+
+
+def test_clean_description_prefers_role_content_over_company_intro():
+    collector = LinkedInAuthCollector()
+    raw = """
+The Hong Kong Jockey Club Founded in 1884, The Hong Kong Jockey Club is a world-class racing club.
+Who are we? We are the IT Division with global teams.
+What do we do? We design and operate technology.
+Responsibilities:
+- Lead platform and network security controls.
+- Drive cloud security architecture and vulnerability governance.
+Requirements:
+- 8+ years in cybersecurity, network security, or cloud security.
+"""
+
+    cleaned = collector._clean_description(raw)
+
+    assert "Founded in 1884" not in cleaned
+    assert "Who are we?" not in cleaned
+    assert "Lead platform and network security controls." in cleaned
+    assert "8+ years in cybersecurity" in cleaned
+
+
+def test_clean_description_drops_noise_lines_without_emptying_payload():
+    collector = LinkedInAuthCollector()
+    raw = """
+Responsibilities: Build and tune SIEM detection pipelines.
+Read our privacy policy for more information.
+Requirements: Hands-on SOC and threat detection experience.
+"""
+
+    cleaned = collector._clean_description(raw)
+
+    assert "privacy policy" not in cleaned.lower()
+    assert "Build and tune SIEM detection pipelines." in cleaned
+    assert "Hands-on SOC and threat detection experience." in cleaned
