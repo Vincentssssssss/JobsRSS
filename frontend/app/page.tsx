@@ -84,7 +84,9 @@ export default function HomePage() {
     }
     if (aiPrecisionMode) {
       params.set("llm_verdict", "strong_fit,possible_fit");
-      params.set("min_llm_score", minLlmScore || "60");
+      if (minLlmScore) {
+        params.set("min_llm_score", minLlmScore);
+      }
     } else if (minLlmScore) {
       params.set("min_llm_score", minLlmScore);
     }
@@ -129,7 +131,9 @@ export default function HomePage() {
     }
     if (aiPrecisionMode) {
       params.set("llm_verdict", "strong_fit,possible_fit");
-      params.set("min_llm_score", minLlmScore || "60");
+      if (minLlmScore) {
+        params.set("min_llm_score", minLlmScore);
+      }
     } else if (minLlmScore) {
       params.set("min_llm_score", minLlmScore);
     }
@@ -332,7 +336,9 @@ export default function HomePage() {
 
       <section className="job-list">
         {jobs.length === 0 ? (
-          <div className="empty glass">No jobs available yet. Start collectors from the worker service.</div>
+          <div className="empty glass">
+            No jobs matched current filters. Try setting AI Score to All or turning AI Precision Mode Off.
+          </div>
         ) : (
           jobs.map((job) => (
             <article key={job.id} className="job-card glass">
