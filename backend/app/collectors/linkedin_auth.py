@@ -88,6 +88,18 @@ _DESCRIPTION_SPLIT_MARKERS = [
     "职位要求",
     "任职资格",
 ]
+_DETAIL_LOCATION_META_MARKERS = {
+    "ago",
+    "applicant",
+    "applicants",
+    "posted",
+    "已转发",
+    "位会员",
+    "天前",
+    "周前",
+    "小时前",
+    "分钟",
+}
 
 
 class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
@@ -161,14 +173,20 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
                     for card in cards[:25]:
                         detail = self._collect_detail(context, card["job_url"])
                         merged = self._merge_job_data(card, detail, fallback_location=fallback_location)
+                        source_job_id = merged["source_job_id"]
                         if not self._passes_strict_location_filter(
                             merged,
                             self.settings.csv_items(
                                 self.settings.linkedin_allowed_locations
                             ),
                         ):
+                            # Keep a closed marker so previously mis-labeled active rows
+                            # can be corrected/closed on the next ingest cycle.
+                            merged["status"] = "closed"
+                            if source_job_id not in results or results[source_job_id].get("status") != "active":
+                                results[source_job_id] = merged
                             continue
-                        source_job_id = merged["source_job_id"]
+                        merged["status"] = "active"
                         results[source_job_id] = merged
                 except Exception:
                     continue
@@ -286,7 +304,13 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
             ld_payload = self._extract_ld_job_fields(html)
             title = self.clean_text(payload.get("title", ""))[:255] or ld_payload.get("title", "")
             company = self.clean_text(payload.get("company", ""))[:255] or ld_payload.get("company", "")
-            location = self.clean_text(payload.get("location", ""))[:255] or ld_payload.get("location", "")
+            payload_location_raw = str(payload.get("location", "") or "")
+            payload_location = self.clean_text(payload_location_raw)[:255]
+            location = self._prefer_detail_location(
+                payload_location_raw=payload_location_raw,
+                payload_location=payload_location,
+                ld_location=ld_payload.get("location", ""),
+            )
             description = (payload.get("description", "") or ld_payload.get("description", ""))[:8000]
             external_apply_url = self._discover_external_apply_url(page)
             official = self._collect_official_job(external_apply_url)
@@ -309,6 +333,13 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
             }
         finally:
             page.close()
+
+    def normalize(self, raw: Dict[str, Any]):
+        normalized = super().normalize(raw)
+        status = str(raw.get("status") or "").lower()
+        if status in {"active", "closed"}:
+            normalized.status = status
+        return normalized
 
     def _merge_job_data(self, card: Dict[str, str], detail: Dict[str, Any], fallback_location: str) -> Dict[str, Any]:
         title = detail["title"] or card["title"]
@@ -578,6 +609,28 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
             if head:
                 return head
         return text
+
+    def _prefer_detail_location(
+        self,
+        *,
+        payload_location_raw: str,
+        payload_location: str,
+        ld_location: str,
+    ) -> str:
+        normalized_payload = self._normalize_location(payload_location)
+        normalized_ld = self._normalize_location(ld_location)
+        if not normalized_ld:
+            return normalized_payload
+        if not normalized_payload:
+            return normalized_ld
+        if normalized_payload.lower() == normalized_ld.lower():
+            return normalized_ld
+        lowered_raw = payload_location_raw.lower()
+        if any(marker in lowered_raw for marker in _DETAIL_LOCATION_META_MARKERS):
+            return normalized_ld
+        # When card/detail selector output conflicts with JobPosting JSON-LD,
+        # prefer JSON-LD to avoid false positives like Richmond->Shanghai.
+        return normalized_ld
 
     def _resolve_location(
         self,

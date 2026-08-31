@@ -105,6 +105,38 @@ def test_merge_prefers_explicit_detail_location_over_search_fallback():
     assert merged["location_source"] == "detail"
 
 
+def test_collect_detail_prefers_jsonld_location_when_selectors_conflict():
+    collector = LinkedInAuthCollector()
+
+    preferred = collector._prefer_detail_location(
+        payload_location_raw="上海 · 已转发的时间：2 周前 · 63 位会员点击了申请",
+        payload_location="上海",
+        ld_location="Richmond, VA, United States",
+    )
+
+    assert preferred == "Richmond"
+
+
+def test_normalize_respects_closed_status_from_raw():
+    collector = LinkedInAuthCollector()
+    raw = {
+        "source_job_id": "123456",
+        "company": "McKesson",
+        "title": "Lead Cyber Security Architect",
+        "location": "Richmond",
+        "country": "United States",
+        "description": "Cybersecurity architecture role.",
+        "apply_url": "https://www.linkedin.com/jobs/view/123456/",
+        "source_url": "https://www.linkedin.com/jobs/view/123456/",
+        "content_hash": "abc123",
+        "status": "closed",
+    }
+
+    normalized = collector.normalize(raw)
+
+    assert normalized.status == "closed"
+
+
 def test_clean_description_prefers_role_content_over_company_intro():
     collector = LinkedInAuthCollector()
     raw = """
