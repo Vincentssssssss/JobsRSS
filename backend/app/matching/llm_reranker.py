@@ -14,6 +14,27 @@ from app.core.config import Settings, get_settings
 from app.models.job import Job
 
 logger = logging.getLogger(__name__)
+_VERDICT_ALIAS_MAP = {
+    "strong fit": "strong_fit",
+    "strong-fit": "strong_fit",
+    "strongfit": "strong_fit",
+    "high fit": "strong_fit",
+    "high-fit": "strong_fit",
+    "possible fit": "possible_fit",
+    "possible-fit": "possible_fit",
+    "possiblefit": "possible_fit",
+    "potential fit": "possible_fit",
+    "maybe fit": "possible_fit",
+    "not fit": "not_fit",
+    "not-fit": "not_fit",
+    "notfit": "not_fit",
+    "unfit": "not_fit",
+    "不匹配": "not_fit",
+    "不适合": "not_fit",
+    "可能匹配": "possible_fit",
+    "较匹配": "possible_fit",
+    "强匹配": "strong_fit",
+}
 _EARLY_CAREER_REGEXES = [
     re.compile(r"\b(?:20\d{2}|21\d{2})\s*(?:届|graduate|graduates?)\b", re.IGNORECASE),
     re.compile(r"\bgraduation\s*dates?\b", re.IGNORECASE),
@@ -267,10 +288,12 @@ def _build_messages(job: Job, target_profile: str) -> list[Dict[str, str]]:
 def _parse_match_result(payload: Dict[str, Any]) -> LLMMatchResult:
     choices = payload.get("choices") or []
     message = ((choices[0] if choices else {}).get("message") or {}).get("content", "")
-    data = _safe_json_loads(str(message))
+    content = _extract_message_text(message)
+    data = _safe_json_loads(content)
+    fit_score = _coerce_fit_score(data.get("fit_score"))
     return LLMMatchResult(
-        fit_score=float(data.get("fit_score", 0)),
-        verdict=_normalize_verdict(str(data.get("verdict", "not_fit"))),
+        fit_score=fit_score,
+        verdict=_normalize_verdict(str(data.get("verdict", "")), fit_score),
         role_family=str(data.get("role_family", "unknown")),
         match_reasons=_as_string_list(data.get("match_reasons")),
         reject_reasons=_as_string_list(data.get("reject_reasons")),
@@ -278,12 +301,82 @@ def _parse_match_result(payload: Dict[str, Any]) -> LLMMatchResult:
     )
 
 
+def _extract_message_text(message: Any) -> str:
+    if isinstance(message, str):
+        return message
+    if isinstance(message, list):
+        parts = []
+        for item in message:
+            if isinstance(item, dict):
+                text = item.get("text") or item.get("content")
+                if isinstance(text, str) and text.strip():
+                    parts.append(text.strip())
+        return "\n".join(parts)
+    if isinstance(message, dict):
+        text = message.get("text") or message.get("content")
+        if isinstance(text, str):
+            return text
+    return str(message or "")
+
+
 def _safe_json_loads(value: str) -> Dict[str, Any]:
+    for candidate in _json_candidates(value):
+        try:
+            parsed = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    return {}
+
+
+def _json_candidates(value: str) -> list[str]:
+    raw = str(value or "").strip()
+    if not raw:
+        return [raw]
+    candidates = [raw]
+    stripped_fence = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.IGNORECASE)
+    if stripped_fence != raw:
+        candidates.append(stripped_fence.strip())
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start != -1 and end > start:
+        candidates.append(raw[start : end + 1].strip())
+    return candidates
+
+
+def _coerce_fit_score(value: Any) -> float:
     try:
-        parsed = json.loads(value)
-    except json.JSONDecodeError:
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _fallback_verdict_by_score(fit_score: float) -> str:
+    if fit_score >= 75:
+        return "strong_fit"
+    if fit_score >= 45:
+        return "possible_fit"
+    return "not_fit"
+
+
+def _normalize_verdict(value: str, fit_score: float = 0.0) -> str:
+    normalized = value.strip().lower()
+    if normalized in {"strong_fit", "possible_fit", "not_fit"}:
+        return normalized
+    alias = _VERDICT_ALIAS_MAP.get(normalized)
+    if alias:
+        return alias
+    compact = re.sub(r"[\s\-]+", "_", normalized)
+    if compact in {"strong_fit", "possible_fit", "not_fit"}:
+        return compact
+    if compact in {"strongfit", "possiblefit", "notfit"}:
+        return {
+            "strongfit": "strong_fit",
+            "possiblefit": "possible_fit",
+            "notfit": "not_fit",
+        }[compact]
+    return _fallback_verdict_by_score(fit_score)
 
 
 def _as_string_list(value: Any) -> list[str]:
@@ -292,13 +385,6 @@ def _as_string_list(value: Any) -> list[str]:
     if isinstance(value, str) and value.strip():
         return [value.strip()]
     return []
-
-
-def _normalize_verdict(value: str) -> str:
-    normalized = value.strip().lower()
-    if normalized in {"strong_fit", "possible_fit", "not_fit"}:
-        return normalized
-    return "not_fit"
 
 
 def _early_career_markers(job: Job) -> list[str]:

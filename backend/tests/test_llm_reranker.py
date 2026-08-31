@@ -8,6 +8,8 @@ from app.db.session import Base
 from app.matching.llm_reranker import (
     LLMMatchResult,
     _build_auth_headers,
+    _normalize_verdict,
+    _parse_match_result,
     create_llm_client,
     resolve_base_url,
     run_llm_rerank,
@@ -102,6 +104,37 @@ def test_auth_header_uses_bearer_for_openai_base_url():
     headers = _build_auth_headers("secret", "https://api.openai.com/v1")
     assert headers["Authorization"] == "Bearer secret"
     assert "api-key" not in headers
+
+
+def test_parse_match_result_tolerates_json_fence_and_space_verdict():
+    payload = {
+        "choices": [
+            {
+                "message": {
+                    "content": (
+                        "```json\n"
+                        '{"fit_score": 78, "verdict": "possible fit", '
+                        '"role_family": "cloud security", '
+                        '"match_reasons": ["IAM"], "reject_reasons": [], '
+                        '"missing_skills": ["CNAPP"]}\n'
+                        "```"
+                    )
+                }
+            }
+        ]
+    }
+
+    parsed = _parse_match_result(payload)
+
+    assert parsed.fit_score == 78
+    assert parsed.verdict == "possible_fit"
+    assert parsed.role_family == "cloud security"
+
+
+def test_normalize_verdict_falls_back_to_score_when_label_unexpected():
+    assert _normalize_verdict("totally-custom-label", 84) == "strong_fit"
+    assert _normalize_verdict("totally-custom-label", 50) == "possible_fit"
+    assert _normalize_verdict("totally-custom-label", 10) == "not_fit"
 
 
 def test_create_llm_client_allows_default_credential_without_api_key(monkeypatch):
