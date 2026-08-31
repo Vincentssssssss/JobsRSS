@@ -51,7 +51,8 @@ class Settings(BaseSettings):
     llm_target_profile: str = (
         "Senior cybersecurity roles focused on cloud security, application security, "
         "IAM/PAM, SOC/SIEM, threat detection, vulnerability management, and "
-        "security architecture leadership."
+        "security architecture leadership across Shanghai/Jiangsu/Zhejiang "
+        "(Yangtze River Delta), Hong Kong, and Singapore."
     )
 
     high_match_threshold: int = 80
@@ -79,7 +80,7 @@ class Settings(BaseSettings):
     linkedin_external_enrichment_enabled: bool = True
     linkedin_external_enrichment_timeout_seconds: int = 20
     linkedin_strict_location_filter: bool = True
-    linkedin_allowed_locations: str = "Singapore,Hong Kong,Shanghai,Hangzhou"
+    linkedin_allowed_locations: str = "Singapore,Hong Kong,Shanghai,Jiangsu,Zhejiang"
 
     job51_auth_enabled: bool = False
     job51_auth_username: Optional[str] = None

@@ -79,7 +79,7 @@ LLM_RERANK_INTERVAL_MINUTES=30
 LLM_MAX_JOBS_PER_RUN=60
 LLM_MIN_RULE_SCORE=20
 LLM_ONLY_UNSCORED=true
-LLM_TARGET_PROFILE=Senior cybersecurity roles focused on cloud security...
+LLM_TARGET_PROFILE=Senior cybersecurity roles focused on cloud security across Shanghai/Jiangsu/Zhejiang, Hong Kong, and Singapore...
 ```
 
 Qwen example:
@@ -181,10 +181,10 @@ Configuration:
 - `LINKEDIN_EXTERNAL_ENRICHMENT_ENABLED=true`
 - `LINKEDIN_EXTERNAL_ENRICHMENT_TIMEOUT_SECONDS=20`
 - `LINKEDIN_STRICT_LOCATION_FILTER=true`
-- `LINKEDIN_ALLOWED_LOCATIONS=Singapore,Hong Kong,Shanghai,Hangzhou`
+- `LINKEDIN_ALLOWED_LOCATIONS=Singapore,Hong Kong,Shanghai,Jiangsu,Zhejiang`
 
 With strict filtering enabled, LinkedIn jobs outside Singapore, Hong Kong,
-Shanghai, and Hangzhou are discarded before database ingestion.
+Shanghai, Jiangsu, and Zhejiang are discarded before database ingestion.
 
 ## Refreshing Liepin Login State
 

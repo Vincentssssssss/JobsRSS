@@ -5,6 +5,8 @@ def test_official_sources_enabled_by_default_for_v2(monkeypatch):
     monkeypatch.delenv("OFFICIAL_SOURCES_ENABLED", raising=False)
     monkeypatch.delenv("LLM_REJECT_EARLY_CAREER", raising=False)
     monkeypatch.delenv("ALLOWED_ORIGINS", raising=False)
+    monkeypatch.delenv("LINKEDIN_ALLOWED_LOCATIONS", raising=False)
+    monkeypatch.delenv("LLM_TARGET_PROFILE", raising=False)
 
     settings = Settings(_env_file=None)
 
@@ -12,6 +14,9 @@ def test_official_sources_enabled_by_default_for_v2(monkeypatch):
     assert settings.llm_reject_early_career is True
     assert "http://localhost:3000" in settings.allowed_origins
     assert "http://127.0.0.1:3000" in settings.allowed_origins
+    assert "Jiangsu" in settings.linkedin_allowed_locations
+    assert "Zhejiang" in settings.linkedin_allowed_locations
+    assert "Hong Kong" in settings.llm_target_profile
 
 
 def test_allowed_origins_accepts_csv_value(monkeypatch):

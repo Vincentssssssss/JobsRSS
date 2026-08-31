@@ -41,7 +41,7 @@ def test_extracts_title_from_linkedin_job_slug():
 
 def test_strict_location_filter_accepts_only_configured_markets():
     collector = LinkedInAuthCollector()
-    allowed = ["Singapore", "Hong Kong", "Shanghai", "Hangzhou"]
+    allowed = ["Singapore", "Hong Kong", "Shanghai", "Jiangsu", "Zhejiang"]
 
     assert collector._is_allowed_location("Singapore", allowed)
     assert collector._is_allowed_location("新加坡", allowed)
@@ -50,11 +50,24 @@ def test_strict_location_filter_accepts_only_configured_markets():
     assert collector._is_allowed_location("上海市", allowed)
     assert collector._is_allowed_location("Hangzhou, Zhejiang, China", allowed)
     assert collector._is_allowed_location("杭州市", allowed)
+    assert collector._is_allowed_location("Nanjing, Jiangsu, China", allowed)
+    assert collector._is_allowed_location("苏州, 江苏省, 中国", allowed)
+    assert collector._is_allowed_location("Ningbo, Zhejiang, China", allowed)
 
     assert not collector._is_allowed_location("Beijing", allowed)
     assert not collector._is_allowed_location("Shenzhen", allowed)
     assert not collector._is_allowed_location("Remote - APAC", allowed)
     assert not collector._is_allowed_location("Unknown", allowed)
+
+
+def test_strict_location_filter_supports_jiangzhehu_group_keyword():
+    collector = LinkedInAuthCollector()
+    allowed = ["江浙沪"]
+
+    assert collector._is_allowed_location("上海", allowed)
+    assert collector._is_allowed_location("苏州, 江苏, 中国", allowed)
+    assert collector._is_allowed_location("杭州, 浙江, 中国", allowed)
+    assert not collector._is_allowed_location("Beijing", allowed)
 
 
 def test_strict_filter_rejects_search_url_fallback_location():
