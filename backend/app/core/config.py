@@ -1,8 +1,9 @@
+import json
 from functools import lru_cache
-from typing import List, Optional
+from typing import Annotated, List, Optional
 
-from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -54,7 +55,7 @@ class Settings(BaseSettings):
     )
 
     high_match_threshold: int = 80
-    allowed_origins: List[str] = Field(
+    allowed_origins: Annotated[List[str], NoDecode] = Field(
         default_factory=lambda: [
             "http://localhost:3000",
             "http://127.0.0.1:3000",
@@ -102,6 +103,26 @@ class Settings(BaseSettings):
     digest_email_sender: Optional[str] = None
     digest_email_recipients: str = ""
     digest_email_use_tls: bool = True
+
+    @field_validator("allowed_origins", mode="before")
+    @classmethod
+    def parse_allowed_origins(cls, value: object) -> object:
+        if isinstance(value, list):
+            return value
+        if not isinstance(value, str):
+            return value
+        text = value.strip()
+        if not text:
+            return []
+        if text.startswith("["):
+            try:
+                parsed = json.loads(text)
+            except json.JSONDecodeError:
+                pass
+            else:
+                if isinstance(parsed, list):
+                    return [str(item).strip() for item in parsed if str(item).strip()]
+        return [item.strip() for item in text.split(",") if item.strip()]
 
     def csv_items(self, value: str) -> List[str]:
         return [item.strip() for item in value.split(",") if item.strip()]

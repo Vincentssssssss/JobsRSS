@@ -12,3 +12,27 @@ def test_official_sources_enabled_by_default_for_v2(monkeypatch):
     assert settings.llm_reject_early_career is True
     assert "http://localhost:3000" in settings.allowed_origins
     assert "http://127.0.0.1:3000" in settings.allowed_origins
+
+
+def test_allowed_origins_accepts_csv_value(monkeypatch):
+    monkeypatch.setenv(
+        "ALLOWED_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000",
+    )
+    settings = Settings(_env_file=None)
+    assert settings.allowed_origins == [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
+
+
+def test_allowed_origins_accepts_json_array(monkeypatch):
+    monkeypatch.setenv(
+        "ALLOWED_ORIGINS",
+        '["http://localhost:3000", "http://127.0.0.1:3000"]',
+    )
+    settings = Settings(_env_file=None)
+    assert settings.allowed_origins == [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
