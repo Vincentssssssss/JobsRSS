@@ -37,6 +37,8 @@ services:
     build:
       context: ./frontend
     command: npm run start -- --hostname 0.0.0.0 --port 3000
+    environment:
+      BACKEND_API_BASE_URLS: http://api:8000,http://host.docker.internal:8000
     ports:
       - "3000:3000"
     depends_on:
