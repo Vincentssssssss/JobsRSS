@@ -10,11 +10,17 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt /app/requirements.txt
-RUN python -m pip install --upgrade pip setuptools wheel \
+RUN python -m pip install --upgrade --retries 5 --timeout 120 \
+    --index-url https://pypi.org/simple \
+    --trusted-host pypi.org \
+    --trusted-host files.pythonhosted.org \
+    --trusted-host pypi.python.org \
+    pip setuptools wheel \
  && python -m pip install --no-cache-dir --retries 5 --timeout 120 \
     --index-url https://pypi.org/simple \
     --trusted-host pypi.org \
     --trusted-host files.pythonhosted.org \
+    --trusted-host pypi.python.org \
     -r /app/requirements.txt
 
 COPY . /app
