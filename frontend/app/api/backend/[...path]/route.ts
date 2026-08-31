@@ -1,4 +1,4 @@
-const backendBase = (process.env.BACKEND_API_BASE_URL || "http://localhost:8000").replace(
+const backendBase = (process.env.BACKEND_API_BASE_URL || "http://api:8000").replace(
   /\/+$/,
   "",
 );

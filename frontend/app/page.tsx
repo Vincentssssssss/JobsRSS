@@ -52,8 +52,6 @@ type OfficialSourcesResponse = {
   }>;
 };
 
-const CONFIGURED_API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api/backend";
-
 function buildDirectBackendBase(): string {
   if (typeof window !== "undefined" && window.location?.hostname) {
     return `${window.location.protocol}//${window.location.hostname}:8000`;
@@ -66,9 +64,11 @@ function normalizeBase(base: string): string {
 }
 
 function apiBaseCandidates(): string[] {
-  const configured = normalizeBase(CONFIGURED_API_BASE);
   const direct = normalizeBase(buildDirectBackendBase());
-  return Array.from(new Set([configured, direct].filter(Boolean)));
+  const localhost = "http://localhost:8000";
+  const loopback = "http://127.0.0.1:8000";
+  const proxied = "/api/backend";
+  return Array.from(new Set([direct, localhost, loopback, proxied].map(normalizeBase).filter(Boolean)));
 }
 
 async function fetchJsonWithFallback<T>(path: string, params?: URLSearchParams): Promise<T | null> {
