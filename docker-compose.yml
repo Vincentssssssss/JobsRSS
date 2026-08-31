@@ -36,7 +36,7 @@ services:
   frontend:
     build:
       context: ./frontend
-    command: npm run dev -- --hostname 0.0.0.0 --port 3000
+    command: npm run start -- --hostname 0.0.0.0 --port 3000
     environment:
       NEXT_PUBLIC_API_BASE_URL: /api/backend
       BACKEND_API_BASE_URL: http://api:8000
