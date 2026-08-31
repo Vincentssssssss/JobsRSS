@@ -52,7 +52,42 @@ type OfficialSourcesResponse = {
   }>;
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api/backend";
+const CONFIGURED_API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api/backend";
+
+function buildDirectBackendBase(): string {
+  if (typeof window !== "undefined" && window.location?.hostname) {
+    return `${window.location.protocol}//${window.location.hostname}:8000`;
+  }
+  return "http://localhost:8000";
+}
+
+function normalizeBase(base: string): string {
+  return (base || "").trim().replace(/\/+$/, "");
+}
+
+function apiBaseCandidates(): string[] {
+  const configured = normalizeBase(CONFIGURED_API_BASE);
+  const direct = normalizeBase(buildDirectBackendBase());
+  return Array.from(new Set([configured, direct].filter(Boolean)));
+}
+
+async function fetchJsonWithFallback<T>(path: string, params?: URLSearchParams): Promise<T | null> {
+  const query = params?.toString();
+  const suffix = query ? `${path}?${query}` : path;
+  for (const base of apiBaseCandidates()) {
+    const target = `${base}${suffix}`;
+    try {
+      const response = await fetch(target, { cache: "no-store" });
+      if (!response.ok) {
+        continue;
+      }
+      return (await response.json()) as T;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
 
 export default function HomePage() {
   const [jobs, setJobs] = useState<JobCard[]>([]);
@@ -91,12 +126,11 @@ export default function HomePage() {
       params.set("min_llm_score", minLlmScore);
     }
     try {
-      const response = await fetch(`${API_BASE}/jobs?${params.toString()}`, { cache: "no-store" });
-      if (!response.ok) {
+      const payload = await fetchJsonWithFallback<JobCard[]>("/jobs", params);
+      if (!payload) {
         setJobs([]);
         return;
       }
-      const payload: JobCard[] = await response.json();
       setJobs(payload);
     } catch {
       setJobs([]);
@@ -105,12 +139,11 @@ export default function HomePage() {
 
   const loadSummary = async () => {
     try {
-      const response = await fetch(`${API_BASE}/jobs/summary/last-24h`, { cache: "no-store" });
-      if (!response.ok) {
+      const payload = await fetchJsonWithFallback<SummaryResponse>("/jobs/summary/last-24h");
+      if (!payload) {
         setSummary(null);
         return;
       }
-      const payload: SummaryResponse = await response.json();
       setSummary(payload);
     } catch {
       setSummary(null);
@@ -138,13 +171,8 @@ export default function HomePage() {
       params.set("min_llm_score", minLlmScore);
     }
     try {
-      const response = await fetch(`${API_BASE}/jobs/count?${params.toString()}`, { cache: "no-store" });
-      if (!response.ok) {
-        setTotalCount(0);
-        return;
-      }
-      const payload = await response.json();
-      setTotalCount(Number(payload.total || 0));
+      const payload = await fetchJsonWithFallback<{ total?: number }>("/jobs/count", params);
+      setTotalCount(Number(payload?.total || 0));
     } catch {
       setTotalCount(0);
     }
@@ -152,12 +180,11 @@ export default function HomePage() {
 
   const loadOfficialSources = async () => {
     try {
-      const response = await fetch(`${API_BASE}/sources/official`, { cache: "no-store" });
-      if (!response.ok) {
+      const payload = await fetchJsonWithFallback<OfficialSourcesResponse>("/sources/official");
+      if (!payload) {
         setOfficialSources([]);
         return;
       }
-      const payload: OfficialSourcesResponse = await response.json();
       const sourceNames = payload.sources
         .filter((item) => item.enabled && item.operational)
         .map((item) => `official_${item.source_id}`);
@@ -170,12 +197,11 @@ export default function HomePage() {
   const loadJobDetail = async (jobId: number) => {
     setDetailLoading(true);
     try {
-      const response = await fetch(`${API_BASE}/jobs/${jobId}`, { cache: "no-store" });
-      if (!response.ok) {
+      const payload = await fetchJsonWithFallback<JobDetail>(`/jobs/${jobId}`);
+      if (!payload) {
         setSelectedJob(null);
         return;
       }
-      const payload: JobDetail = await response.json();
       setSelectedJob(payload);
     } catch {
       setSelectedJob(null);
@@ -196,6 +222,7 @@ export default function HomePage() {
   }, []);
 
   const highMatchCount = useMemo(() => jobs.filter((job) => job.match_score >= 80).length, [jobs]);
+  const rssBase = useMemo(() => buildDirectBackendBase(), []);
   const sourceOptions = useMemo(() => {
     const fromJobs = jobs.map((job) => job.source);
     const fromSummary = summary?.by_source.map((item) => item.source) ?? [];
@@ -208,10 +235,10 @@ export default function HomePage() {
         <h1>JobsRSS Intelligence</h1>
         <p>Cloud and security opportunities ranked for your profile.</p>
         <div className="actions">
-          <a className="button primary" href={`${API_BASE}/rss/high-match.xml`} target="_blank">
+          <a className="button primary" href={`${rssBase}/rss/high-match.xml`} target="_blank">
             High Match RSS
           </a>
-          <a className="button" href={`${API_BASE}/rss/all.xml`} target="_blank">
+          <a className="button" href={`${rssBase}/rss/all.xml`} target="_blank">
             All Jobs RSS
           </a>
         </div>
