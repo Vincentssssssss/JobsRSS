@@ -71,19 +71,36 @@ function apiBaseCandidates(): string[] {
   return Array.from(new Set([direct, localhost, loopback, proxied].map(normalizeBase).filter(Boolean)));
 }
 
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function fetchJsonWithFallback<T>(path: string, params?: URLSearchParams): Promise<T | null> {
   const query = params?.toString();
   const suffix = query ? `${path}?${query}` : path;
-  for (const base of apiBaseCandidates()) {
-    const target = `${base}${suffix}`;
-    try {
-      const response = await fetch(target, { cache: "no-store" });
-      if (!response.ok) {
+  const retryDelaysMs = [300, 900];
+  const candidates = apiBaseCandidates();
+
+  for (let attempt = 0; attempt <= retryDelaysMs.length; attempt += 1) {
+    for (const base of candidates) {
+      const target = `${base}${suffix}`;
+      try {
+        const response = await fetch(target, { cache: "no-store" });
+        if (!response.ok) {
+          continue;
+        }
+        const contentType = (response.headers.get("content-type") || "").toLowerCase();
+        if (!contentType.includes("application/json")) {
+          // Avoid parsing HTML error pages as JSON.
+          continue;
+        }
+        return (await response.json()) as T;
+      } catch {
         continue;
       }
-      return (await response.json()) as T;
-    } catch {
-      continue;
+    }
+    if (attempt < retryDelaysMs.length) {
+      await sleep(retryDelaysMs[attempt]);
     }
   }
   return null;

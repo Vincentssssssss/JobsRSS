@@ -17,19 +17,35 @@ export async function GET(request: Request, context: RouteContext): Promise<Resp
   const incoming = new URL(request.url);
   const targetUrl = `${backendBase}/${pathSegments.join("/")}${incoming.search}`;
 
-  const response = await fetch(targetUrl, {
-    method: "GET",
-    cache: "no-store",
-    headers: {
-      Accept: request.headers.get("accept") || "application/json",
-    },
-  });
+  try {
+    const response = await fetch(targetUrl, {
+      method: "GET",
+      cache: "no-store",
+      headers: {
+        Accept: request.headers.get("accept") || "application/json",
+      },
+    });
 
-  return new Response(response.body, {
-    status: response.status,
-    headers: {
-      "content-type": response.headers.get("content-type") || "application/json",
-      "cache-control": "no-store",
-    },
-  });
+    return new Response(response.body, {
+      status: response.status,
+      headers: {
+        "content-type": response.headers.get("content-type") || "application/json",
+        "cache-control": "no-store",
+      },
+    });
+  } catch (error) {
+    return Response.json(
+      {
+        detail: "backend_unavailable",
+        target: targetUrl,
+        error: String(error),
+      },
+      {
+        status: 502,
+        headers: {
+          "cache-control": "no-store",
+        },
+      }
+    );
+  }
 }
