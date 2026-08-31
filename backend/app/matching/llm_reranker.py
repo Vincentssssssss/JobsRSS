@@ -141,16 +141,18 @@ class OpenAICompatibleClient:
             except httpx.HTTPStatusError as exc:
                 last_error = exc
                 status = exc.response.status_code if exc.response is not None else None
+                summary = _summarize_http_status_error(exc)
                 if attempt >= self.request_max_retries or not _is_retryable_status(status):
-                    raise
+                    raise RuntimeError(summary) from exc
                 delay = _retry_delay_seconds(self.request_retry_backoff_seconds, attempt)
                 logger.warning(
-                    "llm_request_retry attempt=%d/%d status=%s delay_seconds=%.1f model=%s",
+                    "llm_request_retry attempt=%d/%d status=%s delay_seconds=%.1f model=%s %s",
                     attempt + 1,
                     attempts,
                     status,
                     delay,
                     self.model,
+                    summary,
                 )
                 if delay:
                     time.sleep(delay)
@@ -533,6 +535,37 @@ def _is_retryable_status(status_code: Optional[int]) -> bool:
 
 def _retry_delay_seconds(base_seconds: float, attempt: int) -> float:
     return max(0.0, base_seconds) * (2 ** max(0, attempt))
+
+
+def _summarize_http_status_error(exc: httpx.HTTPStatusError) -> str:
+    response = exc.response
+    if response is None:
+        return f"http_status_error message={str(exc)}"
+    request_id = (
+        response.headers.get("x-request-id")
+        or response.headers.get("x-ms-request-id")
+        or "-"
+    )
+    error_type = "-"
+    error_code = "-"
+    error_message = ""
+    try:
+        payload = response.json()
+        if isinstance(payload, dict):
+            err = payload.get("error")
+            if isinstance(err, dict):
+                error_type = str(err.get("type") or "-")
+                error_code = str(err.get("code") or "-")
+                error_message = str(err.get("message") or "")
+    except Exception:
+        error_message = response.text[:300]
+    error_message = " ".join(error_message.split())
+    if len(error_message) > 240:
+        error_message = f"{error_message[:237]}..."
+    return (
+        f"http_status={response.status_code} request_id={request_id} "
+        f"error_type={error_type} error_code={error_code} message={error_message}"
+    )
 
 
 def _is_azure_openai_base_url(base_url: str) -> bool:

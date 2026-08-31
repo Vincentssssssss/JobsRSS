@@ -12,6 +12,7 @@ from app.matching.llm_reranker import (
     _normalize_verdict,
     _parse_match_result,
     _retry_delay_seconds,
+    _summarize_http_status_error,
     create_llm_client,
     resolve_base_url,
     run_llm_rerank,
@@ -122,6 +123,31 @@ def test_retryable_status_and_backoff_helpers():
     assert _retry_delay_seconds(1.5, 0) == 1.5
     assert _retry_delay_seconds(1.5, 1) == 3.0
     assert _retry_delay_seconds(1.5, 2) == 6.0
+
+
+def test_summarize_http_status_error_includes_request_id_and_error_fields():
+    import httpx
+
+    request = httpx.Request("POST", "https://example.com/chat/completions")
+    response = httpx.Response(
+        status_code=500,
+        request=request,
+        headers={"x-request-id": "req-123"},
+        json={
+            "error": {
+                "message": "The server had an error while processing your request.",
+                "type": "server_error",
+                "code": None,
+            }
+        },
+    )
+    exc = httpx.HTTPStatusError("boom", request=request, response=response)
+
+    text = _summarize_http_status_error(exc)
+
+    assert "http_status=500" in text
+    assert "request_id=req-123" in text
+    assert "error_type=server_error" in text
 
 
 def test_parse_match_result_tolerates_json_fence_and_space_verdict():
