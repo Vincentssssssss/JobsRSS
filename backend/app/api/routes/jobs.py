@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import desc, false, func
+from sqlalchemy import asc, desc, false, func
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -25,6 +25,38 @@ def _parse_llm_verdicts(value: Optional[str]) -> list[str]:
     return verdicts
 
 
+def _apply_jobs_filters(
+    query,
+    *,
+    min_score: float,
+    source: Optional[str],
+    q: Optional[str],
+    location_category: Optional[str],
+    min_llm_score: Optional[float],
+    llm_verdicts: list[str],
+    llm_verdict_raw: Optional[str],
+    status: Optional[str],
+):
+    query = query.filter(Job.match_score >= min_score)
+    if status:
+        query = query.filter(Job.status == status)
+    if source:
+        query = query.filter(Job.source == source)
+    if q:
+        like = f"%{q}%"
+        query = query.filter((Job.title.ilike(like)) | (Job.company.ilike(like)) | (Job.location.ilike(like)))
+    if location_category:
+        query = query.filter(Job.location_category == location_category)
+    if min_llm_score is not None:
+        query = query.filter(Job.llm_fit_score.is_not(None), Job.llm_fit_score >= min_llm_score)
+    if llm_verdict_raw:
+        if llm_verdicts:
+            query = query.filter(Job.llm_verdict.in_(llm_verdicts))
+        else:
+            query = query.filter(false())
+    return query
+
+
 @router.get("", response_model=List[JobOut])
 def list_jobs(
     db: Session = Depends(get_db),
@@ -39,23 +71,17 @@ def list_jobs(
     status: Optional[str] = Query(default="active"),
 ):
     llm_verdicts = _parse_llm_verdicts(llm_verdict)
-    query = db.query(Job).filter(Job.match_score >= min_score)
-    if status:
-        query = query.filter(Job.status == status)
-    if source:
-        query = query.filter(Job.source == source)
-    if q:
-        like = f"%{q}%"
-        query = query.filter((Job.title.ilike(like)) | (Job.company.ilike(like)) | (Job.location.ilike(like)))
-    if location_category:
-        query = query.filter(Job.location_category == location_category)
-    if min_llm_score is not None:
-        query = query.filter(Job.llm_fit_score.is_not(None), Job.llm_fit_score >= min_llm_score)
-    if llm_verdict:
-        if llm_verdicts:
-            query = query.filter(Job.llm_verdict.in_(llm_verdicts))
-        else:
-            query = query.filter(false())
+    query = _apply_jobs_filters(
+        db.query(Job),
+        min_score=min_score,
+        source=source,
+        q=q,
+        location_category=location_category,
+        min_llm_score=min_llm_score,
+        llm_verdicts=llm_verdicts,
+        llm_verdict_raw=llm_verdict,
+        status=status,
+    )
     return query.order_by(desc(Job.posted_at), desc(Job.id)).offset(offset).limit(limit).all()
 
 
@@ -71,25 +97,52 @@ def jobs_count(
     status: Optional[str] = Query(default="active"),
 ):
     llm_verdicts = _parse_llm_verdicts(llm_verdict)
-    query = db.query(func.count(Job.id)).filter(Job.match_score >= min_score)
-    if status:
-        query = query.filter(Job.status == status)
-    if source:
-        query = query.filter(Job.source == source)
-    if q:
-        like = f"%{q}%"
-        query = query.filter((Job.title.ilike(like)) | (Job.company.ilike(like)) | (Job.location.ilike(like)))
-    if location_category:
-        query = query.filter(Job.location_category == location_category)
-    if min_llm_score is not None:
-        query = query.filter(Job.llm_fit_score.is_not(None), Job.llm_fit_score >= min_llm_score)
-    if llm_verdict:
-        if llm_verdicts:
-            query = query.filter(Job.llm_verdict.in_(llm_verdicts))
-        else:
-            query = query.filter(false())
+    query = _apply_jobs_filters(
+        db.query(func.count(Job.id)),
+        min_score=min_score,
+        source=source,
+        q=q,
+        location_category=location_category,
+        min_llm_score=min_llm_score,
+        llm_verdicts=llm_verdicts,
+        llm_verdict_raw=llm_verdict,
+        status=status,
+    )
     total = query.scalar() or 0
     return {"total": total}
+
+
+@router.get("/source-counts")
+def jobs_source_counts(
+    db: Session = Depends(get_db),
+    min_score: float = Query(default=0, ge=0, le=100),
+    source: Optional[str] = Query(default=None),
+    q: Optional[str] = Query(default=None),
+    location_category: Optional[str] = Query(default=None),
+    min_llm_score: Optional[float] = Query(default=None, ge=0, le=100),
+    llm_verdict: Optional[str] = Query(default=None),
+    status: Optional[str] = Query(default="active"),
+):
+    llm_verdicts = _parse_llm_verdicts(llm_verdict)
+    query = _apply_jobs_filters(
+        db.query(Job.source, func.count(Job.id)),
+        min_score=min_score,
+        source=source,
+        q=q,
+        location_category=location_category,
+        min_llm_score=min_llm_score,
+        llm_verdicts=llm_verdicts,
+        llm_verdict_raw=llm_verdict,
+        status=status,
+    )
+    rows = (
+        query
+        .group_by(Job.source)
+        .order_by(desc(func.count(Job.id)), asc(Job.source))
+        .all()
+    )
+    counts = [{"source": row[0], "count": row[1]} for row in rows]
+    return {"counts": counts}
 
 
 @router.get("/summary/last-24h")

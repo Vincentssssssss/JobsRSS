@@ -42,6 +42,16 @@ Mainstream private enterprise expansion (technology):
 - This release intentionally separates **registry expansion** from
   **collector implementation** to reduce production risk.
 
+## UI / API Improvements
+
+- Added `GET /jobs/source-counts` aggregation endpoint to return grouped
+  source counts under current filters.
+- Source dropdown now shows per-source counts (for example
+  `official_xiaomi (12)`), plus an aggregate `All sources (N)` label.
+- This helps quickly distinguish:
+  - source exists but current filters produce zero matches,
+  - source catalog failed to load.
+
 ## Version Metadata
 
 - Backend default `APP_VERSION=2.1.0`

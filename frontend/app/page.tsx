@@ -54,6 +54,13 @@ type OfficialSourcesResponse = {
   }>;
 };
 
+type SourceCountsResponse = {
+  counts: Array<{
+    source: string;
+    count: number;
+  }>;
+};
+
 function buildDirectBackendBase(): string {
   if (typeof window !== "undefined" && window.location?.hostname) {
     return `${window.location.protocol}//${window.location.hostname}:8000`;
@@ -114,6 +121,9 @@ export default function HomePage() {
   const [officialSources, setOfficialSources] = useState<string[]>([]);
   const [officialSourceTotal, setOfficialSourceTotal] = useState<number | null>(null);
   const [officialSourceLoadError, setOfficialSourceLoadError] = useState(false);
+  const [sourceCounts, setSourceCounts] = useState<Record<string, number>>({});
+  const [sourceCountsLoaded, setSourceCountsLoaded] = useState(false);
+  const [sourceCountsLoadError, setSourceCountsLoadError] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
   const [query, setQuery] = useState("");
   const [source, setSource] = useState("");
@@ -199,6 +209,45 @@ export default function HomePage() {
     }
   };
 
+  const loadSourceCounts = async () => {
+    const params = new URLSearchParams();
+    params.set("min_score", aiPrecisionMode ? "0" : String(minScore));
+    if (query.trim()) {
+      params.set("q", query.trim());
+    }
+    if (locationCategory) {
+      params.set("location_category", locationCategory);
+    }
+    if (aiPrecisionMode) {
+      params.set("llm_verdict", "strong_fit,possible_fit");
+      if (minLlmScore) {
+        params.set("min_llm_score", minLlmScore);
+      }
+    } else if (minLlmScore) {
+      params.set("min_llm_score", minLlmScore);
+    }
+    try {
+      const payload = await fetchJsonWithFallback<SourceCountsResponse>("/jobs/source-counts", params);
+      if (!payload) {
+        setSourceCounts({});
+        setSourceCountsLoaded(false);
+        setSourceCountsLoadError(true);
+        return;
+      }
+      const next: Record<string, number> = {};
+      for (const item of payload.counts || []) {
+        next[item.source] = Number(item.count || 0);
+      }
+      setSourceCounts(next);
+      setSourceCountsLoaded(true);
+      setSourceCountsLoadError(false);
+    } catch {
+      setSourceCounts({});
+      setSourceCountsLoaded(false);
+      setSourceCountsLoadError(true);
+    }
+  };
+
   const loadOfficialSources = async () => {
     try {
       const payload = await fetchJsonWithFallback<OfficialSourcesResponse>("/sources/official");
@@ -236,7 +285,7 @@ export default function HomePage() {
 
   useEffect(() => {
     const load = async () => {
-      await Promise.all([loadJobs(), loadSummary(), loadCount()]);
+      await Promise.all([loadJobs(), loadSummary(), loadCount(), loadSourceCounts()]);
     };
     void load();
   }, [query, source, minScore, minLlmScore, aiPrecisionMode, limit, locationCategory]);
@@ -247,11 +296,18 @@ export default function HomePage() {
 
   const highMatchCount = useMemo(() => jobs.filter((job) => job.match_score >= 80).length, [jobs]);
   const rssBase = useMemo(() => buildDirectBackendBase(), []);
+  const allSourcesCount = useMemo(() => {
+    if (!sourceCountsLoaded) {
+      return null;
+    }
+    return Object.values(sourceCounts).reduce((sum, value) => sum + Number(value || 0), 0);
+  }, [sourceCountsLoaded, sourceCounts]);
   const sourceOptions = useMemo(() => {
     const fromJobs = jobs.map((job) => job.source);
     const fromSummary = summary?.by_source.map((item) => item.source) ?? [];
-    return Array.from(new Set([...fromJobs, ...fromSummary, ...officialSources])).sort();
-  }, [jobs, summary, officialSources]);
+    const fromCounts = Object.keys(sourceCounts);
+    return Array.from(new Set([...fromJobs, ...fromSummary, ...officialSources, ...fromCounts])).sort();
+  }, [jobs, summary, officialSources, sourceCounts]);
 
   return (
     <main className="page">
@@ -299,12 +355,17 @@ export default function HomePage() {
         <div className="field">
           <label>Source</label>
           <select value={source} onChange={(event) => setSource(event.target.value)}>
-            <option value="">All sources</option>
-            {sourceOptions.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
+            <option value="">
+              {allSourcesCount == null ? "All sources" : `All sources (${allSourcesCount})`}
+            </option>
+            {sourceOptions.map((item) => {
+              const countText = sourceCountsLoaded ? ` (${sourceCounts[item] ?? 0})` : "";
+              return (
+                <option key={item} value={item}>
+                  {`${item}${countText}`}
+                </option>
+              );
+            })}
           </select>
           {officialSourceLoadError ? (
             <p className="field-note warning">
@@ -316,6 +377,15 @@ export default function HomePage() {
               {officialSourceTotal != null ? ` (${officialSourceTotal} sources)` : ""}.
             </p>
           )}
+          {sourceCountsLoadError ? (
+            <p className="field-note warning">
+              Source counts unavailable for current filters.
+            </p>
+          ) : sourceCountsLoaded ? (
+            <p className="field-note">
+              Source counts reflect current filters (AI score, query, location).
+            </p>
+          ) : null}
         </div>
         <div className="field">
           <label>AI Precision Mode</label>
