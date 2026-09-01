@@ -49,6 +49,7 @@ type OfficialSourcesResponse = {
     source_id: string;
     enabled: boolean;
     operational: boolean;
+    wave?: number;
   }>;
 };
 
@@ -203,7 +204,6 @@ export default function HomePage() {
         return;
       }
       const sourceNames = payload.sources
-        .filter((item) => item.enabled && item.operational)
         .map((item) => `official_${item.source_id}`);
       setOfficialSources(sourceNames);
     } catch {
