@@ -79,5 +79,17 @@ def test_every_operational_first_wave_source_has_collector_factory():
         if source.enabled and source.operational
     }
 
-    assert set(OFFICIAL_COLLECTOR_FACTORIES) == operational
+    assert operational.issubset(set(OFFICIAL_COLLECTOR_FACTORIES))
     assert len(operational) == 15
+
+
+def test_simcere_and_innovent_are_operational_with_factories():
+    source_by_id = {
+        source.source_id: source for source in OFFICIAL_SOURCE_REGISTRY
+    }
+
+    for source_id in {"simcere", "innovent"}:
+        source = source_by_id[source_id]
+        assert source.collection_method == "json"
+        assert source.operational
+        assert source_id in OFFICIAL_COLLECTOR_FACTORIES

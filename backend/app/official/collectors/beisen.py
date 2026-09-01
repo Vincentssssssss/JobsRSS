@@ -93,6 +93,15 @@ class ChiaTaiTianqingOfficialCollector(BeisenOfficialCollector):
         )
 
 
+class InnoventOfficialCollector(BeisenOfficialCollector):
+    def __init__(self) -> None:
+        super().__init__(
+            source_id="innovent",
+            company="Innovent Biologics / 信达生物",
+            portal_root="https://innoventbio.zhiye.com",
+        )
+
+
 def parse_beisen_jobs(
     payload: Dict[str, Any],
     company: str,

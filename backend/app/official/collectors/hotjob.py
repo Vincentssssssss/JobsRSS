@@ -9,23 +9,29 @@ from app.official.registry import get_official_source
 
 HOTJOB_ROOT = "https://wecruit.hotjob.cn"
 YUNNAN_BAIYAO_TENANT = "SU6136b970bef57c3b638162c4"
+SIMCERE_TENANT = "SU61458d83bef57c54dcb4e43f"
 
 
-class YunnanBaiyaoOfficialCollector(OfficialCollectorBase):
-    def __init__(self) -> None:
+class HotJobOfficialCollector(OfficialCollectorBase):
+    def __init__(
+        self,
+        source_id: str,
+        company: str,
+        tenant: str,
+    ) -> None:
         super().__init__(
-            get_official_source("yunnan_baiyao"),
+            get_official_source(source_id),
             method="json",
             parser_name="hotjob-json",
         )
+        self.company = company
+        self.tenant = tenant
 
     def fetch_raw(self) -> List[Dict[str, Any]]:
         settings = get_settings()
         headers = {
             "User-Agent": "Mozilla/5.0",
-            "Referer": (
-                f"{HOTJOB_ROOT}/{YUNNAN_BAIYAO_TENANT}/pb/social.html"
-            ),
+            "Referer": f"{HOTJOB_ROOT}/{self.tenant}/pb/social.html",
         }
         jobs: List[Dict[str, Any]] = []
         with httpx.Client(
@@ -57,7 +63,7 @@ class YunnanBaiyaoOfficialCollector(OfficialCollectorBase):
                     detail = client.post(
                         (
                             f"{HOTJOB_ROOT}/wecruit/positionInfo/"
-                            f"listPositionDetail/{YUNNAN_BAIYAO_TENANT}"
+                            f"listPositionDetail/{self.tenant}"
                         ),
                         data={
                             "postId": item.get("postId"),
@@ -66,7 +72,11 @@ class YunnanBaiyaoOfficialCollector(OfficialCollectorBase):
                         },
                     )
                     detail.raise_for_status()
-                    job = parse_hotjob_detail(detail.json())
+                    job = parse_hotjob_detail(
+                        detail.json(),
+                        company_fallback=self.company,
+                        tenant=self.tenant,
+                    )
                     if job is not None:
                         jobs.append(job)
                     if len(jobs) >= settings.official_source_max_jobs_per_source:
@@ -79,7 +89,7 @@ class YunnanBaiyaoOfficialCollector(OfficialCollectorBase):
         response = client.post(
             (
                 f"{HOTJOB_ROOT}/wecruit/positionInfo/"
-                f"listPosition/{YUNNAN_BAIYAO_TENANT}"
+                f"listPosition/{self.tenant}"
             ),
             data={
                 "isFrompb": "true",
@@ -92,7 +102,30 @@ class YunnanBaiyaoOfficialCollector(OfficialCollectorBase):
         return response.json()
 
 
-def parse_hotjob_detail(payload: Dict[str, Any]) -> Dict[str, Any] | None:
+class YunnanBaiyaoOfficialCollector(HotJobOfficialCollector):
+    def __init__(self) -> None:
+        super().__init__(
+            source_id="yunnan_baiyao",
+            company="Yunnan Baiyao / 云南白药",
+            tenant=YUNNAN_BAIYAO_TENANT,
+        )
+
+
+class SimcereOfficialCollector(HotJobOfficialCollector):
+    def __init__(self) -> None:
+        super().__init__(
+            source_id="simcere",
+            company="Simcere / 先声药业",
+            tenant=SIMCERE_TENANT,
+        )
+
+
+def parse_hotjob_detail(
+    payload: Dict[str, Any],
+    *,
+    company_fallback: str = "Yunnan Baiyao / 云南白药",
+    tenant: str = YUNNAN_BAIYAO_TENANT,
+) -> Dict[str, Any] | None:
     item = payload.get("data") or {}
     source_job_id = str(item.get("postId") or "").strip()
     title = str(item.get("postName") or "").strip()
@@ -110,9 +143,9 @@ def parse_hotjob_detail(payload: Dict[str, Any]) -> Dict[str, Any] | None:
         )
         if value
     )
-    company = str(item.get("company") or "Yunnan Baiyao / 云南白药")
+    company = str(item.get("company") or company_fallback)
     source_url = (
-        f"{HOTJOB_ROOT}/{YUNNAN_BAIYAO_TENANT}/pb/"
+        f"{HOTJOB_ROOT}/{tenant}/pb/"
         f"posDetail.html?postId={source_job_id}"
     )
     return {

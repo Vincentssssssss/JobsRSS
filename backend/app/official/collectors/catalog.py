@@ -5,6 +5,7 @@ from app.official.collectors.alibaba import AlibabaOfficialCollector
 from app.official.collectors.amazon import AmazonOfficialCollector
 from app.official.collectors.beisen import (
     ChiaTaiTianqingOfficialCollector,
+    InnoventOfficialCollector,
     WuXiAppTecOfficialCollector,
 )
 from app.official.collectors.feishu_jobs import (
@@ -13,7 +14,10 @@ from app.official.collectors.feishu_jobs import (
 )
 from app.official.collectors.fosun import FosunPharmaOfficialCollector
 from app.official.collectors.google import GoogleOfficialCollector
-from app.official.collectors.hotjob import YunnanBaiyaoOfficialCollector
+from app.official.collectors.hotjob import (
+    SimcereOfficialCollector,
+    YunnanBaiyaoOfficialCollector,
+)
 from app.official.collectors.huawei import HuaweiOfficialCollector
 from app.official.collectors.microsoft import MicrosoftOfficialCollector
 from app.official.collectors.moka import (
@@ -37,6 +41,8 @@ OFFICIAL_COLLECTOR_FACTORIES: Dict[str, Callable[[], BaseCollector]] = {
     "fosun_pharma": FosunPharmaOfficialCollector,
     "ct_tianqing": ChiaTaiTianqingOfficialCollector,
     "yunnan_baiyao": YunnanBaiyaoOfficialCollector,
+    "innovent": InnoventOfficialCollector,
+    "simcere": SimcereOfficialCollector,
     "gsk": GskOfficialCollector,
     "roche": RocheOfficialCollector,
 }

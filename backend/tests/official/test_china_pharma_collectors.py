@@ -55,6 +55,29 @@ def test_parses_yunnan_baiyao_hotjob_detail():
     assert job["location_category"] == LocationCategory.CONFIRMED_SHANGHAI.value
 
 
+def test_parses_simcere_hotjob_detail_with_company_fallback_and_tenant():
+    payload = {
+        "data": {
+            "postId": "6a8d42321ad6db7cf83bc51d",
+            "postName": "网络安全专家",
+            "workPlaceStr": "上海市",
+            "workContent": "负责企业安全架构建设。",
+            "serviceCondition": "熟悉 IAM 与 SOC。",
+            "publishDate": "2026-08-20 10:00:00",
+        }
+    }
+
+    job = parse_hotjob_detail(
+        payload,
+        company_fallback="Simcere / 先声药业",
+        tenant="SU61458d83bef57c54dcb4e43f",
+    )
+
+    assert job["company"] == "Simcere / 先声药业"
+    assert "SU61458d83bef57c54dcb4e43f" in job["source_url"]
+    assert job["location_category"] == LocationCategory.CONFIRMED_SHANGHAI.value
+
+
 def test_parses_fosun_server_rendered_detail():
     html = """
     <div class="xqbox">
