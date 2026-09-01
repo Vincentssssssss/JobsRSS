@@ -45,6 +45,7 @@ type SummaryResponse = {
 };
 
 type OfficialSourcesResponse = {
+  total?: number;
   sources: Array<{
     source_id: string;
     enabled: boolean;
@@ -111,6 +112,8 @@ export default function HomePage() {
   const [jobs, setJobs] = useState<JobCard[]>([]);
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [officialSources, setOfficialSources] = useState<string[]>([]);
+  const [officialSourceTotal, setOfficialSourceTotal] = useState<number | null>(null);
+  const [officialSourceLoadError, setOfficialSourceLoadError] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
   const [query, setQuery] = useState("");
   const [source, setSource] = useState("");
@@ -200,14 +203,18 @@ export default function HomePage() {
     try {
       const payload = await fetchJsonWithFallback<OfficialSourcesResponse>("/sources/official");
       if (!payload) {
-        setOfficialSources([]);
+        setOfficialSourceLoadError(true);
         return;
       }
       const sourceNames = payload.sources
         .map((item) => `official_${item.source_id}`);
       setOfficialSources(sourceNames);
+      setOfficialSourceTotal(
+        typeof payload.total === "number" ? payload.total : sourceNames.length,
+      );
+      setOfficialSourceLoadError(false);
     } catch {
-      setOfficialSources([]);
+      setOfficialSourceLoadError(true);
     }
   };
 
@@ -299,6 +306,16 @@ export default function HomePage() {
               </option>
             ))}
           </select>
+          {officialSourceLoadError ? (
+            <p className="field-note warning">
+              Official source catalog unavailable, showing only sources present in current jobs.
+            </p>
+          ) : (
+            <p className="field-note">
+              Official source catalog loaded
+              {officialSourceTotal != null ? ` (${officialSourceTotal} sources)` : ""}.
+            </p>
+          )}
         </div>
         <div className="field">
           <label>AI Precision Mode</label>
