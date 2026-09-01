@@ -2,11 +2,11 @@ from app.official.collectors.catalog import OFFICIAL_COLLECTOR_FACTORIES
 from app.official.registry import FIRST_WAVE_SOURCE_IDS, OFFICIAL_SOURCE_REGISTRY
 
 
-def test_registry_contains_38_unique_company_sources():
+def test_registry_contains_49_unique_company_sources():
     source_ids = [source.source_id for source in OFFICIAL_SOURCE_REGISTRY]
 
-    assert len(source_ids) == 38
-    assert len(set(source_ids)) == 38
+    assert len(source_ids) == 49
+    assert len(set(source_ids)) == 49
 
 
 def test_first_wave_contains_approved_16_sources():
@@ -38,6 +38,27 @@ def test_every_source_has_official_identity_and_category():
         assert source.company
         assert source.category in {"technology", "pharma", "biotech", "cro_cdmo"}
         assert source.career_url.startswith("https://")
+
+
+def test_v21_expansion_includes_requested_and_mainstream_private_companies():
+    source_ids = {source.source_id for source in OFFICIAL_SOURCE_REGISTRY}
+    for expected in {
+        "weiermei",
+        "yunnan_baiyao",
+        "innovent",
+        "simcere",
+        "ant_group",
+        "jd",
+        "meituan",
+        "pdd",
+        "didi",
+        "kuaishou",
+        "netease",
+        "bilibili",
+        "trip_com",
+        "xiaohongshu",
+    }:
+        assert expected in source_ids
 
 
 def test_hengrui_is_monitored_but_not_operational_without_job_inventory():

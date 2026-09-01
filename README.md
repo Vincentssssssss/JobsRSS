@@ -2,7 +2,7 @@
 
 Phase 1 monorepo for a personal Job Intelligence platform.
 
-Current release: **v2.0.0**
+Current release: **v2.1.0**
 
 ## Services
 
@@ -28,7 +28,7 @@ Open:
 
 ## V2 Official Career Sources
 
-V2 adds a 38-company registry and 16-source first wave. Fifteen first-wave
+V2 adds a 49-company registry and 16-source first wave. Fifteen first-wave
 sources have operational collectors; Hengrui remains monitor-only because its
 official site does not expose a current, stable job inventory.
 
