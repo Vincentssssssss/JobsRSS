@@ -26,6 +26,13 @@ Open:
 - Dashboard: `http://localhost:3000`
 - Official source registry: `http://localhost:8000/sources/official`
 
+## DevOps Pipeline (Near Production)
+
+Production-style CI/CD templates for GitHub Actions and Azure VM deployment are
+documented in:
+
+- `docs/DEVOPS_PIPELINE_AZURE.md`
+
 ## V2 Official Career Sources
 
 V2 adds a 49-company registry and 16-source first wave. Fifteen first-wave
