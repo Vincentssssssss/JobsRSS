@@ -183,6 +183,17 @@ class WuXiBiologicsOfficialCollector(MokaOfficialCollector):
         )
 
 
+class AntaOfficialCollector(MokaOfficialCollector):
+    def __init__(self) -> None:
+        super().__init__(
+            source_id="anta",
+            company="ANTA Group / 安踏集团",
+            portal_url="https://jobs.anta.com/social-recruitment/antahr/146041/",
+            org_id="antahr",
+            site_id="146041",
+        )
+
+
 def decrypt_moka_response(payload: Dict[str, Any], iv: str) -> Dict[str, Any]:
     key = str(payload.get("necromancer") or "").encode("utf-8")
     iv_bytes = iv.encode("utf-8")

@@ -1,6 +1,8 @@
 from app.official.collectors.alibaba import parse_alibaba_position
 from app.official.collectors.feishu_jobs import parse_feishu_jobs
 from app.official.collectors.huawei import parse_huawei_jobs
+from app.official.collectors.midea import parse_midea_position
+from app.official.collectors.moka import parse_moka_job
 from app.official.collectors.tencent import parse_tencent_jobs
 from app.official.location import LocationCategory
 
@@ -105,3 +107,55 @@ def test_parses_alibaba_campus_position_detail():
     assert "DevSecOps" in job["description"]
     assert "Batch Name: 校园招聘" in job["description"]
     assert "Graduation Dates: 2026-11-01 - 2027-10-31" in job["description"]
+
+
+def test_parses_midea_position_detail():
+    list_item = {
+        "positionId": "8a5ec0d09f0cd643019f35e6957d6b8c",
+        "publicationName": "云安全架构师",
+        "workingPlace": "上海-闵行",
+        "postDuties": "负责云平台安全架构设计。",
+        "qualification": "具备 IAM 与应用安全经验。",
+        "releaseStartDate": 1788332142000,
+    }
+    detail_item = {
+        "positionId": "8a5ec0d09f0cd643019f35e6957d6b8c",
+        "publicationName": "云安全架构师",
+        "workingPlace": "上海-闵行",
+        "postDuties": "负责云平台安全架构设计。",
+        "qualification": "具备 IAM 与应用安全经验。",
+        "publicDate": 1788332142000,
+    }
+
+    job = parse_midea_position(list_item, detail_item)
+
+    assert job["source_job_id"] == "8a5ec0d09f0cd643019f35e6957d6b8c"
+    assert job["location_category"] == LocationCategory.CONFIRMED_SHANGHAI.value
+    assert "IAM" in job["description"]
+    assert job["source_url"].startswith("https://recruit.midea.com/recruit-out/#/position")
+
+
+def test_parses_anta_moka_detail_payload():
+    detail_item = {
+        "id": "e105f85c-012a-43bb-9ca0-c48bc2a6a639",
+        "title": "CRM会员运营主管",
+        "jobDescription": "<p>岗位职责：负责会员数据治理。</p><p>任职要求：5年经验。</p>",
+        "locations": [
+            {
+                "country": "中国",
+                "address": "上海市闵行区中骏广场",
+            }
+        ],
+        "publishedAt": "2026-09-02T15:19:56.000Z",
+    }
+
+    job = parse_moka_job(
+        detail_item,
+        company="ANTA Group / 安踏集团",
+        source_root="https://jobs.anta.com/social-recruitment/antahr/146041/",
+    )
+
+    assert job is not None
+    assert job["source_job_id"] == "e105f85c-012a-43bb-9ca0-c48bc2a6a639"
+    assert "上海" in job["location"]
+    assert job["location_category"] == LocationCategory.CONFIRMED_SHANGHAI.value

@@ -126,6 +126,20 @@ OFFICIAL_SOURCE_REGISTRY = [
     _source("bilibili", "Bilibili / 哔哩哔哩", "technology", "https://jobs.bilibili.com/"),
     _source("trip_com", "Trip.com / 携程", "technology", "https://careers.trip.com/"),
     _source("xiaohongshu", "Xiaohongshu / 小红书", "technology", "https://job.xiaohongshu.com/"),
+    _source(
+        "midea",
+        "Midea / 美的集团",
+        "technology",
+        "https://recruit.midea.com/",
+        "json",
+    ),
+    _source(
+        "anta",
+        "ANTA Group / 安踏集团",
+        "technology",
+        "https://jobs.anta.com/social-recruitment/antahr/146041/",
+        "encrypted_json",
+    ),
     _source("apple", "Apple", "technology", "https://jobs.apple.com/"),
     _source("sap", "SAP", "technology", "https://jobs.sap.com/"),
     _source(

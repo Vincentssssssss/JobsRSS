@@ -19,8 +19,10 @@ from app.official.collectors.hotjob import (
     YunnanBaiyaoOfficialCollector,
 )
 from app.official.collectors.huawei import HuaweiOfficialCollector
+from app.official.collectors.midea import MideaOfficialCollector
 from app.official.collectors.microsoft import MicrosoftOfficialCollector
 from app.official.collectors.moka import (
+    AntaOfficialCollector,
     GskOfficialCollector,
     WuXiBiologicsOfficialCollector,
 )
@@ -36,6 +38,8 @@ OFFICIAL_COLLECTOR_FACTORIES: Dict[str, Callable[[], BaseCollector]] = {
     "huawei": HuaweiOfficialCollector,
     "xiaomi": XiaomiOfficialCollector,
     "bytedance": ByteDanceOfficialCollector,
+    "midea": MideaOfficialCollector,
+    "anta": AntaOfficialCollector,
     "wuxi_apptec": WuXiAppTecOfficialCollector,
     "wuxi_biologics": WuXiBiologicsOfficialCollector,
     "fosun_pharma": FosunPharmaOfficialCollector,
