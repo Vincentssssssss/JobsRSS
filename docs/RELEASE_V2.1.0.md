@@ -7,7 +7,7 @@ the existing production collectors stable.
 
 ## Registry Expansion
 
-- Registry size expanded from **38** to **51** official company sources.
+- Registry size expanded from **38** to **58** official company sources.
 - First-wave production scope remains unchanged:
   - 16 approved first-wave sources,
   - 15 operational first-wave collectors,
@@ -23,6 +23,14 @@ Requested companies:
 - Simcere / 先声药业 (`simcere`)
 - Midea / 美的集团 (`midea`)
 - ANTA Group / 安踏集团 (`anta`)
+- Consulting MBB + Big Four:
+  - McKinsey (`mckinsey`, assessment pending)
+  - BCG (`bcg`, operational Phenom JSON)
+  - Bain (`bain`, assessment pending)
+  - Deloitte / 德勤 (`deloitte`, operational HotJob JSON)
+  - PwC / 普华永道 (`pwc`, assessment pending)
+  - EY / 安永 (`ey`, assessment pending)
+  - KPMG / 毕马威 (`kpmg`, operational Moka encrypted JSON)
 
 Mainstream private enterprise expansion (technology):
 

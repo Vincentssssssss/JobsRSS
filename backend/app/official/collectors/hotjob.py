@@ -18,6 +18,7 @@ class HotJobOfficialCollector(OfficialCollectorBase):
         source_id: str,
         company: str,
         tenant: str,
+        api_root: str = HOTJOB_ROOT,
     ) -> None:
         super().__init__(
             get_official_source(source_id),
@@ -26,12 +27,13 @@ class HotJobOfficialCollector(OfficialCollectorBase):
         )
         self.company = company
         self.tenant = tenant
+        self.api_root = api_root.rstrip("/")
 
     def fetch_raw(self) -> List[Dict[str, Any]]:
         settings = get_settings()
         headers = {
             "User-Agent": "Mozilla/5.0",
-            "Referer": f"{HOTJOB_ROOT}/{self.tenant}/pb/social.html",
+            "Referer": f"{self.api_root}/{self.tenant}/pb/social.html",
         }
         jobs: List[Dict[str, Any]] = []
         with httpx.Client(
@@ -62,7 +64,7 @@ class HotJobOfficialCollector(OfficialCollectorBase):
                         continue
                     detail = client.post(
                         (
-                            f"{HOTJOB_ROOT}/wecruit/positionInfo/"
+                            f"{self.api_root}/wecruit/positionInfo/"
                             f"listPositionDetail/{self.tenant}"
                         ),
                         data={
@@ -76,6 +78,7 @@ class HotJobOfficialCollector(OfficialCollectorBase):
                         detail.json(),
                         company_fallback=self.company,
                         tenant=self.tenant,
+                        api_root=self.api_root,
                     )
                     if job is not None:
                         jobs.append(job)
@@ -88,7 +91,7 @@ class HotJobOfficialCollector(OfficialCollectorBase):
     ) -> Dict[str, Any]:
         response = client.post(
             (
-                f"{HOTJOB_ROOT}/wecruit/positionInfo/"
+                f"{self.api_root}/wecruit/positionInfo/"
                 f"listPosition/{self.tenant}"
             ),
             data={
@@ -120,11 +123,22 @@ class SimcereOfficialCollector(HotJobOfficialCollector):
         )
 
 
+class DeloitteOfficialCollector(HotJobOfficialCollector):
+    def __init__(self) -> None:
+        super().__init__(
+            source_id="deloitte",
+            company="Deloitte / 德勤",
+            tenant="SU649e304a6a9f0ef690533e9a",
+            api_root="https://ehjobs.deloitte.com.cn",
+        )
+
+
 def parse_hotjob_detail(
     payload: Dict[str, Any],
     *,
     company_fallback: str = "Yunnan Baiyao / 云南白药",
     tenant: str = YUNNAN_BAIYAO_TENANT,
+    api_root: str = HOTJOB_ROOT,
 ) -> Dict[str, Any] | None:
     item = payload.get("data") or {}
     source_job_id = str(item.get("postId") or "").strip()
@@ -145,7 +159,7 @@ def parse_hotjob_detail(
     )
     company = str(item.get("company") or company_fallback)
     source_url = (
-        f"{HOTJOB_ROOT}/{tenant}/pb/"
+        f"{api_root.rstrip('/')}/{tenant}/pb/"
         f"posDetail.html?postId={source_job_id}"
     )
     return {

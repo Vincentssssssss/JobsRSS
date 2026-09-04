@@ -194,6 +194,17 @@ class AntaOfficialCollector(MokaOfficialCollector):
         )
 
 
+class KpmgOfficialCollector(MokaOfficialCollector):
+    def __init__(self) -> None:
+        super().__init__(
+            source_id="kpmg",
+            company="KPMG / 毕马威",
+            portal_url="https://app.mokahr.com/social-recruitment/kpmg/68240",
+            org_id="kpmg",
+            site_id="68240",
+        )
+
+
 def decrypt_moka_response(payload: Dict[str, Any], iv: str) -> Dict[str, Any]:
     key = str(payload.get("necromancer") or "").encode("utf-8")
     iv_bytes = iv.encode("utf-8")
@@ -257,6 +268,7 @@ def _moka_location(item: Dict[str, Any]) -> str:
             continue
         parts = [
             location.get("cityName"),
+            _city_name_from_moka_city_id(location.get("cityId")),
             location.get("provinceName"),
             location.get("country"),
             location.get("address"),
@@ -265,6 +277,13 @@ def _moka_location(item: Dict[str, Any]) -> str:
         if text:
             rendered.append(text)
     return " / ".join(dict.fromkeys(rendered)) or "Unknown"
+
+
+def _city_name_from_moka_city_id(city_id: Any) -> str:
+    text = str(city_id or "").strip()
+    if text.startswith("310"):
+        return "上海"
+    return ""
 
 
 def _same_host_get(

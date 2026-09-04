@@ -78,6 +78,30 @@ def test_parses_simcere_hotjob_detail_with_company_fallback_and_tenant():
     assert job["location_category"] == LocationCategory.CONFIRMED_SHANGHAI.value
 
 
+def test_parses_deloitte_hotjob_detail_on_custom_host():
+    payload = {
+        "data": {
+            "postId": "6a9939a79e5f824145243a1b",
+            "postName": "Cyber Risk Consultant",
+            "workPlaceStr": "上海市",
+            "workContent": "负责客户网络安全咨询项目。",
+            "serviceCondition": "熟悉 IAM 与云安全。",
+            "publishDate": "2026-09-03 17:10:49",
+        }
+    }
+
+    job = parse_hotjob_detail(
+        payload,
+        company_fallback="Deloitte / 德勤",
+        tenant="SU649e304a6a9f0ef690533e9a",
+        api_root="https://ehjobs.deloitte.com.cn",
+    )
+
+    assert job["company"] == "Deloitte / 德勤"
+    assert job["source_url"].startswith("https://ehjobs.deloitte.com.cn/")
+    assert job["location_category"] == LocationCategory.CONFIRMED_SHANGHAI.value
+
+
 def test_parses_fosun_server_rendered_detail():
     html = """
     <div class="xqbox">

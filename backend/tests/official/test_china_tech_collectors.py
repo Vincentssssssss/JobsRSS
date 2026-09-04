@@ -1,4 +1,5 @@
 from app.official.collectors.alibaba import parse_alibaba_position
+from app.official.collectors.bcg import parse_bcg_job
 from app.official.collectors.feishu_jobs import parse_feishu_jobs
 from app.official.collectors.huawei import parse_huawei_jobs
 from app.official.collectors.midea import parse_midea_position
@@ -157,5 +158,67 @@ def test_parses_anta_moka_detail_payload():
 
     assert job is not None
     assert job["source_job_id"] == "e105f85c-012a-43bb-9ca0-c48bc2a6a639"
+    assert "上海" in job["location"]
+    assert job["location_category"] == LocationCategory.CONFIRMED_SHANGHAI.value
+
+
+def test_parses_bcg_phenom_shanghai_job():
+    listing = {
+        "jobId": "52752",
+        "jobSeqNo": "BCG1US52752EXTERNALENGLOBAL",
+        "title": "Experienced Hire, Full-time, Greater China",
+        "location": "Shanghai, Greater China",
+        "postedDate": "2026-09-01T00:00:00.000+0000",
+        "applyUrl": "https://experiencedtalent.bcg.com/careerhub/explore/jobs/790301457635",
+    }
+    detail = {
+        "jobDetail": {
+            "data": {
+                "job": {
+                    "companyName": "Boston Consulting Group",
+                    "title": "Experienced Hire, Full-time, Greater China",
+                    "location": "Shanghai, Greater China",
+                    "description": (
+                        "<p>Join BCG consulting teams in Shanghai to support "
+                        "cloud security and IAM transformation programs.</p>"
+                    ),
+                    "postedDate": "2026-09-01T00:00:00.000+0000",
+                    "applyUrl": listing["applyUrl"],
+                    "jobSeqNo": "BCG1US52752EXTERNALENGLOBAL",
+                }
+            }
+        }
+    }
+
+    job = parse_bcg_job(listing, detail)
+
+    assert job["source_job_id"] == "BCG1US52752EXTERNALENGLOBAL"
+    assert job["location_category"] == LocationCategory.CONFIRMED_SHANGHAI.value
+    assert "IAM" in job["description"]
+    assert job["source_url"].startswith("https://careers.bcg.com/global/en/job/")
+
+
+def test_parses_kpmg_moka_detail_with_city_id_only():
+    detail_item = {
+        "id": "87db5020-8673-42f9-a8f5-0b7e983f19cc",
+        "title": "Cyber Security Manager",
+        "jobDescription": "<p>负责网络安全咨询与攻防演练。</p>",
+        "locations": [
+            {
+                "country": "中国",
+                "cityId": 310112,
+                "address": "申长路988弄虹桥万科中心",
+            }
+        ],
+        "publishedAt": "2026-09-02T15:19:56.000Z",
+    }
+
+    job = parse_moka_job(
+        detail_item,
+        company="KPMG / 毕马威",
+        source_root="https://app.mokahr.com/social-recruitment/kpmg/68240",
+    )
+
+    assert job is not None
     assert "上海" in job["location"]
     assert job["location_category"] == LocationCategory.CONFIRMED_SHANGHAI.value

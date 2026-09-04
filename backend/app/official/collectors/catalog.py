@@ -3,6 +3,7 @@ from typing import Callable, Dict
 from app.collectors.base import BaseCollector
 from app.official.collectors.alibaba import AlibabaOfficialCollector
 from app.official.collectors.amazon import AmazonOfficialCollector
+from app.official.collectors.bcg import BcgOfficialCollector
 from app.official.collectors.beisen import (
     ChiaTaiTianqingOfficialCollector,
     InnoventOfficialCollector,
@@ -15,6 +16,7 @@ from app.official.collectors.feishu_jobs import (
 from app.official.collectors.fosun import FosunPharmaOfficialCollector
 from app.official.collectors.google import GoogleOfficialCollector
 from app.official.collectors.hotjob import (
+    DeloitteOfficialCollector,
     SimcereOfficialCollector,
     YunnanBaiyaoOfficialCollector,
 )
@@ -24,6 +26,7 @@ from app.official.collectors.microsoft import MicrosoftOfficialCollector
 from app.official.collectors.moka import (
     AntaOfficialCollector,
     GskOfficialCollector,
+    KpmgOfficialCollector,
     WuXiBiologicsOfficialCollector,
 )
 from app.official.collectors.roche import RocheOfficialCollector
@@ -40,6 +43,9 @@ OFFICIAL_COLLECTOR_FACTORIES: Dict[str, Callable[[], BaseCollector]] = {
     "bytedance": ByteDanceOfficialCollector,
     "midea": MideaOfficialCollector,
     "anta": AntaOfficialCollector,
+    "bcg": BcgOfficialCollector,
+    "deloitte": DeloitteOfficialCollector,
+    "kpmg": KpmgOfficialCollector,
     "wuxi_apptec": WuXiAppTecOfficialCollector,
     "wuxi_biologics": WuXiBiologicsOfficialCollector,
     "fosun_pharma": FosunPharmaOfficialCollector,

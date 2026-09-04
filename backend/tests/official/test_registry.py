@@ -2,11 +2,11 @@ from app.official.collectors.catalog import OFFICIAL_COLLECTOR_FACTORIES
 from app.official.registry import FIRST_WAVE_SOURCE_IDS, OFFICIAL_SOURCE_REGISTRY
 
 
-def test_registry_contains_51_unique_company_sources():
+def test_registry_contains_58_unique_company_sources():
     source_ids = [source.source_id for source in OFFICIAL_SOURCE_REGISTRY]
 
-    assert len(source_ids) == 51
-    assert len(set(source_ids)) == 51
+    assert len(source_ids) == 58
+    assert len(set(source_ids)) == 58
 
 
 def test_first_wave_contains_approved_16_sources():
@@ -36,7 +36,13 @@ def test_first_wave_contains_approved_16_sources():
 def test_every_source_has_official_identity_and_category():
     for source in OFFICIAL_SOURCE_REGISTRY:
         assert source.company
-        assert source.category in {"technology", "pharma", "biotech", "cro_cdmo"}
+        assert source.category in {
+            "technology",
+            "pharma",
+            "biotech",
+            "cro_cdmo",
+            "consulting",
+        }
         assert source.career_url.startswith("https://")
 
 
@@ -59,6 +65,13 @@ def test_v21_expansion_includes_requested_and_mainstream_private_companies():
         "bilibili",
         "trip_com",
         "xiaohongshu",
+        "mckinsey",
+        "bcg",
+        "bain",
+        "deloitte",
+        "pwc",
+        "ey",
+        "kpmg",
     }:
         assert expected in source_ids
 
@@ -111,3 +124,28 @@ def test_midea_and_anta_are_operational_with_factories():
     assert anta.collection_method == "encrypted_json"
     assert anta.operational
     assert "anta" in OFFICIAL_COLLECTOR_FACTORIES
+
+
+def test_consulting_mbb_and_big4_are_registered():
+    source_by_id = {
+        source.source_id: source for source in OFFICIAL_SOURCE_REGISTRY
+    }
+    expected = {
+        "mckinsey": ("assessment_pending", False),
+        "bcg": ("json", True),
+        "bain": ("assessment_pending", False),
+        "deloitte": ("json", True),
+        "pwc": ("assessment_pending", False),
+        "ey": ("assessment_pending", False),
+        "kpmg": ("encrypted_json", True),
+    }
+
+    for source_id, (method, operational) in expected.items():
+        source = source_by_id[source_id]
+        assert source.category == "consulting"
+        assert source.collection_method == method
+        assert source.operational is operational
+        if operational:
+            assert source_id in OFFICIAL_COLLECTOR_FACTORIES
+        else:
+            assert source_id not in OFFICIAL_COLLECTOR_FACTORIES
