@@ -1,0 +1,257 @@
+from app.collectors.linkedin_auth import LinkedInAuthCollector
+
+
+def test_canonicalizes_linkedin_job_url_and_removes_tracking():
+    collector = LinkedInAuthCollector()
+
+    result = collector._clean_linkedin_job_url(
+        "https://sg.linkedin.com/jobs/view/cloud-security-at-acme-4451905595"
+        "?position=32&trackingId=secret"
+    )
+
+    assert result == "https://sg.linkedin.com/jobs/view/4451905595/"
+
+
+def test_extracts_company_from_linkedin_job_slug():
+    collector = LinkedInAuthCollector()
+
+    company = collector._company_from_job_url(
+        "https://sg.linkedin.com/jobs/view/devsecops-engineer-at-assurity-trusted-solutions-pte-ltd-4451337319/"
+    )
+
+    assert company == "Assurity Trusted Solutions Pte Ltd"
+
+
+def test_does_not_treat_search_urls_as_jobs():
+    collector = LinkedInAuthCollector()
+
+    assert collector.is_job_url("https://www.linkedin.com/jobs/view/4451337319/")
+    assert not collector.is_job_url("https://www.linkedin.com/jobs/search/?keywords=security")
+
+
+def test_extracts_title_from_linkedin_job_slug():
+    collector = LinkedInAuthCollector()
+
+    title = collector._title_from_job_url(
+        "https://sg.linkedin.com/jobs/view/devsecops-engineer-iam-at-acme-4451337319/"
+    )
+
+    assert title == "DevSecOps Engineer IAM"
+
+
+def test_strict_location_filter_accepts_only_configured_markets():
+    collector = LinkedInAuthCollector()
+    allowed = ["Singapore", "Hong Kong", "Shanghai", "Jiangsu", "Zhejiang"]
+
+    assert collector._is_allowed_location("Singapore", allowed)
+    assert collector._is_allowed_location("新加坡", allowed)
+    assert collector._is_allowed_location("Hong Kong SAR", allowed)
+    assert collector._is_allowed_location("香港特别行政区", allowed)
+    assert collector._is_allowed_location("上海市", allowed)
+    assert collector._is_allowed_location("Hangzhou, Zhejiang, China", allowed)
+    assert collector._is_allowed_location("杭州市", allowed)
+    assert collector._is_allowed_location("Nanjing, Jiangsu, China", allowed)
+    assert collector._is_allowed_location("苏州, 江苏省, 中国", allowed)
+    assert collector._is_allowed_location("Ningbo, Zhejiang, China", allowed)
+
+    assert not collector._is_allowed_location("Beijing", allowed)
+    assert not collector._is_allowed_location("Shenzhen", allowed)
+    assert not collector._is_allowed_location("Remote - APAC", allowed)
+    assert not collector._is_allowed_location("Unknown", allowed)
+
+
+def test_strict_location_filter_supports_jiangzhehu_group_keyword():
+    collector = LinkedInAuthCollector()
+    allowed = ["江浙沪"]
+
+    assert collector._is_allowed_location("上海", allowed)
+    assert collector._is_allowed_location("苏州, 江苏, 中国", allowed)
+    assert collector._is_allowed_location("杭州, 浙江, 中国", allowed)
+    assert not collector._is_allowed_location("Beijing", allowed)
+
+
+def test_strict_filter_rejects_search_url_fallback_location():
+    collector = LinkedInAuthCollector()
+    allowed = ["Shanghai"]
+    merged = {
+        "location": "Shanghai",
+        "location_source": "fallback",
+    }
+
+    assert not collector._passes_strict_location_filter(merged, allowed)
+
+
+def test_merge_prefers_explicit_detail_location_over_search_fallback():
+    collector = LinkedInAuthCollector()
+    card = {
+        "title": "IAM Lead",
+        "company": "ICF",
+        "location": "",
+        "job_url": "https://www.linkedin.com/jobs/view/123456789/",
+        "posted_at": None,
+    }
+    detail = {
+        "title": "IAM Lead",
+        "company": "ICF",
+        "location": "Richmond, VA",
+        "description": "IAM leadership role.",
+        "external_apply_url": "",
+        "official": None,
+    }
+
+    merged = collector._merge_job_data(card, detail, fallback_location="Shanghai")
+
+    assert merged["location"] == "Richmond"
+    assert merged["location_source"] == "detail"
+
+
+def test_collect_detail_prefers_jsonld_location_when_selectors_conflict():
+    collector = LinkedInAuthCollector()
+
+    preferred, source = collector._prefer_detail_location(
+        payload_location_raw="上海 · 已转发的时间：2 周前 · 63 位会员点击了申请",
+        payload_location="上海",
+        ld_location="Richmond, VA, United States",
+    )
+
+    assert preferred == "Richmond"
+    assert source == "jsonld"
+
+
+def test_detail_location_with_only_meta_markers_is_marked_ambiguous():
+    collector = LinkedInAuthCollector()
+
+    preferred, source = collector._prefer_detail_location(
+        payload_location_raw="上海 · 已转发的时间：2 周前 · 63 位会员点击了申请",
+        payload_location="上海",
+        ld_location="",
+    )
+
+    assert preferred == ""
+    assert source == "ambiguous"
+
+
+def test_resolve_location_marks_card_equal_to_fallback_as_fallback():
+    collector = LinkedInAuthCollector()
+
+    location, source = collector._resolve_location(
+        detail_location="",
+        detail_location_source="unknown",
+        card_location="Shanghai",
+        fallback_location="Shanghai",
+    )
+
+    assert location == "Shanghai"
+    assert source == "fallback"
+
+
+def test_invalid_linkedin_promo_title_is_rejected_from_publish():
+    collector = LinkedInAuthCollector()
+    merged = {
+        "title": "加入领英",
+        "source_url": "https://www.linkedin.com/jobs/view/4434640258/",
+        "apply_url": "https://www.linkedin.com/jobs/view/4434640258/",
+    }
+
+    assert collector._is_publishable_job(merged) is False
+
+
+def test_normalize_respects_closed_status_from_raw():
+    collector = LinkedInAuthCollector()
+    raw = {
+        "source_job_id": "123456",
+        "company": "McKesson",
+        "title": "Lead Cyber Security Architect",
+        "location": "Richmond",
+        "country": "United States",
+        "description": "Cybersecurity architecture role.",
+        "apply_url": "https://www.linkedin.com/jobs/view/123456/",
+        "source_url": "https://www.linkedin.com/jobs/view/123456/",
+        "content_hash": "abc123",
+        "status": "closed",
+    }
+
+    normalized = collector.normalize(raw)
+
+    assert normalized.status == "closed"
+
+
+def test_resolve_storage_state_path_returns_none_when_missing(monkeypatch):
+    collector = LinkedInAuthCollector()
+    monkeypatch.setattr(
+        collector.settings,
+        "linkedin_auth_storage_state_path",
+        "/tmp/non-existent-linkedin-state.json",
+    )
+
+    assert collector._resolve_storage_state_path() is None
+
+
+def test_resolve_storage_state_path_returns_value_when_file_exists(monkeypatch, tmp_path):
+    collector = LinkedInAuthCollector()
+    state_file = tmp_path / "linkedin_state.json"
+    state_file.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(
+        collector.settings,
+        "linkedin_auth_storage_state_path",
+        str(state_file),
+    )
+
+    assert collector._resolve_storage_state_path() == str(state_file)
+
+
+def test_fetch_raw_skips_when_storage_state_required_but_missing(monkeypatch):
+    collector = LinkedInAuthCollector()
+    monkeypatch.setattr(collector.settings, "linkedin_auth_enabled", True)
+    monkeypatch.setattr(
+        collector.settings,
+        "linkedin_search_urls",
+        "https://www.linkedin.com/jobs/search/?keywords=security&location=Shanghai",
+    )
+    monkeypatch.setattr(
+        collector.settings,
+        "linkedin_auth_storage_state_path",
+        "/tmp/non-existent-linkedin-state.json",
+    )
+    monkeypatch.setattr(collector.settings, "linkedin_require_storage_state", True)
+
+    items = collector.fetch_raw()
+
+    assert items == []
+    assert collector.skip_publish_due_to_missing_state is True
+
+
+def test_clean_description_prefers_role_content_over_company_intro():
+    collector = LinkedInAuthCollector()
+    raw = """
+The Hong Kong Jockey Club Founded in 1884, The Hong Kong Jockey Club is a world-class racing club.
+Who are we? We are the IT Division with global teams.
+What do we do? We design and operate technology.
+Responsibilities:
+- Lead platform and network security controls.
+- Drive cloud security architecture and vulnerability governance.
+Requirements:
+- 8+ years in cybersecurity, network security, or cloud security.
+"""
+
+    cleaned = collector._clean_description(raw)
+
+    assert "Founded in 1884" not in cleaned
+    assert "Who are we?" not in cleaned
+    assert "Lead platform and network security controls." in cleaned
+    assert "8+ years in cybersecurity" in cleaned
+
+
+def test_clean_description_drops_noise_lines_without_emptying_payload():
+    collector = LinkedInAuthCollector()
+    raw = """
+Responsibilities: Build and tune SIEM detection pipelines.
+Read our privacy policy for more information.
+Requirements: Hands-on SOC and threat detection experience.
+"""
+
+    cleaned = collector._clean_description(raw)
+
+    assert "privacy policy" not in cleaned.lower()
+    assert "Build and tune SIEM detection pipelines." in cleaned
+    assert "Hands-on SOC and threat detection experience." in cleaned
