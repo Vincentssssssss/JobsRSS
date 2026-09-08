@@ -3,7 +3,6 @@ kind: Kustomization
 namespace: jobsrss
 resources:
   - postgres.yaml
-  - backendconfig.yaml
   - api.yaml
   - worker.yaml
   - frontend.yaml

@@ -5,12 +5,12 @@ metadata:
   labels:
     app.kubernetes.io/name: jobsrss
   annotations:
-    kubernetes.io/ingress.class: gce
-    kubernetes.io/ingress.allow-http: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "8m"
 spec:
-  ingressClassName: gce
+  ingressClassName: nginx
   rules:
-    - http:
+    - host: jobsrss.example.invalid
+      http:
         paths:
           - path: /healthz
             pathType: Prefix

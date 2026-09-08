@@ -20,6 +20,21 @@ fi
 
 kubectl apply -f "${ROOT}/namespace.yaml"
 
+if [ -z "${JOBSRSS_INGRESS_HOST:-}" ]; then
+  NGINX_IP="$(kubectl -n ingress-nginx get svc ingress-nginx-controller \
+    -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)"
+  if [ -n "${NGINX_IP}" ]; then
+    JOBSRSS_INGRESS_HOST="jobsrss.${NGINX_IP}.sslip.io"
+  else
+    JOBSRSS_INGRESS_HOST="jobsrss.local"
+    echo "ingress-nginx has no LoadBalancer IP yet; host=${JOBSRSS_INGRESS_HOST}"
+  fi
+fi
+echo "Ingress host: ${JOBSRSS_INGRESS_HOST}"
+
+sed "s/jobsrss.example.invalid/${JOBSRSS_INGRESS_HOST}/g" \
+  "${ROOT}/ingress.yaml" > "${WORK}/ingress.yaml"
+
 API_NAME="${IMAGE_API%:*}"
 API_TAG="${IMAGE_API##*:}"
 FRONTEND_NAME="${IMAGE_FRONTEND%:*}"
@@ -31,11 +46,10 @@ kind: Kustomization
 namespace: ${NAMESPACE}
 resources:
   - ${ROOT}/postgres.yaml
-  - ${ROOT}/backendconfig.yaml
   - ${ROOT}/api.yaml
   - ${ROOT}/worker.yaml
   - ${ROOT}/frontend.yaml
-  - ${ROOT}/ingress.yaml
+  - ingress.yaml
 images:
   - name: jobsrss-api
     newName: ${API_NAME}

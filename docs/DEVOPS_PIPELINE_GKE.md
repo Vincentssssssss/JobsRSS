@@ -179,17 +179,20 @@ Mapping from Compose:
 | `frontend` | Deployment + Service `:80` → 3000 | `BACKEND_API_BASE_URLS=http://api:8000` |
 | `./secrets` | Secret `jobsrss-collector-files` | Optional |
 
-Ingress (GCE) routes:
+Ingress uses the cluster's existing **nginx** controller (not GCE), on a
+dedicated host so it does not steal `/` from other apps in `default`:
 
+- host `jobsrss.<nginx-lb-ip>.sslip.io`
 - `/` → frontend
 - `/healthz`, `/jobs`, `/rss`, `/sources` → api
 
 ```bash
 kubectl -n jobsrss get ingress jobsrss
+kubectl -n jobsrss get pods
 ```
 
-Portal: `http://<INGRESS_IP>/`
-API health: `http://<INGRESS_IP>/healthz`
+Portal: `http://jobsrss.<nginx-lb-ip>.sslip.io/`
+API health: `http://jobsrss.<nginx-lb-ip>.sslip.io/healthz`
 
 ## 7) First deployment checklist (Cloud Shell)
 

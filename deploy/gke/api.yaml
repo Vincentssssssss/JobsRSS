@@ -5,9 +5,6 @@ metadata:
   labels:
     app.kubernetes.io/name: jobsrss
     app.kubernetes.io/component: api
-  annotations:
-    cloud.google.com/backend-config: '{"default": "api"}'
-    cloud.google.com/neg: '{"ingress": true}'
 spec:
   type: ClusterIP
   selector:
