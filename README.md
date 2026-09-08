@@ -28,8 +28,8 @@ Open:
 
 ## DevOps Pipeline (Near Production)
 
-GCP GKE is the supported cloud runtime. GitHub Actions builds images, pushes
-them to Artifact Registry, and applies Kubernetes manifests:
+GCP GKE is the supported cloud runtime. Use Cloud Shell plus Cloud Build
+(no GitHub Actions install on GKE):
 
 - `docs/DEVOPS_PIPELINE_GKE.md`
 

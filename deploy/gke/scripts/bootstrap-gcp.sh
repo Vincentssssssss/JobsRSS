@@ -23,7 +23,8 @@ gcloud services enable \
   container.googleapis.com \
   artifactregistry.googleapis.com \
   compute.googleapis.com \
-  iam.googleapis.com
+  iam.googleapis.com \
+  cloudbuild.googleapis.com
 
 if ! gcloud artifacts repositories describe "${AR_REPOSITORY}" \
   --location="${GCP_REGION}" >/dev/null 2>&1; then
@@ -56,6 +57,21 @@ gcloud projects add-iam-policy-binding "${GCP_PROJECT_ID}" \
   --role="roles/container.developer" \
   --condition=None >/dev/null
 
+PROJECT_NUMBER="$(gcloud projects describe "${GCP_PROJECT_ID}" --format='value(projectNumber)')"
+for MEMBER in \
+  "serviceAccount:${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com" \
+  "serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+do
+  gcloud projects add-iam-policy-binding "${GCP_PROJECT_ID}" \
+    --member="${MEMBER}" \
+    --role="roles/artifactregistry.writer" \
+    --condition=None >/dev/null
+  gcloud projects add-iam-policy-binding "${GCP_PROJECT_ID}" \
+    --member="${MEMBER}" \
+    --role="roles/container.developer" \
+    --condition=None >/dev/null
+done
+
 gcloud container clusters get-credentials "${GKE_CLUSTER}" \
   --region="${GCP_REGION}" \
   --project="${GCP_PROJECT_ID}"
@@ -64,12 +80,13 @@ kubectl apply -f "$(dirname "$0")/../namespace.yaml"
 
 echo
 echo "Bootstrap complete."
-echo "Next:"
-echo "  1) Create a JSON key for ${SA_EMAIL} and store it as GitHub secret GCP_SA_KEY"
-echo "     gcloud iam service-accounts keys create cicd-sa.json --iam-account=${SA_EMAIL}"
-echo "  2) Copy deploy/gke/.env.gke.example, fill values, then:"
-echo "     bash deploy/gke/scripts/apply-secrets.sh /path/to/.env.gke /path/to/secrets-dir"
-echo "  3) Set GitHub variables GCP_PROJECT_ID, GCP_REGION, GKE_CLUSTER, AR_REPOSITORY"
-echo "  4) Run the Deploy to GKE workflow"
+echo "Cloud Shell next (no GitHub Actions install required):"
+echo "  1) nano deploy/gke/.env.gke.example  (save as /tmp/jobsrss.env.gke)"
+echo "  2) bash deploy/gke/scripts/apply-secrets.sh /tmp/jobsrss.env.gke"
+echo "  3) bash deploy/gke/scripts/cloud-shell-deploy.sh"
+echo
+echo "Optional GitHub Actions later (also not installed on GKE):"
+echo "  Create a key only if you want GitHub-hosted runners:"
+echo "  gcloud iam service-accounts keys create cicd-sa.json --iam-account=${SA_EMAIL}"
 echo
 echo "Artifact Registry: ${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY}"

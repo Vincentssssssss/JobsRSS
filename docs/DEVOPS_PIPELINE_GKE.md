@@ -1,29 +1,47 @@
-# JobsRSS DevOps Pipeline (GitHub Actions + GKE)
+# JobsRSS DevOps Pipeline (Cloud Shell + GKE)
 
 This is the GCP deployment path. It replaces Azure VM + Docker Compose for
 runtime, while keeping the same images (`jobsrss-api`, `jobsrss-frontend`).
 
-Flow:
+**Cloud Shell is the supported operator console.** It already has `gcloud`,
+`kubectl`, and `git`. Do not install GitHub Actions on GKE or in Cloud Shell.
 
-1. CI still runs on every PR/push (`.github/workflows/ci.yml`).
-2. CD builds images and pushes them to Artifact Registry.
-3. CD applies Kubernetes manifests to GKE (`api`, `worker`, `frontend`, `postgres`).
+Preferred flow:
 
-Do not run `docker-compose.prod.yml` on GKE. Compose stays for local/Azure VM.
+1. Bootstrap the cluster from Cloud Shell.
+2. Apply app secrets from Cloud Shell.
+3. Build images with **Cloud Build** and apply manifests
+   (`deploy/gke/scripts/cloud-shell-deploy.sh`).
+
+Do not run `docker-compose.prod.yml` on GKE. Do not `docker build` the backend
+image inside Cloud Shell — Playwright will fill the Cloud Shell disk.
+
+## GitHub Actions: do not install it
+
+GitHub Actions is a service on github.com, not a package for GKE/Cloud Shell.
+
+- You do **not** install an Actions runner on the cluster.
+- You do **not** install Actions in Cloud Shell.
+- Cloud Shell + Cloud Build is enough to ship this app.
+- GitHub Actions is optional later: only configure repo secrets/variables in
+  the GitHub UI if you want push-to-`main` deploys. No GCP-side install.
 
 ## 1) Repository files
 
-- `.github/workflows/deploy-gke.yml`
 - `deploy/gke/*.yaml` (workloads + GCE Ingress)
+- `deploy/gke/cloudbuild.yaml`
 - `deploy/gke/.env.gke.example`
 - `deploy/gke/scripts/bootstrap-gcp.sh`
 - `deploy/gke/scripts/apply-secrets.sh`
 - `deploy/gke/scripts/apply-workloads.sh`
+- `deploy/gke/scripts/cloud-shell-deploy.sh`
+- `.github/workflows/deploy-gke.yml` (optional, GitHub-hosted)
 - `deploy/jenkins/Jenkinsfile.gke`
 
-## 2) One-time GCP bootstrap
+## 2) Cloud Shell bootstrap
 
-Need `gcloud` and `kubectl` locally, with Owner or equivalent on the project.
+In the GCP console: **Activate Cloud Shell**. Clone this repo (or upload it),
+then:
 
 ```bash
 export GCP_PROJECT_ID=your-project-id
@@ -31,34 +49,29 @@ export GCP_REGION=asia-southeast1
 export GKE_CLUSTER=jobsrss
 export AR_REPOSITORY=jobsrss
 
-gcloud auth login
 gcloud config set project "$GCP_PROJECT_ID"
 bash deploy/gke/scripts/bootstrap-gcp.sh
 ```
 
-The script enables APIs, creates:
+Cloud Shell is already logged in as your user. Skip `gcloud auth login` unless
+the project is on another account.
+
+The script enables APIs (including Cloud Build), creates:
 
 - Artifact Registry Docker repo
 - GKE Autopilot cluster
-- CI/CD service account `jobsrss-cicd` with
-  `roles/artifactregistry.writer` and `roles/container.developer`
+- Cloud Build / compute SA write access to Artifact Registry
+- optional CI/CD service account `jobsrss-cicd` (only needed for GitHub Actions)
 - namespace `jobsrss`
 
-Create a key for GitHub (or Jenkins):
-
-```bash
-gcloud iam service-accounts keys create cicd-sa.json \
-  --iam-account="jobsrss-cicd@${GCP_PROJECT_ID}.iam.gserviceaccount.com"
-```
-
-Keep `cicd-sa.json` off git.
+Skip creating a JSON key unless you later enable GitHub Actions.
 
 Autopilot already NATs node egress. Official collectors (Microsoft, BCG, etc.)
 can reach the public internet. LinkedIn/Liepin from GKE IPs are still usually
 blocked; leave those collectors disabled unless you front the worker with a
 residential VPN.
 
-## 3) App secrets (once per cluster, not in CI)
+## 3) App secrets (once per cluster, from Cloud Shell)
 
 ```bash
 cp deploy/gke/.env.gke.example /tmp/jobsrss.env.gke
@@ -82,7 +95,34 @@ env file, re-run `apply-secrets.sh`, then:
 kubectl -n jobsrss rollout restart deploy/api deploy/frontend
 ```
 
-## 4) GitHub configuration
+## 4) Deploy from Cloud Shell
+
+After secrets exist:
+
+```bash
+export GCP_PROJECT_ID=your-project-id
+export GCP_REGION=asia-southeast1
+export GKE_CLUSTER=jobsrss
+bash deploy/gke/scripts/cloud-shell-deploy.sh
+```
+
+This submits `deploy/gke/cloudbuild.yaml` (backend + frontend in parallel),
+then `kubectl apply` to the Autopilot cluster. Backend image build can take
+15–30 minutes because of Playwright.
+
+Check the load balancer:
+
+```bash
+kubectl -n jobsrss get ingress jobsrss
+kubectl -n jobsrss get pods
+```
+
+Portal: `http://<INGRESS_IP>/`  
+API health: `http://<INGRESS_IP>/healthz`
+
+## 5) Optional GitHub Actions (hosted by GitHub, not installed here)
+
+Only if you want github.com to deploy on push. No runner install on GKE.
 
 Repository **variables**:
 
@@ -102,9 +142,9 @@ Auto-deploy on `main` stays off until `GKE_DEPLOY_ENABLED=true`.
 If you fully leave Azure VM, disable `.github/workflows/deploy-azure-vm.yml`
 or stop using those Azure secrets.
 
-## 5) CD behavior
+## 6) What gets deployed
 
-Workflow: `.github/workflows/deploy-gke.yml`
+Cloud Build / optional GitHub workflow:
 
 1. Build/push
    `${REGION}-docker.pkg.dev/${PROJECT}/${AR_REPOSITORY}/jobsrss-api:${GIT_SHA}`
@@ -135,17 +175,16 @@ kubectl -n jobsrss get ingress jobsrss
 Portal: `http://<INGRESS_IP>/`
 API health: `http://<INGRESS_IP>/healthz`
 
-## 6) First deployment checklist
+## 7) First deployment checklist (Cloud Shell)
 
-1. Merge this branch to `main` (or run the workflow with `deploy_ref` set).
+1. Open Cloud Shell and clone/upload this repo.
 2. Run `bootstrap-gcp.sh`.
 3. Apply `.env.gke` secrets.
-4. Set GitHub variables + `GCP_SA_KEY`.
-5. Run **Deploy to GKE** once.
-6. Patch `ALLOWED_ORIGINS` / `RSS_BASE_URL` with the Ingress IP or domain.
-7. Optional: attach a static IP + Google-managed certificate later.
+4. Run `cloud-shell-deploy.sh`.
+5. Patch `ALLOWED_ORIGINS` / `RSS_BASE_URL` with the Ingress IP or domain.
+6. Optional later: GitHub Actions or a managed certificate.
 
-## 7) Jenkins alternative
+## 8) Jenkins alternative
 
 `deploy/jenkins/Jenkinsfile.gke` uses the same scripts.
 
@@ -154,7 +193,7 @@ Jenkins credentials:
 - `gcp-sa-key` (file)
 - `gcp-project-id`, `gcp-region`, `gke-cluster`
 
-## 8) Cloud SQL (optional later)
+## 9) Cloud SQL (optional later)
 
 The in-cluster Postgres is the Compose-equivalent default. To move to Cloud SQL:
 
