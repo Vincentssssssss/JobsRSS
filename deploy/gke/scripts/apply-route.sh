@@ -34,5 +34,11 @@ echo "HTTPRoute should now match Host: ${JOBSRSS_GATEWAY_HOST}"
 kubectl -n "${JOBSRSS_GATEWAY_NAMESPACE}" get httproute jobsrss -o wide
 kubectl -n "${JOBSRSS_GATEWAY_NAMESPACE}" describe httproute jobsrss | sed -n '/Status:/,$p'
 echo
+if ! kubectl -n jobsrss get svc api svc/frontend >/dev/null 2>&1; then
+  echo "jobsrss Service/Pods are not deployed yet. The hostname will keep"
+  echo "falling through to the demo app until you run:"
+  echo "  bash deploy/gke/scripts/cloud-shell-deploy.sh"
+  kubectl -n jobsrss get all || true
+fi
 echo "Open: http://${JOBSRSS_GATEWAY_HOST}/"
 echo "Raw Gateway IP still serves the demo app."
