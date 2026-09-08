@@ -72,6 +72,9 @@ pipeline {
             gcloud auth activate-service-account --key-file="$GOOGLE_APPLICATION_CREDENTIALS"
             gcloud container clusters get-credentials "$GKE_CLUSTER" \
               --region "$GCP_REGION" \
+              --project "$GCP_PROJECT_ID" || \
+            gcloud container clusters get-credentials "$GKE_CLUSTER" \
+              --zone "$GCP_REGION" \
               --project "$GCP_PROJECT_ID"
             AR_HOST="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY}"
             IMAGE_API="$AR_HOST/jobsrss-api:$IMAGE_TAG" \
