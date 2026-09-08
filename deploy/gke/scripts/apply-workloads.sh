@@ -36,15 +36,24 @@ API_TAG="${IMAGE_API##*:}"
 FRONTEND_NAME="${IMAGE_FRONTEND%:*}"
 FRONTEND_TAG="${IMAGE_FRONTEND##*:}"
 
+# Kustomize refuses absolute paths and files outside the overlay directory.
+# Copy manifests into the temp overlay and reference them by relative name.
+cp \
+  "${ROOT}/postgres.yaml" \
+  "${ROOT}/api.yaml" \
+  "${ROOT}/worker.yaml" \
+  "${ROOT}/frontend.yaml" \
+  "${WORK}/"
+
 cat > "${WORK}/kustomization.yaml" <<EOF
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: ${NAMESPACE}
 resources:
-  - ${ROOT}/postgres.yaml
-  - ${ROOT}/api.yaml
-  - ${ROOT}/worker.yaml
-  - ${ROOT}/frontend.yaml
+  - postgres.yaml
+  - api.yaml
+  - worker.yaml
+  - frontend.yaml
 images:
   - name: jobsrss-api
     newName: ${API_NAME}
@@ -65,5 +74,6 @@ kubectl -n "${NAMESPACE}" rollout status deployment/worker --timeout=300s
 
 echo "JobsRSS attached to Gateway ${JOBSRSS_GATEWAY_NAMESPACE}/${JOBSRSS_GATEWAY_NAME}"
 echo "Open: http://${JOBSRSS_GATEWAY_HOST}/"
-kubectl -n "${NAMESPACE}" get httproute,svc,deploy,statefulset
+kubectl -n "${NAMESPACE}" get svc,deploy,statefulset,pods
+kubectl -n "${JOBSRSS_GATEWAY_NAMESPACE}" get httproute jobsrss -o wide
 kubectl -n "${JOBSRSS_GATEWAY_NAMESPACE}" get gateway "${JOBSRSS_GATEWAY_NAME}" -o wide

@@ -140,6 +140,15 @@ This submits `deploy/gke/cloudbuild.yaml` (backend + frontend in parallel),
 then `kubectl apply` to the existing cluster. Backend image build can take
 15–30 minutes because of Playwright.
 
+If Cloud Build already succeeded and only `kubectl apply -k` failed, reuse
+the built tag instead of rebuilding:
+
+```bash
+export IMAGE_TAG=2adea08   # the tag Cloud Build printed as SUCCESS
+export SKIP_CLOUD_BUILD=1
+bash deploy/gke/scripts/cloud-shell-deploy.sh
+```
+
 Enterprise projects often disable the default Compute service account
 (`…-compute@developer.gserviceaccount.com`). The deploy script creates and
 uses `jobsrss-cicd@…` instead — do not enable the default Compute SA.
