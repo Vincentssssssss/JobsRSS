@@ -52,33 +52,28 @@ cd JobsRSS
 
 export GCP_PROJECT_ID=your-project-id
 export GCP_REGION=asia-southeast1
-export GKE_CLUSTER=jobsrss
 export AR_REPOSITORY=jobsrss
 
 gcloud config set project "$GCP_PROJECT_ID"
+gcloud container clusters list
+export GKE_CLUSTER=your-existing-cluster-name
+
 ls deploy/gke/scripts/bootstrap-gcp.sh
-bash deploy/gke/scripts/bootstrap-gcp.sh
-```
-
-Enterprise projects often have **no `default` VPC**. The script then creates
-`jobsrss` / `jobsrss-asia-southeast1`, or you can point it at an existing one:
-
-```bash
-export GCP_NETWORK=your-vpc
-export GCP_SUBNETWORK=your-subnet-in-asia-southeast1
 bash deploy/gke/scripts/bootstrap-gcp.sh
 ```
 
 Cloud Shell is already logged in as your user. Skip `gcloud auth login` unless
 the project is on another account.
 
-The script enables APIs (including Cloud Build), creates:
+The script **does not create a GKE cluster or VPC**. It attaches to the cluster
+you already have. If `GKE_CLUSTER` is omitted and the project has exactly one
+cluster, that cluster is used.
 
-- Artifact Registry Docker repo
-- GKE Autopilot cluster
-- Cloud Build / compute SA write access to Artifact Registry
-- optional CI/CD service account `jobsrss-cicd` (only needed for GitHub Actions)
-- namespace `jobsrss`
+It may still create (if missing):
+
+- Artifact Registry Docker repo `jobsrss` (images only)
+- Cloud Build write access to that repo
+- namespace `jobsrss` inside the existing cluster
 
 Skip creating a JSON key unless you later enable GitHub Actions.
 
@@ -118,7 +113,7 @@ After secrets exist:
 ```bash
 export GCP_PROJECT_ID=your-project-id
 export GCP_REGION=asia-southeast1
-export GKE_CLUSTER=jobsrss
+export GKE_CLUSTER=your-existing-cluster-name
 bash deploy/gke/scripts/cloud-shell-deploy.sh
 ```
 
@@ -144,7 +139,8 @@ Repository **variables**:
 
 - `GCP_PROJECT_ID`
 - `GCP_REGION` (example: `asia-southeast1`)
-- `GKE_CLUSTER` (example: `jobsrss`)
+- `GKE_CLUSTER` (existing cluster name)
+- `GKE_LOCATION` (cluster region or zone, if different from `GCP_REGION`)
 - `AR_REPOSITORY` (optional, default `jobsrss`)
 - `GKE_DEPLOY_ENABLED` = `true` only when you want push-to-`main` to deploy
 
