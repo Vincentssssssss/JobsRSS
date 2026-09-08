@@ -86,7 +86,7 @@ residential VPN.
 
 ```bash
 cp deploy/gke/.env.gke.example /tmp/jobsrss.env.gke
-# set POSTGRES_PASSWORD, DATABASE_URL (same password), ALLOWED_ORIGINS, RSS_BASE_URL
+# paste LLM_API_KEY; after Ingress exists, replace CHANGE_ME in RSS_BASE_URL / ALLOWED_ORIGINS
 bash deploy/gke/scripts/apply-secrets.sh /tmp/jobsrss.env.gke /path/to/secrets
 ```
 

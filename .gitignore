@@ -1,4 +1,6 @@
 .env
+.env.gke
+deploy/gke/.env.gke
 secrets/
 __pycache__/
 .pytest_cache/
