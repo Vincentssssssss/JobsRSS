@@ -41,9 +41,10 @@ gcloud builds submit \
   .
 
 gke_get_credentials
+enable_gke_gateway_api
 bash deploy/gke/scripts/apply-workloads.sh
 
 echo
 echo "Deploy finished on existing cluster ${GKE_CLUSTER}."
-echo "Ingress (may take a few minutes):"
-kubectl -n jobsrss get ingress jobsrss || true
+echo "Gateway (may take a few minutes to get an address):"
+kubectl -n jobsrss get gateway jobsrss -o wide || true

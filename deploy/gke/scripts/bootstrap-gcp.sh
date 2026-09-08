@@ -37,6 +37,7 @@ fi
 
 ensure_cloudbuild_worker_sa
 gke_get_credentials
+enable_gke_gateway_api
 kubectl apply -f "$(dirname "$0")/../namespace.yaml"
 
 echo

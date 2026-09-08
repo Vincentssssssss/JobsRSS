@@ -28,7 +28,7 @@ GitHub Actions is a service on github.com, not a package for GKE/Cloud Shell.
 
 ## 1) Repository files
 
-- `deploy/gke/*.yaml` (workloads + GCE Ingress)
+- `deploy/gke/*.yaml` (workloads + GKE Gateway / HTTPRoute)
 - `deploy/gke/cloudbuild.yaml`
 - `deploy/gke/.env.gke.example`
 - `deploy/gke/scripts/bootstrap-gcp.sh`
@@ -86,7 +86,7 @@ residential VPN.
 
 ```bash
 cp deploy/gke/.env.gke.example /tmp/jobsrss.env.gke
-# paste LLM_API_KEY; after Ingress exists, replace CHANGE_ME in RSS_BASE_URL / ALLOWED_ORIGINS
+# paste LLM_API_KEY; after the Gateway gets an IP, replace CHANGE_ME in RSS_BASE_URL / ALLOWED_ORIGINS
 bash deploy/gke/scripts/apply-secrets.sh /tmp/jobsrss.env.gke /path/to/secrets
 ```
 
@@ -99,7 +99,7 @@ Those files are mounted at `/secrets` (read-only), matching the Compose layout.
 CI never overwrites `jobsrss-env`; missing that secret fails the deploy on
 purpose.
 
-After Ingress gets an IP, update `ALLOWED_ORIGINS` and `RSS_BASE_URL` in the
+After the Gateway gets an IP, update `ALLOWED_ORIGINS` and `RSS_BASE_URL` in the
 env file, re-run `apply-secrets.sh`, then:
 
 ```bash
@@ -128,12 +128,12 @@ uses `jobsrss-cicd@…` instead — do not enable the default Compute SA.
 Check the load balancer:
 
 ```bash
-kubectl -n jobsrss get ingress jobsrss
+kubectl -n jobsrss get gateway jobsrss
 kubectl -n jobsrss get pods
 ```
 
-Portal: `http://<INGRESS_IP>/`  
-API health: `http://<INGRESS_IP>/healthz`
+Portal: `http://<GATEWAY_IP>/`  
+API health: `http://<GATEWAY_IP>/healthz`
 
 ## 5) Optional GitHub Actions (hosted by GitHub, not installed here)
 
@@ -179,20 +179,23 @@ Mapping from Compose:
 | `frontend` | Deployment + Service `:80` → 3000 | `BACKEND_API_BASE_URLS=http://api:8000` |
 | `./secrets` | Secret `jobsrss-collector-files` | Optional |
 
-Ingress uses the cluster's existing **nginx** controller (not GCE), on a
-dedicated host so it does not steal `/` from other apps in `default`:
+Traffic uses **GKE Gateway API**, not nginx Ingress and not GCE Ingress.
+JobsRSS gets its own Gateway / regional external Application Load Balancer,
+so it does not steal `/` from apps in `default`.
 
-- host `jobsrss.<nginx-lb-ip>.sslip.io`
+- GatewayClass default: `gke-l7-regional-external-managed`
+- Override with `GKE_GATEWAY_CLASS` if your cluster exposes a different class
 - `/` → frontend
 - `/healthz`, `/jobs`, `/rss`, `/sources` → api
 
 ```bash
-kubectl -n jobsrss get ingress jobsrss
+kubectl get gatewayclass
+kubectl -n jobsrss get gateway,httproute
 kubectl -n jobsrss get pods
 ```
 
-Portal: `http://jobsrss.<nginx-lb-ip>.sslip.io/`
-API health: `http://jobsrss.<nginx-lb-ip>.sslip.io/healthz`
+Portal: `http://<GATEWAY_IP>/`  
+API health: `http://<GATEWAY_IP>/healthz`
 
 ## 7) First deployment checklist (Cloud Shell)
 
@@ -200,7 +203,7 @@ API health: `http://jobsrss.<nginx-lb-ip>.sslip.io/healthz`
 2. Run `bootstrap-gcp.sh`.
 3. Apply `.env.gke` secrets.
 4. Run `cloud-shell-deploy.sh`.
-5. Patch `ALLOWED_ORIGINS` / `RSS_BASE_URL` with the Ingress IP or domain.
+5. Patch `ALLOWED_ORIGINS` / `RSS_BASE_URL` with the Gateway IP or domain.
 6. Optional later: GitHub Actions or a managed certificate.
 
 ## 8) Jenkins alternative

@@ -6,7 +6,7 @@ resources:
   - api.yaml
   - worker.yaml
   - frontend.yaml
-  - ingress.yaml
+  - gateway.yaml
 images:
   - name: jobsrss-api
     newName: jobsrss-api

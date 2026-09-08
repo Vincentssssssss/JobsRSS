@@ -68,6 +68,21 @@ gke_get_credentials() {
     --project="${GCP_PROJECT_ID}"
 }
 
+enable_gke_gateway_api() {
+  resolve_existing_cluster
+  if kubectl get gatewayclass >/dev/null 2>&1 \
+    && [ "$(kubectl get gatewayclass -o name 2>/dev/null | wc -l)" -gt 0 ]; then
+    echo "Gateway API is already enabled:"
+    kubectl get gatewayclass
+    return
+  fi
+  echo "Enabling GKE Gateway API (standard) on ${GKE_CLUSTER}..."
+  gcloud container clusters update "${GKE_CLUSTER}" \
+    "${GKE_LOCATION_FLAG}"="${GKE_LOCATION}" \
+    --project="${GCP_PROJECT_ID}" \
+    --gateway-api=standard
+}
+
 ensure_cloudbuild_worker_sa() {
   CICD_SA_NAME="${CICD_SA_NAME:-jobsrss-cicd}"
   CLOUDBUILD_SA="${CICD_SA_NAME}@${GCP_PROJECT_ID}.iam.gserviceaccount.com"
