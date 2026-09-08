@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#0b0d10" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="对人民币" />
+    <meta
+      name="description"
+      content="一次看完常用外币兑人民币的价格和趋势，不用一个页面一个页面查。"
+    />
+    <title>对人民币</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icon-192.png" type="image/png" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="top">
+        <div class="top-text">
+          <p class="eyebrow">个人速览</p>
+          <h1>对人民币</h1>
+          <p id="meta" class="meta">正在读取常用外币趋势…</p>
+        </div>
+        <div class="top-actions">
+          <button id="refreshBtn" class="icon-btn" type="button" aria-label="刷新">
+            刷新
+          </button>
+          <button id="settingsBtn" class="icon-btn" type="button" aria-label="选择货币">
+            货币
+          </button>
+        </div>
+      </header>
+
+      <section class="toolbar" aria-label="时间范围和排序">
+        <div class="seg" role="tablist">
+          <button class="seg-btn" data-range="7" type="button">7日</button>
+          <button class="seg-btn is-on" data-range="30" type="button">30日</button>
+          <button class="seg-btn" data-range="90" type="button">90日</button>
+        </div>
+        <label class="sort-wrap">
+          <span class="sr-only">排序</span>
+          <select id="sortSelect">
+            <option value="default">默认顺序</option>
+            <option value="up">涨幅优先</option>
+            <option value="down">跌幅优先</option>
+          </select>
+        </label>
+      </section>
+
+      <main id="grid" class="grid" aria-live="polite"></main>
+      <p id="empty" class="empty hidden">先在「货币」里勾选要看的外币。</p>
+    </div>
+
+    <div id="sheet" class="sheet hidden" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+      <div class="sheet-backdrop" data-close="sheet"></div>
+      <div class="sheet-panel">
+        <div class="sheet-handle"></div>
+        <div class="sheet-head">
+          <h2 id="sheetTitle">显示哪些货币</h2>
+          <button class="icon-btn" type="button" data-close="sheet">完成</button>
+        </div>
+        <p class="sheet-hint">只影响这一页，不会上传任何数据。</p>
+        <div id="currencyList" class="currency-list"></div>
+      </div>
+    </div>
+
+    <div id="detail" class="sheet hidden" role="dialog" aria-modal="true">
+      <div class="sheet-backdrop" data-close="detail"></div>
+      <div class="sheet-panel detail-panel">
+        <div class="sheet-handle"></div>
+        <div class="sheet-head">
+          <h2 id="detailTitle">详情</h2>
+          <button class="icon-btn" type="button" data-close="detail">关闭</button>
+        </div>
+        <div id="detailBody"></div>
+      </div>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
