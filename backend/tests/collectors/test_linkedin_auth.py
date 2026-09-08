@@ -29,6 +29,46 @@ def test_does_not_treat_search_urls_as_jobs():
     assert not collector.is_job_url("https://www.linkedin.com/jobs/search/?keywords=security")
 
 
+def test_rejects_microsoft_careers_homepage_as_external_apply_url():
+    collector = LinkedInAuthCollector()
+
+    assert collector._is_external_apply_url("https://jobs.acme.com/jobs/123")
+    assert not collector._is_external_apply_url(
+        "https://careers.microsoft.com/v2/global/en/home.html"
+    )
+    assert not collector._is_external_apply_url("https://careers.microsoft.com/")
+    assert not collector._is_external_apply_url(
+        "https://apply.careers.microsoft.com/careers"
+    )
+    assert collector._is_external_apply_url(
+        "https://apply.careers.microsoft.com/careers/job/1970393556985265"
+    )
+
+
+def test_merge_keeps_linkedin_url_when_microsoft_apply_is_homepage():
+    collector = LinkedInAuthCollector()
+    card = {
+        "title": "Cloud Security Architect",
+        "company": "Microsoft",
+        "location": "Shanghai",
+        "job_url": "https://www.linkedin.com/jobs/view/4451905595/",
+        "posted_at": None,
+    }
+    detail = {
+        "title": "Cloud Security Architect",
+        "company": "Microsoft",
+        "location": "Shanghai",
+        "description": "Own Azure cloud security architecture.",
+        "external_apply_url": "https://careers.microsoft.com/v2/global/en/home.html",
+        "official": None,
+    }
+
+    merged = collector._merge_job_data(card, detail, fallback_location="Shanghai")
+
+    assert merged["apply_url"] == "https://www.linkedin.com/jobs/view/4451905595/"
+    assert merged["source_url"] == "https://www.linkedin.com/jobs/view/4451905595/"
+
+
 def test_extracts_title_from_linkedin_job_slug():
     collector = LinkedInAuthCollector()
 

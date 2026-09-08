@@ -1,8 +1,10 @@
+import re
 import time
 from typing import Any, Dict, Iterable, List
-from urllib.parse import urljoin
+from urllib.parse import parse_qs, urljoin, urlparse
 
 import httpx
+from bs4 import BeautifulSoup
 
 from app.core.config import get_settings
 from app.official.collectors.base import OfficialCollectorBase
@@ -13,6 +15,14 @@ MICROSOFT_SEARCH_URL = "https://apply.careers.microsoft.com/api/pcsx/search"
 MICROSOFT_DETAIL_URL = (
     "https://apply.careers.microsoft.com/api/pcsx/position_details"
 )
+MICROSOFT_APPLY_ORIGIN = "https://apply.careers.microsoft.com"
+_MICROSOFT_CAREER_HOSTS = {
+    "apply.careers.microsoft.com",
+    "jobs.careers.microsoft.com",
+    "careers.microsoft.com",
+    "www.careers.microsoft.com",
+}
+_JOB_ID_IN_PATH = re.compile(r"/job/(\d+)")
 
 
 class MicrosoftOfficialCollector(OfficialCollectorBase):
@@ -58,7 +68,7 @@ class MicrosoftOfficialCollector(OfficialCollectorBase):
                     },
                     retries=settings.collector_default_retries,
                 )
-                positions = payload.get("positions") or payload.get("results") or []
+                positions = extract_microsoft_positions(payload)
                 if not positions:
                     break
                 for item in positions:
@@ -84,30 +94,46 @@ class MicrosoftOfficialCollector(OfficialCollectorBase):
         return jobs[: settings.official_source_max_jobs_per_source]
 
 
+def extract_microsoft_positions(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    record = _pcsx_search_record(payload)
+    positions = record.get("positions") or record.get("results") or []
+    return positions if isinstance(positions, list) else []
+
+
 def parse_microsoft_position(
     search_item: Dict[str, Any], detail_payload: Dict[str, Any]
 ) -> Dict[str, Any] | None:
-    detail = detail_payload.get("position") or detail_payload.get("job") or detail_payload
+    detail = _pcsx_job_record(detail_payload)
     source_job_id = str(
-        search_item.get("id")
-        or search_item.get("position_id")
-        or detail.get("id")
+        _coalesce(
+            search_item.get("id"),
+            search_item.get("position_id"),
+            detail.get("id"),
+        )
         or ""
     ).strip()
     title = str(
-        detail.get("name")
-        or detail.get("title")
-        or search_item.get("name")
-        or search_item.get("title")
+        _coalesce(
+            detail.get("name"),
+            detail.get("title"),
+            search_item.get("name"),
+            search_item.get("title"),
+        )
         or ""
     ).strip()
     if not source_job_id or not title:
         return None
     location = _render_locations(
-        detail.get("locations")
-        or detail.get("standardized_locations")
-        or search_item.get("locations")
-        or search_item.get("location")
+        _coalesce(
+            detail.get("standardizedLocations"),
+            detail.get("standardized_locations"),
+            detail.get("locations"),
+            search_item.get("standardizedLocations"),
+            search_item.get("standardized_locations"),
+            search_item.get("locations"),
+            search_item.get("location"),
+            detail.get("location"),
+        )
     )
     location_category = classify_official_location(location)
     if location_category == LocationCategory.EXCLUDED:
@@ -115,26 +141,42 @@ def parse_microsoft_position(
     description = "\n\n".join(
         value
         for value in [
-            _render_text(detail.get("job_description") or detail.get("description")),
-            _render_text(
-                detail.get("qualifications")
-                or detail.get("minimum_qualifications")
+            _render_html_or_text(
+                _coalesce(
+                    detail.get("jobDescription"),
+                    detail.get("job_description"),
+                    detail.get("description"),
+                )
+            ),
+            _render_html_or_text(
+                _coalesce(
+                    detail.get("qualifications"),
+                    detail.get("minimum_qualifications"),
+                )
             ),
         ]
         if value
     )
-    path = (
-        detail.get("positionUrl")
-        or detail.get("position_url")
-        or search_item.get("positionUrl")
-        or f"/careers/job/{source_job_id}"
+    source_url = build_microsoft_job_url(source_job_id, detail, search_item)
+    apply_url = str(
+        _coalesce(
+            detail.get("applyUrl"),
+            detail.get("apply_url"),
+            source_url,
+        )
+        or source_url
     )
-    source_url = urljoin("https://apply.careers.microsoft.com/", str(path))
-    posted_at = (
-        detail.get("posted_ts")
-        or detail.get("created_ts")
-        or search_item.get("posted_ts")
-        or search_item.get("created_ts")
+    if is_microsoft_career_homepage(apply_url):
+        apply_url = source_url
+    posted_at = _coalesce(
+        detail.get("postedTs"),
+        detail.get("posted_ts"),
+        detail.get("creationTs"),
+        detail.get("created_ts"),
+        search_item.get("postedTs"),
+        search_item.get("posted_ts"),
+        search_item.get("creationTs"),
+        search_item.get("created_ts"),
     )
     if isinstance(posted_at, (int, float)) and posted_at > 10_000_000_000:
         posted_at = posted_at / 1000
@@ -148,12 +190,112 @@ def parse_microsoft_position(
         "location": location,
         "country": "China",
         "description": description,
-        "apply_url": str(detail.get("apply_url") or source_url),
+        "apply_url": apply_url,
         "source_url": source_url,
         "posted_at": posted_at,
         "content_hash": content_hash,
         "location_category": location_category.value,
     }
+
+
+def build_microsoft_job_url(
+    source_job_id: str, *records: Dict[str, Any]
+) -> str:
+    candidates: List[str] = []
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        for key in (
+            "publicUrl",
+            "public_url",
+            "positionUrl",
+            "position_url",
+        ):
+            value = record.get(key)
+            if value:
+                candidates.append(str(value).strip())
+    for candidate in candidates:
+        resolved = _absolute_microsoft_url(candidate)
+        if is_microsoft_job_detail_url(resolved):
+            return resolved
+    return f"{MICROSOFT_APPLY_ORIGIN}/careers/job/{source_job_id}"
+
+
+def is_microsoft_job_detail_url(url: str) -> bool:
+    parsed = _parse_url(url)
+    if parsed is None:
+        return False
+    host = (parsed.hostname or "").lower()
+    if host not in _MICROSOFT_CAREER_HOSTS:
+        return False
+    if _JOB_ID_IN_PATH.search(parsed.path or ""):
+        return True
+    query = parse_qs(parsed.query or "")
+    pid = (query.get("pid") or query.get("position_id") or [""])[0]
+    return bool(re.fullmatch(r"\d+", str(pid)))
+
+
+def is_microsoft_career_homepage(url: str) -> bool:
+    parsed = _parse_url(url)
+    if parsed is None:
+        return False
+    host = (parsed.hostname or "").lower()
+    if host not in _MICROSOFT_CAREER_HOSTS:
+        return False
+    return not is_microsoft_job_detail_url(url)
+
+
+def _absolute_microsoft_url(value: str) -> str:
+    if value.startswith("http://") or value.startswith("https://"):
+        return value
+    return urljoin(f"{MICROSOFT_APPLY_ORIGIN}/", value)
+
+
+def _parse_url(url: str):
+    if not url:
+        return None
+    try:
+        return urlparse(url)
+    except ValueError:
+        return None
+
+
+def _pcsx_search_record(payload: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+    data = payload.get("data")
+    if isinstance(data, dict) and (
+        isinstance(data.get("positions"), list)
+        or isinstance(data.get("results"), list)
+    ):
+        return data
+    return payload
+
+
+def _pcsx_job_record(payload: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+    data = payload.get("data")
+    if isinstance(data, dict) and not isinstance(data.get("positions"), list):
+        if any(
+            key in data
+            for key in (
+                "id",
+                "name",
+                "jobDescription",
+                "publicUrl",
+                "positionUrl",
+            )
+        ):
+            return data
+    return payload.get("position") or payload.get("job") or payload
+
+
+def _coalesce(*values: Any) -> Any:
+    for value in values:
+        if value not in (None, ""):
+            return value
+    return None
 
 
 def _render_locations(value: Any) -> str:
@@ -177,6 +319,13 @@ def _render_locations(value: Any) -> str:
     return " / ".join(dict.fromkeys(rendered)) or "Unknown"
 
 
+def _render_html_or_text(value: Any) -> str:
+    text = _render_text(value)
+    if "<" in text and ">" in text:
+        return BeautifulSoup(text, "html.parser").get_text("\n", strip=True)
+    return text
+
+
 def _render_text(value: Any) -> str:
     if value is None:
         return ""
@@ -184,7 +333,7 @@ def _render_text(value: Any) -> str:
         return value.strip()
     if isinstance(value, dict):
         return "\n".join(_render_text(child) for child in value.values() if child)
-    if isinstance(value, Iterable):
+    if isinstance(value, Iterable) and not isinstance(value, (str, bytes)):
         return "\n".join(_render_text(child) for child in value if child)
     return str(value).strip()
 
@@ -200,7 +349,8 @@ def _get_json_with_backoff(
         response = client.get(url, params=params)
         if response.status_code not in {429, 500, 502, 503, 504}:
             response.raise_for_status()
-            return response.json()
+            payload = response.json()
+            return payload if isinstance(payload, dict) else {}
         if attempt < retries:
             retry_after = response.headers.get("retry-after")
             try:

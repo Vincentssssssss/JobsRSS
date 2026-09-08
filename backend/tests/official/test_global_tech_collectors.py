@@ -3,7 +3,10 @@ import httpx
 from app.official.collectors.amazon import parse_amazon_jobs
 from app.official.collectors.google import discover_google_job_links, parse_google_job_detail
 from app.official.collectors.microsoft import (
+    MicrosoftOfficialCollector,
     _get_json_with_backoff,
+    extract_microsoft_positions,
+    is_microsoft_career_homepage,
     parse_microsoft_position,
 )
 from app.official.location import LocationCategory
@@ -62,6 +65,129 @@ def test_parses_microsoft_search_and_detail_payload():
     assert job["location_category"] == LocationCategory.CONFIRMED_SHANGHAI.value
     assert "qualifications" not in job
     assert "IAM" in job["description"]
+    assert (
+        job["source_url"]
+        == "https://apply.careers.microsoft.com/careers/job/1849213"
+    )
+    assert job["apply_url"] == job["source_url"]
+    assert not is_microsoft_career_homepage(job["source_url"])
+
+
+def test_parses_microsoft_live_pcsx_envelope_into_job_detail_url():
+    search_payload = {
+        "status": 200,
+        "error": {"message": "", "body": ""},
+        "data": {
+            "positions": [
+                {
+                    "id": 1970393556985265,
+                    "displayJobId": "200053209",
+                    "name": "Cloud Security Architect",
+                    "standardizedLocations": ["Shanghai, Shanghai, CN"],
+                    "postedTs": 1787184000,
+                    "positionUrl": "/careers/job/1970393556985265",
+                }
+            ]
+        },
+    }
+    detail_payload = {
+        "status": 200,
+        "data": {
+            "id": 1970393556985265,
+            "displayJobId": "200053209",
+            "name": "Cloud Security Architect",
+            "jobDescription": (
+                "<b>Overview</b><br><p>Own Azure cloud security architecture "
+                "and IAM.</p>"
+            ),
+            "standardizedLocations": ["Shanghai, Shanghai, CN"],
+            "publicUrl": (
+                "https://apply.careers.microsoft.com/careers/job/1970393556985265"
+            ),
+            "positionUrl": "/careers/job/1970393556985265",
+            "postedTs": 1787184000,
+        },
+    }
+
+    positions = extract_microsoft_positions(search_payload)
+    job = parse_microsoft_position(positions[0], detail_payload)
+
+    assert job["source_job_id"] == "1970393556985265"
+    assert job["source_url"] == (
+        "https://apply.careers.microsoft.com/careers/job/1970393556985265"
+    )
+    assert job["apply_url"] == job["source_url"]
+    assert "home.html" not in job["source_url"]
+    assert "IAM" in job["description"]
+    assert job["location_category"] == LocationCategory.CONFIRMED_SHANGHAI.value
+
+
+def test_microsoft_replaces_career_homepage_with_eightfold_job_url():
+    search_item = {
+        "id": "1849213",
+        "name": "Cloud Security Architect",
+        "locations": ["Shanghai, Shanghai, CN"],
+    }
+    detail = {
+        "position": {
+            "name": "Cloud Security Architect",
+            "job_description": "Own Azure cloud security architecture.",
+            "locations": ["Shanghai, Shanghai, CN"],
+            "positionUrl": "/",
+            "publicUrl": "https://careers.microsoft.com/v2/global/en/home.html",
+            "apply_url": "https://careers.microsoft.com/",
+        }
+    }
+
+    job = parse_microsoft_position(search_item, detail)
+
+    assert job["source_url"] == (
+        "https://apply.careers.microsoft.com/careers/job/1849213"
+    )
+    assert job["apply_url"] == job["source_url"]
+    assert not is_microsoft_career_homepage(job["apply_url"])
+
+
+def test_microsoft_fetch_reads_nested_data_positions(monkeypatch):
+    def fake_get(_client, url, params, retries):
+        if "position_details" in url:
+            return {
+                "data": {
+                    "id": params["position_id"],
+                    "name": "Cloud Security Architect",
+                    "jobDescription": "Own Azure cloud security architecture and IAM.",
+                    "standardizedLocations": ["Shanghai, Shanghai, CN"],
+                    "publicUrl": (
+                        "https://apply.careers.microsoft.com/careers/job/"
+                        f"{params['position_id']}"
+                    ),
+                    "positionUrl": f"/careers/job/{params['position_id']}",
+                }
+            }
+        return {
+            "data": {
+                "positions": [
+                    {
+                        "id": 1970393556985265,
+                        "name": "Cloud Security Architect",
+                        "standardizedLocations": ["Shanghai, Shanghai, CN"],
+                        "positionUrl": "/careers/job/1970393556985265",
+                    }
+                ]
+            }
+        }
+
+    monkeypatch.setattr(
+        "app.official.collectors.microsoft._get_json_with_backoff",
+        fake_get,
+    )
+
+    jobs = MicrosoftOfficialCollector().fetch_raw()
+
+    assert len(jobs) == 1
+    assert jobs[0]["source_url"] == (
+        "https://apply.careers.microsoft.com/careers/job/1970393556985265"
+    )
 
 
 def test_discovers_and_parses_google_ssr_job_page():

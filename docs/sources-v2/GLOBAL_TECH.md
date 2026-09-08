@@ -46,8 +46,13 @@ Assessment date: 2026-08-21
 - Identity: Eightfold position ID; recruiter-facing ATS ID retained in payload.
 - Extracted fields: title, normalized locations, timestamp, department, work
   mode, description, qualifications, role type, employment type, apply URL.
+- Public job URL: `https://apply.careers.microsoft.com/careers/job/{id}`.
+  The marketing host `careers.microsoft.com` redirects to
+  `/v2/global/en/home.html` and must not be stored as the job link.
 - Polling: every 6 hours with bounded pagination.
-- Limitation: implementation API is undocumented and may change.
+- Limitation: implementation API is undocumented and may change. Search and
+  detail payloads are wrapped in a `data` envelope with camelCase keys
+  (`positions`, `jobDescription`, `publicUrl`, `postedTs`).
 
 ## Apple (Wave 2)
 

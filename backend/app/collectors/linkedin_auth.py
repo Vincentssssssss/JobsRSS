@@ -13,6 +13,7 @@ from app.enrichment.external_job import (
     EnrichedJobData,
     merge_job_fields,
 )
+from app.official.collectors.microsoft import is_microsoft_career_homepage
 
 _DESCRIPTION_NOISE_MARKERS = {
     "skip to main content",
@@ -400,6 +401,9 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
             fallback_location=fallback_location,
         )
         description = self._clean_description(detail["description"]) or f"{title} at {company} in {location}"
+        apply_url = str(detail.get("external_apply_url") or job_url)
+        if is_microsoft_career_homepage(apply_url):
+            apply_url = job_url
         base = {
             "title": title,
             "company": company,
@@ -407,10 +411,12 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
             "description": description,
             "job_url": job_url,
             "source_url": job_url,
-            "apply_url": detail.get("external_apply_url") or job_url,
+            "apply_url": apply_url,
             "posted_at": card.get("posted_at"),
         }
         enriched = merge_job_fields(base, detail.get("official"))
+        if is_microsoft_career_homepage(str(enriched.get("apply_url") or "")):
+            enriched["apply_url"] = job_url
         title = enriched["title"]
         company = enriched["company"]
         enriched_location = self._normalize_location(enriched["location"])
@@ -524,7 +530,11 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
         if not ExternalJobEnricher.is_safe_public_url(url):
             return False
         host = (urlparse(url).hostname or "").lower()
-        return not (host == "linkedin.com" or host.endswith(".linkedin.com"))
+        if host == "linkedin.com" or host.endswith(".linkedin.com"):
+            return False
+        if is_microsoft_career_homepage(url):
+            return False
+        return True
 
     def _collect_official_job(self, official_url: str) -> Optional[EnrichedJobData]:
         if not self.settings.linkedin_external_enrichment_enabled or not official_url:
