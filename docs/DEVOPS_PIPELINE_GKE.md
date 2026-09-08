@@ -60,6 +60,15 @@ ls deploy/gke/scripts/bootstrap-gcp.sh
 bash deploy/gke/scripts/bootstrap-gcp.sh
 ```
 
+Enterprise projects often have **no `default` VPC**. The script then creates
+`jobsrss` / `jobsrss-asia-southeast1`, or you can point it at an existing one:
+
+```bash
+export GCP_NETWORK=your-vpc
+export GCP_SUBNETWORK=your-subnet-in-asia-southeast1
+bash deploy/gke/scripts/bootstrap-gcp.sh
+```
+
 Cloud Shell is already logged in as your user. Skip `gcloud auth login` unless
 the project is on another account.
 
