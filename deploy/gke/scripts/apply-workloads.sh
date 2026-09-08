@@ -28,7 +28,7 @@ kubectl apply -f "${ROOT}/namespace.yaml"
 sed \
   -e "s/name: demo-gateway/name: ${JOBSRSS_GATEWAY_NAME}/" \
   -e "s/namespace: default/namespace: ${JOBSRSS_GATEWAY_NAMESPACE}/" \
-  -e "s/jobsrss.example.invalid/${JOBSRSS_GATEWAY_HOST}/" \
+  -e "s/jobsrss.vincentspace.com/${JOBSRSS_GATEWAY_HOST}/" \
   "${ROOT}/httproute.yaml" > "${WORK}/httproute.yaml"
 
 API_NAME="${IMAGE_API%:*}"

@@ -85,10 +85,7 @@ allow_jobsrss_on_existing_gateway() {
       -n "${JOBSRSS_GATEWAY_NAMESPACE}" \
       -o jsonpath='{.status.addresses[0].value}'
   )"
-  if [ -z "${JOBSRSS_GATEWAY_HOST:-}" ] && [ -n "${JOBSRSS_GATEWAY_ADDRESS}" ]; then
-    JOBSRSS_GATEWAY_HOST="jobsrss.${JOBSRSS_GATEWAY_ADDRESS}.sslip.io"
-  fi
-  export JOBSRSS_GATEWAY_HOST="${JOBSRSS_GATEWAY_HOST:-jobsrss.local}"
+  export JOBSRSS_GATEWAY_HOST="${JOBSRSS_GATEWAY_HOST:-jobsrss.vincentspace.com}"
 
   python3 - <<'PY'
 import json, subprocess, os, sys

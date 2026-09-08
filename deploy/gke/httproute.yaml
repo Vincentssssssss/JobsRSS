@@ -10,7 +10,7 @@ spec:
       namespace: default
       kind: Gateway
   hostnames:
-    - jobsrss.example.invalid
+    - jobsrss.vincentspace.com
   rules:
     - matches:
         - path:

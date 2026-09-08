@@ -86,7 +86,7 @@ residential VPN.
 
 ```bash
 cp deploy/gke/.env.gke.example /tmp/jobsrss.env.gke
-# paste LLM_API_KEY; after the Gateway gets an IP, replace CHANGE_ME in RSS_BASE_URL / ALLOWED_ORIGINS
+# paste LLM_API_KEY; RSS_BASE_URL / ALLOWED_ORIGINS default to jobsrss.vincentspace.com
 bash deploy/gke/scripts/apply-secrets.sh /tmp/jobsrss.env.gke /path/to/secrets
 ```
 
@@ -185,7 +185,8 @@ or touch nginx.
 
 - Defaults: `JOBSRSS_GATEWAY_NAME=demo-gateway`,
   `JOBSRSS_GATEWAY_NAMESPACE=default`
-- Hostname: `jobsrss.<gateway-ip>.sslip.io` so demo `/` on the raw IP stays put
+- Hostname: `jobsrss.vincentspace.com` (override with `JOBSRSS_GATEWAY_HOST`)
+- Point that name at the existing Gateway IP; demo `/` on the raw IP stays put
 - `/` → frontend, `/healthz` `/jobs` `/rss` `/sources` → api
 
 ```bash
@@ -194,8 +195,8 @@ kubectl -n jobsrss get httproute
 kubectl -n jobsrss get pods
 ```
 
-Portal: `http://jobsrss.<GATEWAY_IP>.sslip.io/`  
-API health: `http://jobsrss.<GATEWAY_IP>.sslip.io/healthz`
+Portal: `http://jobsrss.vincentspace.com/`  
+API health: `http://jobsrss.vincentspace.com/healthz`
 
 ## 7) First deployment checklist (Cloud Shell)
 
