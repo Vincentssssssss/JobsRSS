@@ -28,8 +28,12 @@ Open:
 
 ## DevOps Pipeline (Near Production)
 
-Production-style CI/CD templates for GitHub Actions and Azure VM deployment are
-documented in:
+GCP GKE is the supported cloud runtime. GitHub Actions builds images, pushes
+them to Artifact Registry, and applies Kubernetes manifests:
+
+- `docs/DEVOPS_PIPELINE_GKE.md`
+
+The older Azure VM + Docker Compose path remains documented at:
 
 - `docs/DEVOPS_PIPELINE_AZURE.md`
 

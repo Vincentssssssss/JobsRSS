@@ -1,0 +1,102 @@
+name: Deploy to GKE
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Optional image tag override"
+        required: false
+        type: string
+      deploy_ref:
+        description: "Git ref to deploy (branch, tag, or sha)"
+        required: false
+        default: "main"
+        type: string
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  build-and-deploy:
+    if: github.event_name == 'workflow_dispatch' || vars.GKE_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    env:
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      GCP_REGION: ${{ vars.GCP_REGION }}
+      GKE_CLUSTER: ${{ vars.GKE_CLUSTER }}
+      AR_REPOSITORY: ${{ vars.AR_REPOSITORY || 'jobsrss' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.deploy_ref || github.ref_name }}
+
+      - name: Resolve image tag
+        id: vars
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.image_tag || '' }}" ]; then
+            tag="${{ github.event.inputs.image_tag }}"
+          else
+            tag="${GITHUB_SHA}"
+          fi
+          echo "image_tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "ar_host=${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY}" >> "$GITHUB_OUTPUT"
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          token_format: access_token
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Login to Artifact Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.GCP_REGION }}-docker.pkg.dev
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          file: backend/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.vars.outputs.ar_host }}/jobsrss-api:${{ steps.vars.outputs.image_tag }}
+            ${{ steps.vars.outputs.ar_host }}/jobsrss-api:latest
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          file: frontend/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.vars.outputs.ar_host }}/jobsrss-frontend:${{ steps.vars.outputs.image_tag }}
+            ${{ steps.vars.outputs.ar_host }}/jobsrss-frontend:latest
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ env.GKE_CLUSTER }}
+          location: ${{ env.GCP_REGION }}
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Deploy manifests
+        shell: bash
+        run: |
+          export IMAGE_API="${{ steps.vars.outputs.ar_host }}/jobsrss-api:${{ steps.vars.outputs.image_tag }}"
+          export IMAGE_FRONTEND="${{ steps.vars.outputs.ar_host }}/jobsrss-frontend:${{ steps.vars.outputs.image_tag }}"
+          bash deploy/gke/scripts/apply-workloads.sh

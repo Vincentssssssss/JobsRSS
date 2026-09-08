@@ -1,5 +1,8 @@
 # JobsRSS DevOps Pipeline (GitHub Actions + Azure VM)
 
+GCP GKE is the current cloud target. Prefer
+`docs/DEVOPS_PIPELINE_GKE.md` unless you are still running the Azure VM.
+
 This guide sets up a near-production CI/CD flow:
 
 1. Run CI on every PR/push.
