@@ -118,8 +118,12 @@ bash deploy/gke/scripts/cloud-shell-deploy.sh
 ```
 
 This submits `deploy/gke/cloudbuild.yaml` (backend + frontend in parallel),
-then `kubectl apply` to the Autopilot cluster. Backend image build can take
+then `kubectl apply` to the existing cluster. Backend image build can take
 15–30 minutes because of Playwright.
+
+Enterprise projects often disable the default Compute service account
+(`…-compute@developer.gserviceaccount.com`). The deploy script creates and
+uses `jobsrss-cicd@…` instead — do not enable the default Compute SA.
 
 Check the load balancer:
 

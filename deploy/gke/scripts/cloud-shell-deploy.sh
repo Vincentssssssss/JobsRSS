@@ -31,8 +31,11 @@ export IMAGE_FRONTEND="${AR_HOST}/jobsrss-frontend:${IMAGE_TAG}"
 echo "Project=${GCP_PROJECT_ID} Artifact Registry region=${GCP_REGION}"
 echo "Building ${IMAGE_API} and ${IMAGE_FRONTEND} with Cloud Build"
 
+ensure_cloudbuild_worker_sa
+
 gcloud builds submit \
   --project="${GCP_PROJECT_ID}" \
+  --service-account="${CLOUDBUILD_SA_RESOURCE}" \
   --config=deploy/gke/cloudbuild.yaml \
   --substitutions="_REGION=${GCP_REGION},_AR_REPOSITORY=${AR_REPOSITORY},_IMAGE_TAG=${IMAGE_TAG}" \
   .

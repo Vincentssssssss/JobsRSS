@@ -35,37 +35,7 @@ if ! gcloud artifacts repositories describe "${AR_REPOSITORY}" \
     --description="JobsRSS container images"
 fi
 
-SA_EMAIL="${CICD_SA_NAME}@${GCP_PROJECT_ID}.iam.gserviceaccount.com"
-if ! gcloud iam service-accounts describe "${SA_EMAIL}" >/dev/null 2>&1; then
-  gcloud iam service-accounts create "${CICD_SA_NAME}" \
-    --display-name="JobsRSS GitHub Actions / Jenkins"
-fi
-
-gcloud projects add-iam-policy-binding "${GCP_PROJECT_ID}" \
-  --member="serviceAccount:${SA_EMAIL}" \
-  --role="roles/artifactregistry.writer" \
-  --condition=None >/dev/null
-
-gcloud projects add-iam-policy-binding "${GCP_PROJECT_ID}" \
-  --member="serviceAccount:${SA_EMAIL}" \
-  --role="roles/container.developer" \
-  --condition=None >/dev/null
-
-PROJECT_NUMBER="$(gcloud projects describe "${GCP_PROJECT_ID}" --format='value(projectNumber)')"
-for MEMBER in \
-  "serviceAccount:${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com" \
-  "serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
-do
-  gcloud projects add-iam-policy-binding "${GCP_PROJECT_ID}" \
-    --member="${MEMBER}" \
-    --role="roles/artifactregistry.writer" \
-    --condition=None >/dev/null
-  gcloud projects add-iam-policy-binding "${GCP_PROJECT_ID}" \
-    --member="${MEMBER}" \
-    --role="roles/container.developer" \
-    --condition=None >/dev/null
-done
-
+ensure_cloudbuild_worker_sa
 gke_get_credentials
 kubectl apply -f "$(dirname "$0")/../namespace.yaml"
 
