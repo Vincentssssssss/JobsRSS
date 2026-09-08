@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Apply GKE manifests with image tags from the CI/CD pipeline.
-# Uses GKE Gateway API, not Ingress / nginx.
+# Apply JobsRSS onto an existing GKE Gateway (HTTPRoute only).
 # Usage:
 #   IMAGE_API=... IMAGE_FRONTEND=... bash deploy/gke/scripts/apply-workloads.sh
 
 IMAGE_API="${IMAGE_API:?IMAGE_API is required}"
 IMAGE_FRONTEND="${IMAGE_FRONTEND:?IMAGE_FRONTEND is required}"
 NAMESPACE="${NAMESPACE:-jobsrss}"
-GKE_GATEWAY_CLASS="${GKE_GATEWAY_CLASS:-gke-l7-regional-external-managed}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
+
+# shellcheck source=gke-env.sh
+source "$(dirname "$0")/gke-env.sh"
 
 if ! kubectl get secret jobsrss-env --namespace "${NAMESPACE}" >/dev/null 2>&1; then
   echo "Missing secret jobsrss-env in ${NAMESPACE}."
@@ -20,35 +21,15 @@ if ! kubectl get secret jobsrss-env --namespace "${NAMESPACE}" >/dev/null 2>&1; 
   exit 1
 fi
 
-if ! kubectl get gatewayclass "${GKE_GATEWAY_CLASS}" >/dev/null 2>&1; then
-  echo "GatewayClass ${GKE_GATEWAY_CLASS} was not found."
-  echo "Enable Gateway API on the existing cluster, then retry:"
-  echo "  gcloud container clusters update <cluster> --location=<region-or-zone> --gateway-api=standard"
-  echo "Or set GKE_GATEWAY_CLASS to one of:"
-  kubectl get gatewayclass 2>/dev/null || true
-  exit 1
-fi
+allow_jobsrss_on_existing_gateway
 
 kubectl apply -f "${ROOT}/namespace.yaml"
 
-sed "s/gke-l7-regional-external-managed/${GKE_GATEWAY_CLASS}/g" \
-  "${ROOT}/gateway.yaml" > "${WORK}/gateway.yaml"
-
-if [ -n "${JOBSRSS_GATEWAY_HOST:-}" ]; then
-  python3 - <<PY
-from pathlib import Path
-path = Path("${WORK}/gateway.yaml")
-text = path.read_text()
-needle = "  parentRefs:\n    - name: jobsrss\n      kind: Gateway\n"
-insert = (
-    "  parentRefs:\n    - name: jobsrss\n      kind: Gateway\n"
-    "  hostnames:\n    - ${JOBSRSS_GATEWAY_HOST}\n"
-)
-if needle not in text:
-    raise SystemExit("HTTPRoute parentRefs block not found")
-path.write_text(text.replace(needle, insert, 1))
-PY
-fi
+sed \
+  -e "s/name: demo-gateway/name: ${JOBSRSS_GATEWAY_NAME}/" \
+  -e "s/namespace: default/namespace: ${JOBSRSS_GATEWAY_NAMESPACE}/" \
+  -e "s/jobsrss.example.invalid/${JOBSRSS_GATEWAY_HOST}/" \
+  "${ROOT}/httproute.yaml" > "${WORK}/httproute.yaml"
 
 API_NAME="${IMAGE_API%:*}"
 API_TAG="${IMAGE_API##*:}"
@@ -64,7 +45,6 @@ resources:
   - ${ROOT}/api.yaml
   - ${ROOT}/worker.yaml
   - ${ROOT}/frontend.yaml
-  - gateway.yaml
 images:
   - name: jobsrss-api
     newName: ${API_NAME}
@@ -75,13 +55,13 @@ images:
 EOF
 
 kubectl apply -k "${WORK}"
+kubectl apply -n "${NAMESPACE}" -f "${WORK}/httproute.yaml"
 kubectl -n "${NAMESPACE}" rollout status statefulset/postgres --timeout=300s
 kubectl -n "${NAMESPACE}" rollout status deployment/api --timeout=300s
 kubectl -n "${NAMESPACE}" rollout status deployment/frontend --timeout=300s
 kubectl -n "${NAMESPACE}" rollout status deployment/worker --timeout=300s
 
-echo "Workloads rolled out on GKE Gateway class ${GKE_GATEWAY_CLASS}."
-kubectl -n "${NAMESPACE}" get gateway,httproute,svc,deploy,statefulset
-echo
-echo "Gateway address (may take a few minutes):"
-kubectl -n "${NAMESPACE}" get gateway jobsrss -o wide
+echo "JobsRSS attached to Gateway ${JOBSRSS_GATEWAY_NAMESPACE}/${JOBSRSS_GATEWAY_NAME}"
+echo "Open: http://${JOBSRSS_GATEWAY_HOST}/"
+kubectl -n "${NAMESPACE}" get httproute,svc,deploy,statefulset
+kubectl -n "${JOBSRSS_GATEWAY_NAMESPACE}" get gateway "${JOBSRSS_GATEWAY_NAME}" -o wide

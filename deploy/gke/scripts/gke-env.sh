@@ -68,6 +68,59 @@ gke_get_credentials() {
     --project="${GCP_PROJECT_ID}"
 }
 
+allow_jobsrss_on_existing_gateway() {
+  export JOBSRSS_GATEWAY_NAME="${JOBSRSS_GATEWAY_NAME:-demo-gateway}"
+  export JOBSRSS_GATEWAY_NAMESPACE="${JOBSRSS_GATEWAY_NAMESPACE:-default}"
+
+  if ! kubectl get gateway "${JOBSRSS_GATEWAY_NAME}" \
+    -n "${JOBSRSS_GATEWAY_NAMESPACE}" >/dev/null 2>&1; then
+    echo "Existing Gateway ${JOBSRSS_GATEWAY_NAMESPACE}/${JOBSRSS_GATEWAY_NAME} was not found."
+    echo "Set JOBSRSS_GATEWAY_NAME and JOBSRSS_GATEWAY_NAMESPACE to the Gateway you want to reuse."
+    kubectl get gateway -A
+    exit 1
+  fi
+
+  JOBSRSS_GATEWAY_ADDRESS="$(
+    kubectl get gateway "${JOBSRSS_GATEWAY_NAME}" \
+      -n "${JOBSRSS_GATEWAY_NAMESPACE}" \
+      -o jsonpath='{.status.addresses[0].value}'
+  )"
+  if [ -z "${JOBSRSS_GATEWAY_HOST:-}" ] && [ -n "${JOBSRSS_GATEWAY_ADDRESS}" ]; then
+    JOBSRSS_GATEWAY_HOST="jobsrss.${JOBSRSS_GATEWAY_ADDRESS}.sslip.io"
+  fi
+  export JOBSRSS_GATEWAY_HOST="${JOBSRSS_GATEWAY_HOST:-jobsrss.local}"
+
+  python3 - <<'PY'
+import json, subprocess, os, sys
+name = os.environ["JOBSRSS_GATEWAY_NAME"]
+ns = os.environ["JOBSRSS_GATEWAY_NAMESPACE"]
+raw = subprocess.check_output(
+    ["kubectl", "get", "gateway", name, "-n", ns, "-o", "json"]
+)
+doc = json.loads(raw)
+doc.pop("status", None)
+changed = False
+for listener in doc.get("spec", {}).get("listeners", []):
+    namespaces = listener.setdefault("allowedRoutes", {}).setdefault("namespaces", {})
+    if namespaces.get("from") != "All":
+        namespaces["from"] = "All"
+        namespaces.pop("selector", None)
+        changed = True
+if not changed:
+    sys.exit(0)
+proc = subprocess.run(
+    ["kubectl", "replace", "-f", "-"],
+    input=json.dumps(doc),
+    text=True,
+    check=False,
+)
+sys.exit(proc.returncode)
+PY
+
+  echo "Reusing Gateway ${JOBSRSS_GATEWAY_NAMESPACE}/${JOBSRSS_GATEWAY_NAME}"
+  echo "JobsRSS host: http://${JOBSRSS_GATEWAY_HOST}/"
+}
+
 enable_gke_gateway_api() {
   resolve_existing_cluster
   if kubectl get gatewayclass >/dev/null 2>&1 \

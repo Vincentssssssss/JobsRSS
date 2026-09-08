@@ -46,5 +46,6 @@ bash deploy/gke/scripts/apply-workloads.sh
 
 echo
 echo "Deploy finished on existing cluster ${GKE_CLUSTER}."
-echo "Gateway (may take a few minutes to get an address):"
-kubectl -n jobsrss get gateway jobsrss -o wide || true
+echo "JobsRSS host: http://${JOBSRSS_GATEWAY_HOST:-<set-after-apply>}/"
+kubectl -n jobsrss get httproute jobsrss || true
+kubectl get gateway -A

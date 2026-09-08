@@ -28,7 +28,7 @@ GitHub Actions is a service on github.com, not a package for GKE/Cloud Shell.
 
 ## 1) Repository files
 
-- `deploy/gke/*.yaml` (workloads + GKE Gateway / HTTPRoute)
+- `deploy/gke/*.yaml` (workloads + HTTPRoute on an existing GKE Gateway)
 - `deploy/gke/cloudbuild.yaml`
 - `deploy/gke/.env.gke.example`
 - `deploy/gke/scripts/bootstrap-gcp.sh`
@@ -179,23 +179,23 @@ Mapping from Compose:
 | `frontend` | Deployment + Service `:80` → 3000 | `BACKEND_API_BASE_URLS=http://api:8000` |
 | `./secrets` | Secret `jobsrss-collector-files` | Optional |
 
-Traffic uses **GKE Gateway API**, not nginx Ingress and not GCE Ingress.
-JobsRSS gets its own Gateway / regional external Application Load Balancer,
-so it does not steal `/` from apps in `default`.
+Traffic uses the **existing GKE Gateway** (`demo-gateway` in `default` by
+default). JobsRSS only adds an HTTPRoute; it does not create another Gateway
+or touch nginx.
 
-- GatewayClass default: `gke-l7-regional-external-managed`
-- Override with `GKE_GATEWAY_CLASS` if your cluster exposes a different class
-- `/` → frontend
-- `/healthz`, `/jobs`, `/rss`, `/sources` → api
+- Defaults: `JOBSRSS_GATEWAY_NAME=demo-gateway`,
+  `JOBSRSS_GATEWAY_NAMESPACE=default`
+- Hostname: `jobsrss.<gateway-ip>.sslip.io` so demo `/` on the raw IP stays put
+- `/` → frontend, `/healthz` `/jobs` `/rss` `/sources` → api
 
 ```bash
-kubectl get gatewayclass
-kubectl -n jobsrss get gateway,httproute
+kubectl get gateway -A
+kubectl -n jobsrss get httproute
 kubectl -n jobsrss get pods
 ```
 
-Portal: `http://<GATEWAY_IP>/`  
-API health: `http://<GATEWAY_IP>/healthz`
+Portal: `http://jobsrss.<GATEWAY_IP>.sslip.io/`  
+API health: `http://jobsrss.<GATEWAY_IP>.sslip.io/healthz`
 
 ## 7) First deployment checklist (Cloud Shell)
 
