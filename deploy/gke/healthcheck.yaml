@@ -1,0 +1,45 @@
+apiVersion: networking.gke.io/v1
+kind: HealthCheckPolicy
+metadata:
+  name: jobsrss-api
+  namespace: jobsrss
+  labels:
+    app.kubernetes.io/name: jobsrss
+spec:
+  default:
+    checkIntervalSec: 15
+    timeoutSec: 5
+    healthyThreshold: 1
+    unhealthyThreshold: 3
+    config:
+      type: HTTP
+      httpHealthCheck:
+        requestPath: /healthz
+        port: 8000
+  targetRef:
+    group: ""
+    kind: Service
+    name: api
+---
+apiVersion: networking.gke.io/v1
+kind: HealthCheckPolicy
+metadata:
+  name: jobsrss-frontend
+  namespace: jobsrss
+  labels:
+    app.kubernetes.io/name: jobsrss
+spec:
+  default:
+    checkIntervalSec: 15
+    timeoutSec: 5
+    healthyThreshold: 1
+    unhealthyThreshold: 3
+    config:
+      type: HTTP
+      httpHealthCheck:
+        requestPath: /
+        port: 3000
+  targetRef:
+    group: ""
+    kind: Service
+    name: frontend

@@ -55,7 +55,9 @@ images:
 EOF
 
 kubectl apply -k "${WORK}"
-kubectl apply -n "${NAMESPACE}" -f "${WORK}/httproute.yaml"
+kubectl apply -f "${ROOT}/referencegrant.yaml"
+kubectl apply -n "${NAMESPACE}" -f "${ROOT}/healthcheck.yaml"
+kubectl apply -f "${WORK}/httproute.yaml"
 kubectl -n "${NAMESPACE}" rollout status statefulset/postgres --timeout=300s
 kubectl -n "${NAMESPACE}" rollout status deployment/api --timeout=300s
 kubectl -n "${NAMESPACE}" rollout status deployment/frontend --timeout=300s

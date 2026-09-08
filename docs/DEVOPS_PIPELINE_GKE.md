@@ -85,9 +85,19 @@ residential VPN.
 ## 3) App secrets (once per cluster, from Cloud Shell)
 
 ```bash
-cp deploy/gke/.env.gke.example /tmp/jobsrss.env.gke
-# paste LLM_API_KEY; RSS_BASE_URL / ALLOWED_ORIGINS default to jobsrss.vincentspace.com
-bash deploy/gke/scripts/apply-secrets.sh /tmp/jobsrss.env.gke /path/to/secrets
+bash deploy/gke/scripts/write-env-gke.sh
+# writes ~/jobsrss.env.gke — Cloud Shell /tmp is wiped
+nano ~/jobsrss.env.gke   # paste LLM_API_KEY
+bash deploy/gke/scripts/apply-secrets.sh ~/jobsrss.env.gke
+```
+
+Hostname routing is **not** in this env file. `jobsrss.vincentspace.com` is set on
+the HTTPRoute. If the domain still opens the demo app, apply the route:
+
+```bash
+export JOBSRSS_GATEWAY_HOST=jobsrss.vincentspace.com
+bash deploy/gke/scripts/apply-route.sh
+kubectl -n default describe httproute jobsrss
 ```
 
 `/path/to/secrets` is optional. If present it may contain:
