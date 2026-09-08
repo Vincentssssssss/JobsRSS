@@ -92,7 +92,8 @@ bash deploy/gke/scripts/apply-secrets.sh ~/jobsrss.env.gke
 ```
 
 Hostname routing is **not** in this env file. `jobsrss.vincentspace.com` is set on
-the HTTPRoute. If the domain still opens the demo app, apply the route:
+the HTTPRoute. If the domain still opens the demo app **and** pods already exist,
+apply the route:
 
 ```bash
 export JOBSRSS_GATEWAY_HOST=jobsrss.vincentspace.com
@@ -109,21 +110,29 @@ Those files are mounted at `/secrets` (read-only), matching the Compose layout.
 CI never overwrites `jobsrss-env`; missing that secret fails the deploy on
 purpose.
 
-After the Gateway gets an IP, update `ALLOWED_ORIGINS` and `RSS_BASE_URL` in the
-env file, re-run `apply-secrets.sh`, then:
+`apply-secrets.sh` only writes Secrets. It does **not** create
+`api` / `frontend` / `worker` / `postgres`. Do not
+`kubectl rollout restart deploy/worker` until those Deployments exist.
+
+After the first successful `cloud-shell-deploy.sh`, if you later change
+`ALLOWED_ORIGINS` or `RSS_BASE_URL` in `~/jobsrss.env.gke`, re-run
+`apply-secrets.sh`, then:
 
 ```bash
-kubectl -n jobsrss rollout restart deploy/api deploy/frontend
+kubectl -n jobsrss rollout restart deploy/api deploy/frontend deploy/worker
 ```
 
 ## 4) Deploy from Cloud Shell
 
-After secrets exist:
+After secrets exist, this is the step that actually creates pods:
 
 ```bash
 export GCP_PROJECT_ID=your-project-id
 export GCP_REGION=asia-southeast1
 export GKE_CLUSTER=your-existing-cluster-name
+export JOBSRSS_GATEWAY_NAME=demo-gateway
+export JOBSRSS_GATEWAY_NAMESPACE=default
+export JOBSRSS_GATEWAY_HOST=jobsrss.vincentspace.com
 bash deploy/gke/scripts/cloud-shell-deploy.sh
 ```
 
@@ -135,15 +144,17 @@ Enterprise projects often disable the default Compute service account
 (`…-compute@developer.gserviceaccount.com`). The deploy script creates and
 uses `jobsrss-cicd@…` instead — do not enable the default Compute SA.
 
-Check the load balancer:
+Check the load balancer and workloads:
 
 ```bash
-kubectl -n jobsrss get gateway jobsrss
+kubectl -n default get gateway demo-gateway
+kubectl -n default get httproute jobsrss
 kubectl -n jobsrss get pods
 ```
 
-Portal: `http://<GATEWAY_IP>/`  
-API health: `http://<GATEWAY_IP>/healthz`
+Portal: `http://jobsrss.vincentspace.com/`  
+API health: `http://jobsrss.vincentspace.com/healthz`  
+The raw Gateway IP still serves the existing demo app.
 
 ## 5) Optional GitHub Actions (hosted by GitHub, not installed here)
 
@@ -201,7 +212,7 @@ or touch nginx.
 
 ```bash
 kubectl get gateway -A
-kubectl -n jobsrss get httproute
+kubectl -n default get httproute jobsrss
 kubectl -n jobsrss get pods
 ```
 
@@ -212,9 +223,10 @@ API health: `http://jobsrss.vincentspace.com/healthz`
 
 1. Open Cloud Shell, clone branch `cursor/jobs-intelligence-bootstrap-0a74`, `cd JobsRSS`.
 2. Run `bootstrap-gcp.sh`.
-3. Apply `.env.gke` secrets.
-4. Run `cloud-shell-deploy.sh`.
-5. Patch `ALLOWED_ORIGINS` / `RSS_BASE_URL` with the Gateway IP or domain.
+3. Apply `.env.gke` secrets (`secret/jobsrss-env` only — no pods yet).
+4. Run `cloud-shell-deploy.sh` (this creates postgres/api/frontend/worker).
+5. Confirm `kubectl -n jobsrss get pods` shows Running, then open
+   `http://jobsrss.vincentspace.com/`.
 6. Optional later: GitHub Actions or a managed certificate.
 
 ## 8) Jenkins alternative

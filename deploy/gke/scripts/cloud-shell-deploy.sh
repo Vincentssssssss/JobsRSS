@@ -47,5 +47,7 @@ bash deploy/gke/scripts/apply-workloads.sh
 echo
 echo "Deploy finished on existing cluster ${GKE_CLUSTER}."
 echo "JobsRSS host: http://${JOBSRSS_GATEWAY_HOST:-<set-after-apply>}/"
-kubectl -n jobsrss get httproute jobsrss || true
+echo "HTTPRoute lives in ${JOBSRSS_GATEWAY_NAMESPACE:-default} (not jobsrss)."
+kubectl -n "${JOBSRSS_GATEWAY_NAMESPACE:-default}" get httproute jobsrss || true
+kubectl -n jobsrss get deploy,sts,pods || true
 kubectl get gateway -A

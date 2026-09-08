@@ -43,8 +43,8 @@ kubectl apply -f "$(dirname "$0")/../namespace.yaml"
 echo
 echo "Bootstrap complete. Attached to existing cluster ${GKE_CLUSTER}."
 echo "Next in Cloud Shell:"
-echo "  1) cp deploy/gke/.env.gke.example /tmp/jobsrss.env.gke && nano /tmp/jobsrss.env.gke"
-echo "  2) bash deploy/gke/scripts/apply-secrets.sh /tmp/jobsrss.env.gke"
+echo "  1) bash deploy/gke/scripts/write-env-gke.sh && nano ~/jobsrss.env.gke"
+echo "  2) bash deploy/gke/scripts/apply-secrets.sh ~/jobsrss.env.gke"
 echo "  3) bash deploy/gke/scripts/cloud-shell-deploy.sh"
 echo
 echo "Artifact Registry: ${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY}"

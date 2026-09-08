@@ -45,3 +45,24 @@ else
 fi
 
 echo "Secrets applied in namespace ${NAMESPACE}."
+
+if ! kubectl -n "${NAMESPACE}" get deploy/worker >/dev/null 2>&1; then
+  echo
+  echo "No JobsRSS Deployments exist yet (api/frontend/worker were not found)."
+  echo "apply-secrets.sh only writes Kubernetes Secrets. It does not start pods."
+  echo "Do not run: kubectl -n ${NAMESPACE} rollout restart deploy/worker"
+  echo
+  PROJECT_HINT="${GCP_PROJECT_ID:-$(gcloud config get-value project 2>/dev/null || true)}"
+  echo "Next, from the repo root, build images and create the workloads:"
+  echo "  export GCP_PROJECT_ID=${PROJECT_HINT:-your-project-id}"
+  echo "  export JOBSRSS_GATEWAY_NAME=demo-gateway"
+  echo "  export JOBSRSS_GATEWAY_NAMESPACE=default"
+  echo "  export JOBSRSS_GATEWAY_HOST=jobsrss.vincentspace.com"
+  echo "  bash deploy/gke/scripts/cloud-shell-deploy.sh"
+  echo
+  echo "Cloud Build can take 15-30 minutes. After that:"
+  echo "  kubectl -n ${NAMESPACE} get pods"
+else
+  echo "Workloads already exist. Restart them only if you want pods to reload this secret:"
+  echo "  kubectl -n ${NAMESPACE} rollout restart deploy/api deploy/frontend deploy/worker"
+fi
