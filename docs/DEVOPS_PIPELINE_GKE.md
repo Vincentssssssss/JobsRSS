@@ -40,16 +40,23 @@ GitHub Actions is a service on github.com, not a package for GKE/Cloud Shell.
 
 ## 2) Cloud Shell bootstrap
 
-In the GCP console: **Activate Cloud Shell**. Clone this repo (or upload it),
-then:
+In the GCP console: **Activate Cloud Shell**. Cloud Shell starts in `~`,
+so clone the repo and `cd` into it first. These scripts are on branch
+`cursor/jobs-intelligence-bootstrap-0a74` (not `main` yet):
 
 ```bash
+cd ~
+git clone -b cursor/jobs-intelligence-bootstrap-0a74 \
+  https://github.com/Vincentssssssss/JobsRSS.git
+cd JobsRSS
+
 export GCP_PROJECT_ID=your-project-id
 export GCP_REGION=asia-southeast1
 export GKE_CLUSTER=jobsrss
 export AR_REPOSITORY=jobsrss
 
 gcloud config set project "$GCP_PROJECT_ID"
+ls deploy/gke/scripts/bootstrap-gcp.sh
 bash deploy/gke/scripts/bootstrap-gcp.sh
 ```
 
@@ -177,7 +184,7 @@ API health: `http://<INGRESS_IP>/healthz`
 
 ## 7) First deployment checklist (Cloud Shell)
 
-1. Open Cloud Shell and clone/upload this repo.
+1. Open Cloud Shell, clone branch `cursor/jobs-intelligence-bootstrap-0a74`, `cd JobsRSS`.
 2. Run `bootstrap-gcp.sh`.
 3. Apply `.env.gke` secrets.
 4. Run `cloud-shell-deploy.sh`.
