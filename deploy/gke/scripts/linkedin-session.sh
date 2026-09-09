@@ -14,7 +14,8 @@ set -euo pipefail
 # start Cloud Builds a thin xvfb/noVNC layer on IMAGE_API (not a Cloud Shell docker build).
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-REPO_ROOT="$(cd "${ROOT}/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
+LOGIN_CLOUDBUILD="${ROOT}/cloudbuild.linkedin-login.yaml"
 NAMESPACE="${NAMESPACE:-jobsrss}"
 ACTION="${1:-start}"
 ENV_FILE="${JOBSRSS_ENV_FILE:-$HOME/jobsrss.env.gke}"
@@ -62,17 +63,21 @@ ensure_login_image() {
     require_ar_image "${IMAGE_LOGIN}"
   fi
   require_ar_image "${IMAGE_API}"
+  if [ ! -f "${LOGIN_CLOUDBUILD}" ]; then
+    echo "Missing Cloud Build config: ${LOGIN_CLOUDBUILD}"
+    echo "REPO_ROOT=${REPO_ROOT}"
+    echo "GKE_DIR=${ROOT}"
+    exit 1
+  fi
   echo "Cloud Building xvfb/noVNC layer from ${IMAGE_API} (do not docker build in Cloud Shell)..."
+  echo "config=${LOGIN_CLOUDBUILD} source=${REPO_ROOT}"
   ensure_cloudbuild_worker_sa
-  (
-    cd "${REPO_ROOT}"
-    gcloud builds submit \
-      --project="${GCP_PROJECT_ID}" \
-      --service-account="${CLOUDBUILD_SA_RESOURCE}" \
-      --config=deploy/gke/cloudbuild.linkedin-login.yaml \
-      --substitutions="_REGION=${GCP_REGION},_AR_REPOSITORY=${AR_REPOSITORY},_API_TAG=${API_TAG},_LOGIN_TAG=${LOGIN_TAG}" \
-      .
-  )
+  gcloud builds submit \
+    --project="${GCP_PROJECT_ID}" \
+    --service-account="${CLOUDBUILD_SA_RESOURCE}" \
+    --config="${LOGIN_CLOUDBUILD}" \
+    --substitutions="_REGION=${GCP_REGION},_AR_REPOSITORY=${AR_REPOSITORY},_API_TAG=${API_TAG},_LOGIN_TAG=${LOGIN_TAG}" \
+    "${REPO_ROOT}"
   require_ar_image "${IMAGE_LOGIN}"
 }
 
