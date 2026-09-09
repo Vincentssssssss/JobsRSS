@@ -136,10 +136,13 @@ and still not guaranteed — LinkedIn can checkpoint Google Cloud IPs.
 export IMAGE_API=asia-southeast1-docker.pkg.dev/$GCP_PROJECT_ID/jobsrss/jobsrss-api:2adea08
 bash deploy/gke/scripts/linkedin-session.sh start
 kubectl -n jobsrss port-forward svc/linkedin-login 6080:6080
-# Cloud Shell Web Preview → port 6080 → /vnc.html → log into LinkedIn
+# Cloud Shell Web Preview → 6080 → /vnc.html?autoconnect=1&resize=remote
 bash deploy/gke/scripts/linkedin-session.sh --export
 bash deploy/gke/scripts/linkedin-session.sh stop
 ```
+
+This is a Linux GUI pod (Xvfb + noVNC), not a headless collector. Do not add a
+Windows node pool for LinkedIn: GKE Windows egress is still a Google Cloud IP.
 
 The login Service is ClusterIP only. Do not attach it to `demo-gateway`.
 CI never overwrites `jobsrss-env`; missing that secret fails the deploy on

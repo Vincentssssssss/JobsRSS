@@ -45,11 +45,15 @@ case "${ACTION}" in
     echo "Waiting for linkedin-login (first start installs xvfb/novnc, ~1-3 minutes)..."
     kubectl -n "${NAMESPACE}" rollout status deploy/linkedin-login --timeout=300s
     echo
-    echo "In Cloud Shell run this and use Web Preview on port 6080:"
-    echo "  kubectl -n ${NAMESPACE} port-forward svc/linkedin-login 6080:6080"
-    echo "Open /vnc.html (or the preview URL), connect, log into LinkedIn until the feed shows."
-    echo "Then:"
-    echo "  bash deploy/gke/scripts/linkedin-session.sh --export"
+    echo "Linux GUI path (browser desktop, no Windows node):"
+    echo "  1) Other Cloud Shell tab:"
+    echo "       kubectl -n ${NAMESPACE} port-forward svc/linkedin-login 6080:6080"
+    echo "  2) Web Preview -> port 6080, then open:"
+    echo "       /vnc.html?autoconnect=1&resize=remote"
+    echo "  3) In that desktop, log into LinkedIn (complete 2FA) until the feed loads."
+    echo "  4) This tab:"
+    echo "       bash deploy/gke/scripts/linkedin-session.sh --export"
+    echo "       bash deploy/gke/scripts/linkedin-session.sh stop"
     ;;
   --export|export)
     echo "Exporting LinkedIn storage state from the login pod (cookie values are not printed)..."
