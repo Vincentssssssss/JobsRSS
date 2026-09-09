@@ -143,6 +143,11 @@ export IMAGE_API=asia-southeast1-docker.pkg.dev/$GCP_PROJECT_ID/jobsrss/jobsrss-
 bash deploy/gke/scripts/linkedin-session.sh start
 ```
 
+`start` Cloud Builds `jobsrss-linkedin-login` (xvfb/x11vnc/novnc on top of
+`jobsrss-api:2adea08`). Do not `docker build` that image in Cloud Shell.
+Runtime `apt-get` inside the login pod is what caused CrashLoopBackOff
+(`6080 connection refused` then kubelet restart).
+
 Wait until the first terminal prints `NOVNC_READY`. Only then, in another tab:
 
 ```bash

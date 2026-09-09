@@ -1,0 +1,35 @@
+substitutions:
+  _REGION: asia-southeast1
+  _AR_REPOSITORY: jobsrss
+  _API_TAG: 2adea08
+  _LOGIN_TAG: desktop-2adea08-r1
+
+steps:
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    id: auth-ar
+    entrypoint: bash
+    args:
+      - -c
+      - gcloud auth configure-docker ${_REGION}-docker.pkg.dev --quiet
+  - name: gcr.io/cloud-builders/docker
+    id: build-linkedin-login
+    waitFor: ["auth-ar"]
+    args:
+      - build
+      - --build-arg
+      - API_IMAGE=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPOSITORY}/jobsrss-api:${_API_TAG}
+      - -t
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPOSITORY}/jobsrss-linkedin-login:${_LOGIN_TAG}
+      - -f
+      - deploy/gke/linkedin-login/Dockerfile
+      - deploy/gke/linkedin-login
+
+images:
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPOSITORY}/jobsrss-linkedin-login:${_LOGIN_TAG}
+
+options:
+  machineType: E2_HIGHCPU_8
+  diskSizeGb: 50
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: 1200s

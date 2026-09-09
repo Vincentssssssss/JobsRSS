@@ -25,8 +25,8 @@ spec:
       containers:
         - name: login
           image: jobsrss-api:local
-          imagePullPolicy: IfNotPresent
-          command: ["bash", "/opt/linkedin-login/start.sh"]
+          imagePullPolicy: Always
+          command: ["python3", "-u", "/opt/linkedin-login/boot.py"]
           ports:
             - name: novnc
               containerPort: 6080
@@ -35,8 +35,12 @@ spec:
           env:
             - name: JOBSRSS_SESSION_DIR
               value: /session
+            - name: JOBSRSS_LOGIN_SCRIPT_DIR
+              value: /opt/linkedin-login
             - name: DISPLAY
               value: ":99"
+            - name: PYTHONUNBUFFERED
+              value: "1"
           volumeMounts:
             - name: scripts
               mountPath: /opt/linkedin-login
@@ -47,14 +51,16 @@ spec:
               mountPath: /dev/shm
           startupProbe:
             httpGet:
-              path: /vnc.html
+              path: /healthz
               port: 6080
-            periodSeconds: 10
-            failureThreshold: 60
+            periodSeconds: 2
+            failureThreshold: 30
           readinessProbe:
-            httpGet:
-              path: /vnc.html
-              port: 6080
+            exec:
+              command:
+                - python3
+                - -c
+                - import pathlib,sys; sys.exit(0 if pathlib.Path("/tmp/novnc.ready").exists() else 1)
             periodSeconds: 5
             failureThreshold: 6
           resources:

@@ -10,6 +10,8 @@ set -euo pipefail
 #   bash deploy/gke/scripts/linkedin-session.sh status
 #   bash deploy/gke/scripts/linkedin-session.sh --export
 #   bash deploy/gke/scripts/linkedin-session.sh stop
+#
+# start Cloud Builds a thin xvfb/noVNC layer on IMAGE_API (not a Cloud Shell docker build).
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REPO_ROOT="$(cd "${ROOT}/.." && pwd)"
@@ -20,6 +22,9 @@ GCP_PROJECT_ID="${GCP_PROJECT_ID:-$(gcloud config get-value project 2>/dev/null 
 GCP_REGION="${GCP_REGION:-asia-southeast1}"
 AR_REPOSITORY="${AR_REPOSITORY:-jobsrss}"
 IMAGE_API="${IMAGE_API:-${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/jobsrss/jobsrss-api:2adea08}"
+API_TAG="${IMAGE_API##*:}"
+LOGIN_TAG="${LOGIN_TAG:-desktop-${API_TAG}-r1}"
+IMAGE_LOGIN="${IMAGE_LOGIN:-${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY}/jobsrss-linkedin-login:${LOGIN_TAG}}"
 
 # shellcheck source=gke-env.sh
 source "$(dirname "$0")/gke-env.sh"
@@ -32,10 +37,10 @@ print_checkout() {
 }
 
 require_current_scripts() {
-  if grep -q start_wait_page "${ROOT}/linkedin-login/start.sh"; then
+  if [ -f "${ROOT}/linkedin-login/boot.py" ] && grep -q "linkedin_login_boot = 4" "${ROOT}/linkedin-login/boot.py"; then
     return 0
   fi
-  echo "This ~/JobsRSS checkout is too old (start.sh has no 6080 wait page)."
+  echo "This ~/JobsRSS checkout is too old (missing boot.py supervisor)."
   echo "Cloud Shell 'git pull' on the wrong branch stays 'Already up to date'."
   echo "Fix:"
   echo "  git fetch origin"
@@ -45,13 +50,40 @@ require_current_scripts() {
   exit 1
 }
 
+ensure_login_image() {
+  echo "Login image: ${IMAGE_LOGIN}"
+  echo "Base API image: ${IMAGE_API}"
+  if gcloud artifacts docker images describe "${IMAGE_LOGIN}" \
+    --project="${GCP_PROJECT_ID}" --quiet >/dev/null 2>&1; then
+    echo "Found ${IMAGE_LOGIN}"
+    return 0
+  fi
+  if [ "${SKIP_LOGIN_BUILD:-}" = "1" ]; then
+    require_ar_image "${IMAGE_LOGIN}"
+  fi
+  require_ar_image "${IMAGE_API}"
+  echo "Cloud Building xvfb/noVNC layer from ${IMAGE_API} (do not docker build in Cloud Shell)..."
+  ensure_cloudbuild_worker_sa
+  (
+    cd "${REPO_ROOT}"
+    gcloud builds submit \
+      --project="${GCP_PROJECT_ID}" \
+      --service-account="${CLOUDBUILD_SA_RESOURCE}" \
+      --config=deploy/gke/cloudbuild.linkedin-login.yaml \
+      --substitutions="_REGION=${GCP_REGION},_AR_REPOSITORY=${AR_REPOSITORY},_API_TAG=${API_TAG},_LOGIN_TAG=${LOGIN_TAG}" \
+      .
+  )
+  require_ar_image "${IMAGE_LOGIN}"
+}
+
 apply_login_manifest() {
-  local image="${IMAGE_API:?Set IMAGE_API to the existing jobsrss-api image}"
+  local image="${IMAGE_LOGIN:?Set IMAGE_LOGIN to the desktop login image}"
   local work checksum restart_ts
   work="$(mktemp)"
-  checksum="$(cat "${ROOT}/linkedin-login/start.sh" "${ROOT}/linkedin-login/session.py" | sha256sum | awk '{print $1}')"
+  checksum="$(cat "${ROOT}/linkedin-login/boot.py" "${ROOT}/linkedin-login/session.py" "${ROOT}/linkedin-login/start.sh" | sha256sum | awk '{print $1}')"
   restart_ts="ts-$(date +%s)"
   kubectl -n "${NAMESPACE}" create configmap linkedin-login-scripts \
+    --from-file=boot.py="${ROOT}/linkedin-login/boot.py" \
     --from-file=start.sh="${ROOT}/linkedin-login/start.sh" \
     --from-file=session.py="${ROOT}/linkedin-login/session.py" \
     --dry-run=client -o yaml | kubectl apply -f - >/dev/null
@@ -72,19 +104,19 @@ remove_old_login_pods() {
 
 wait_novnc() {
   local i
-  echo "Waiting until the new pod serves http://127.0.0.1:6080/vnc.html ..."
+  echo "Waiting until the pod writes /tmp/novnc.ready (real noVNC, not the wait page)..."
   for i in $(seq 1 120); do
     if kubectl -n "${NAMESPACE}" exec deploy/linkedin-login -c login -- \
-      python3 -c 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:6080/vnc.html", timeout=3)' \
+      python3 -c 'import pathlib,sys; sys.exit(0 if pathlib.Path("/tmp/novnc.ready").exists() else 1)' \
       >/dev/null 2>&1; then
       echo "NOVNC_READY :6080 /vnc.html"
       return 0
     fi
-    echo "  still installing desktop (${i}/120) — do not port-forward yet"
+    echo "  desktop not ready (${i}/120) — do not port-forward yet"
     sleep 5
   done
-  echo "Timed out waiting for /vnc.html. Recent logs:"
-  kubectl -n "${NAMESPACE}" logs deploy/linkedin-login -c login --tail=80 || true
+  echo "Timed out waiting for noVNC. Recent logs:"
+  kubectl -n "${NAMESPACE}" logs deploy/linkedin-login -c login --tail=120 || true
   return 1
 }
 
@@ -115,6 +147,7 @@ case "${ACTION}" in
     echo "Same-IP login can still hit a LinkedIn checkpoint because the ASN is Google Cloud."
     echo "A Windows GKE node does not help: egress is still a Google Cloud IP."
     echo "Do not open a second terminal for port-forward until this script prints NOVNC_READY."
+    ensure_login_image
     remove_old_login_pods
     apply_login_manifest
     echo "Waiting for linkedin-login rollout..."
@@ -155,10 +188,10 @@ case "${ACTION}" in
     echo "--- pods ---"
     kubectl -n "${NAMESPACE}" get pods -l app.kubernetes.io/component=linkedin-login -o wide
     echo
-    echo "--- :6080 inside the pod (must serve /vnc.html) ---"
+    echo "--- /tmp/novnc.ready and :6080 ---"
     kubectl -n "${NAMESPACE}" exec deploy/linkedin-login -c login -- \
-      python3 -c 'import urllib.request; r=urllib.request.urlopen("http://127.0.0.1:6080/vnc.html",timeout=5); print("vnc.html", r.status, r.headers.get("content-type"))' \
-      || echo "6080 is not serving /vnc.html yet (apt-get still running, or start.sh failed)"
+      python3 -c 'import pathlib,urllib.request; p=pathlib.Path("/tmp/novnc.ready"); print("novnc.ready", p.exists()); r=urllib.request.urlopen("http://127.0.0.1:6080/vnc.html",timeout=5); print("vnc.html", r.status, r.headers.get("content-type"), "bytes", len(r.read()))' \
+      || echo "6080 is not serving yet, or the login pod is not running"
     echo
     echo "--- recent login logs ---"
     kubectl -n "${NAMESPACE}" logs deploy/linkedin-login -c login --tail=80 || true
