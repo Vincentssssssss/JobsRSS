@@ -1,8 +1,4 @@
 substitutions:
-  _REGION: asia-southeast1
-  _AR_REPOSITORY: jobsrss
-  _API_TAG: 2adea08
-  _LOGIN_TAG: desktop-2adea08-r2
   _API_IMAGE: asia-southeast1-docker.pkg.dev/gcp-bcgx-dev-vincents-d597/jobsrss/jobsrss-api:2adea08
   _LOGIN_IMAGE: asia-southeast1-docker.pkg.dev/gcp-bcgx-dev-vincents-d597/jobsrss/jobsrss-linkedin-login:desktop-2adea08-r2
 
@@ -31,5 +27,6 @@ options:
   machineType: E2_HIGHCPU_8
   diskSizeGb: 50
   logging: CLOUD_LOGGING_ONLY
+  substitutionOption: ALLOW_LOOSE
 
 timeout: 1200s

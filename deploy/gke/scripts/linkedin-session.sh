@@ -76,7 +76,7 @@ ensure_login_image() {
     --project="${GCP_PROJECT_ID}" \
     --service-account="${CLOUDBUILD_SA_RESOURCE}" \
     --config="${LOGIN_CLOUDBUILD}" \
-    --substitutions="_REGION=${GCP_REGION},_AR_REPOSITORY=${AR_REPOSITORY},_API_TAG=${API_TAG},_LOGIN_TAG=${LOGIN_TAG},_API_IMAGE=${IMAGE_API},_LOGIN_IMAGE=${IMAGE_LOGIN}" \
+    --substitutions="_API_IMAGE=${IMAGE_API},_LOGIN_IMAGE=${IMAGE_LOGIN}" \
     "${REPO_ROOT}"
   require_ar_image "${IMAGE_LOGIN}"
 }
