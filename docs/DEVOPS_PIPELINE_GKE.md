@@ -126,6 +126,22 @@ the site rejecting the cluster egress IP.
 ```bash
 bash deploy/gke/scripts/check-collectors.sh
 ```
+
+A laptop-minted LinkedIn cookie used from GKE usually yields `found=0`
+(datacenter ASN). Minting the session **on the same cluster egress IP** is
+the only in-cluster option. It is interactive (you complete 2FA in noVNC)
+and still not guaranteed — LinkedIn can checkpoint Google Cloud IPs.
+
+```bash
+export IMAGE_API=asia-southeast1-docker.pkg.dev/$GCP_PROJECT_ID/jobsrss/jobsrss-api:2adea08
+bash deploy/gke/scripts/linkedin-session.sh start
+kubectl -n jobsrss port-forward svc/linkedin-login 6080:6080
+# Cloud Shell Web Preview → port 6080 → /vnc.html → log into LinkedIn
+bash deploy/gke/scripts/linkedin-session.sh --export
+bash deploy/gke/scripts/linkedin-session.sh stop
+```
+
+The login Service is ClusterIP only. Do not attach it to `demo-gateway`.
 CI never overwrites `jobsrss-env`; missing that secret fails the deploy on
 purpose.
 

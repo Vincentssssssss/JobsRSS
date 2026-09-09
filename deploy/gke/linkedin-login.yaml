@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: linkedin-login
+  namespace: jobsrss
+  labels:
+    app.kubernetes.io/name: jobsrss
+    app.kubernetes.io/component: linkedin-login
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: jobsrss
+      app.kubernetes.io/component: linkedin-login
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: jobsrss
+        app.kubernetes.io/component: linkedin-login
+    spec:
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: login
+          image: jobsrss-api:local
+          imagePullPolicy: IfNotPresent
+          command: ["bash", "/opt/linkedin-login/start.sh"]
+          ports:
+            - name: novnc
+              containerPort: 6080
+            - name: session
+              containerPort: 8080
+          env:
+            - name: JOBSRSS_SESSION_DIR
+              value: /session
+            - name: DISPLAY
+              value: ":99"
+          volumeMounts:
+            - name: scripts
+              mountPath: /opt/linkedin-login
+              readOnly: true
+            - name: session
+              mountPath: /session
+            - name: dshm
+              mountPath: /dev/shm
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 25
+            periodSeconds: 10
+            failureThreshold: 18
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1Gi
+              ephemeral-storage: 2Gi
+            limits:
+              memory: 3Gi
+              ephemeral-storage: 4Gi
+      volumes:
+        - name: scripts
+          configMap:
+            name: linkedin-login-scripts
+            defaultMode: 0755
+        - name: session
+          emptyDir: {}
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: linkedin-login
+  namespace: jobsrss
+  labels:
+    app.kubernetes.io/name: jobsrss
+    app.kubernetes.io/component: linkedin-login
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: jobsrss
+    app.kubernetes.io/component: linkedin-login
+  ports:
+    - name: novnc
+      port: 6080
+      targetPort: 6080
+    - name: session
+      port: 8080
+      targetPort: 8080
