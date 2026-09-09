@@ -98,7 +98,7 @@ apply the route:
 ```bash
 export JOBSRSS_GATEWAY_HOST=jobsrss.vincentspace.com
 bash deploy/gke/scripts/apply-route.sh
-kubectl -n default describe httproute jobsrss
+kubectl -n jobsrss describe httproute jobsrss
 ```
 
 `/path/to/secrets` is optional. If present it may contain:
@@ -157,13 +157,26 @@ Check the load balancer and workloads:
 
 ```bash
 kubectl -n default get gateway demo-gateway
-kubectl -n default get httproute jobsrss
+kubectl -n jobsrss get httproute jobsrss
 kubectl -n jobsrss get pods
 ```
 
 Portal: `http://jobsrss.vincentspace.com/`  
 API health: `http://jobsrss.vincentspace.com/healthz`  
 The raw Gateway IP still serves the existing demo app.
+
+If the hostname returns `500 fault filter abort`, Kubernetes pods can be
+Running while the Gateway health check is still failing. GKE probes the
+**pod IP** (not the Service), so the API must pass `GET /healthz` on
+container port 8000 and the frontend must pass `GET /` on container port
+3000. Re-apply workloads (no image rebuild) and wait 1–2 minutes:
+
+```bash
+export IMAGE_TAG=2adea08
+export SKIP_CLOUD_BUILD=1
+bash deploy/gke/scripts/cloud-shell-deploy.sh
+kubectl -n jobsrss describe httproute jobsrss
+```
 
 ## 5) Optional GitHub Actions (hosted by GitHub, not installed here)
 
@@ -221,7 +234,7 @@ or touch nginx.
 
 ```bash
 kubectl get gateway -A
-kubectl -n default get httproute jobsrss
+kubectl -n jobsrss get httproute jobsrss
 kubectl -n jobsrss get pods
 ```
 

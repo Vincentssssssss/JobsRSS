@@ -11,11 +11,14 @@ spec:
     timeoutSec: 5
     healthyThreshold: 1
     unhealthyThreshold: 3
+    logConfig:
+      enabled: true
     config:
       type: HTTP
       httpHealthCheck:
-        requestPath: /healthz
+        portSpecification: USE_FIXED_PORT
         port: 8000
+        requestPath: /healthz
   targetRef:
     group: ""
     kind: Service
@@ -34,11 +37,14 @@ spec:
     timeoutSec: 5
     healthyThreshold: 1
     unhealthyThreshold: 3
+    logConfig:
+      enabled: true
     config:
       type: HTTP
       httpHealthCheck:
-        requestPath: /
+        portSpecification: USE_FIXED_PORT
         port: 3000
+        requestPath: /
   targetRef:
     group: ""
     kind: Service

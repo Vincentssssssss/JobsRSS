@@ -67,6 +67,8 @@ kubectl apply -k "${WORK}"
 kubectl apply -f "${ROOT}/referencegrant.yaml"
 kubectl apply -n "${NAMESPACE}" -f "${ROOT}/healthcheck.yaml"
 kubectl apply -f "${WORK}/httproute.yaml"
+# Older deploys put this HTTPRoute in default; keep only the jobsrss copy.
+kubectl -n "${JOBSRSS_GATEWAY_NAMESPACE}" delete httproute jobsrss --ignore-not-found
 kubectl -n "${NAMESPACE}" rollout status statefulset/postgres --timeout=300s
 kubectl -n "${NAMESPACE}" rollout status deployment/api --timeout=300s
 kubectl -n "${NAMESPACE}" rollout status deployment/frontend --timeout=300s
@@ -74,6 +76,8 @@ kubectl -n "${NAMESPACE}" rollout status deployment/worker --timeout=300s
 
 echo "JobsRSS attached to Gateway ${JOBSRSS_GATEWAY_NAMESPACE}/${JOBSRSS_GATEWAY_NAME}"
 echo "Open: http://${JOBSRSS_GATEWAY_HOST}/"
+echo "Gateway health checks can take 1-2 minutes after this apply."
 kubectl -n "${NAMESPACE}" get svc,deploy,statefulset,pods
-kubectl -n "${JOBSRSS_GATEWAY_NAMESPACE}" get httproute jobsrss -o wide
+kubectl -n "${NAMESPACE}" get httproute jobsrss -o wide
+kubectl -n "${NAMESPACE}" describe httproute jobsrss | sed -n '/Status:/,$p'
 kubectl -n "${JOBSRSS_GATEWAY_NAMESPACE}" get gateway "${JOBSRSS_GATEWAY_NAME}" -o wide
