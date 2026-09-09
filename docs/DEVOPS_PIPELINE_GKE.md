@@ -167,6 +167,31 @@ bash deploy/gke/scripts/linkedin-session.sh --export
 bash deploy/gke/scripts/linkedin-session.sh stop
 ```
 
+Cloud Shell Web Preview often cannot show the desktop. Prefer the laptop
+browser through an SSH local forward (not `*.cloudshell.dev`):
+
+```bash
+# Cloud Shell, after NOVNC_READY
+bash deploy/gke/scripts/linkedin-session.sh port-forward
+
+# Laptop
+gcloud cloud-shell ssh --ssh-flag='-L 8080:127.0.0.1:8080'
+# then http://127.0.0.1:8080/
+```
+
+## Pause worker / save Azure LLM spend
+
+LLM scoring only runs in `deploy/worker`. Scaling it to 0 stops collectors
+and Azure calls. The portal stays up.
+
+```bash
+bash deploy/gke/scripts/jobsrss-control.sh status
+bash deploy/gke/scripts/jobsrss-control.sh worker-stop   # no collect, no LLM
+bash deploy/gke/scripts/jobsrss-control.sh worker-start
+bash deploy/gke/scripts/jobsrss-control.sh llm-off       # collect, but no Azure
+bash deploy/gke/scripts/jobsrss-control.sh llm-on
+```
+
 This is a Linux GUI pod (Xvfb + noVNC), not a headless collector. Do not add a
 Windows node pool for LinkedIn: GKE Windows egress is still a Google Cloud IP.
 

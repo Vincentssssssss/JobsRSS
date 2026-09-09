@@ -10,6 +10,7 @@ set -euo pipefail
 #   bash deploy/gke/scripts/linkedin-session.sh status
 #   bash deploy/gke/scripts/linkedin-session.sh --export
 #   bash deploy/gke/scripts/linkedin-session.sh stop
+#   bash deploy/gke/scripts/linkedin-session.sh laptop
 #
 # start Cloud Builds a thin xvfb/noVNC layer on IMAGE_API (not a Cloud Shell docker build).
 
@@ -228,8 +229,28 @@ case "${ACTION}" in
     kubectl -n "${NAMESPACE}" scale deploy/linkedin-login --replicas=0 || true
     echo "linkedin-login replicas=0"
     ;;
+  laptop)
+    print_checkout
+    echo "Cloud Shell Web Preview cannot reliably show this desktop."
+    echo "Use your laptop browser via SSH local-forward (plain HTTP on 8080)."
+    echo
+    echo "Cloud Shell terminal (leave running after start / NOVNC_READY):"
+    echo "  bash deploy/gke/scripts/linkedin-session.sh port-forward"
+    echo
+    echo "Laptop (not Cloud Shell):"
+    echo "  gcloud cloud-shell ssh --ssh-flag='-L 8080:127.0.0.1:8080'"
+    echo "Then open http://127.0.0.1:8080/ in the laptop Chrome."
+    echo "Do not use *.cloudshell.dev Web Preview."
+    echo
+    echo "If the laptop already has kubectl:"
+    echo "  gcloud container clusters get-credentials asp-gke-dev-gke-d9df --zone=asia-southeast1-a --project=${GCP_PROJECT_ID:-gcp-bcgx-dev-vincents-d597}"
+    echo "  kubectl -n ${NAMESPACE} port-forward deploy/linkedin-login 8080:8080"
+    echo "  open http://127.0.0.1:8080/"
+    echo
+    echo "LinkedIn can still block the Google Cloud egress IP after login."
+    ;;
   *)
-    echo "Usage: $0 {start|port-forward|status|--export|stop}"
+    echo "Usage: $0 {start|port-forward|status|--export|stop|laptop}"
     exit 1
     ;;
 esac
