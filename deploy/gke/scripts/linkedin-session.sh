@@ -38,7 +38,7 @@ print_checkout() {
 }
 
 require_current_scripts() {
-  if [ -f "${ROOT}/linkedin-login/boot.py" ] && grep -q "linkedin_login_boot = 4" "${ROOT}/linkedin-login/boot.py"; then
+  if [ -f "${ROOT}/linkedin-login/boot.py" ] && grep -q "linkedin_login_boot = 5" "${ROOT}/linkedin-login/boot.py"; then
     return 0
   fi
   echo "This ~/JobsRSS checkout is too old (missing boot.py supervisor)."
@@ -85,12 +85,13 @@ apply_login_manifest() {
   local image="${IMAGE_LOGIN:?Set IMAGE_LOGIN to the desktop login image}"
   local work checksum restart_ts
   work="$(mktemp)"
-  checksum="$(cat "${ROOT}/linkedin-login/boot.py" "${ROOT}/linkedin-login/session.py" "${ROOT}/linkedin-login/start.sh" | sha256sum | awk '{print $1}')"
+  checksum="$(cat "${ROOT}/linkedin-login/boot.py" "${ROOT}/linkedin-login/session.py" "${ROOT}/linkedin-login/start.sh" "${ROOT}/linkedin-login/novnc-index.html" | sha256sum | awk '{print $1}')"
   restart_ts="ts-$(date +%s)"
   kubectl -n "${NAMESPACE}" create configmap linkedin-login-scripts \
     --from-file=boot.py="${ROOT}/linkedin-login/boot.py" \
     --from-file=start.sh="${ROOT}/linkedin-login/start.sh" \
     --from-file=session.py="${ROOT}/linkedin-login/session.py" \
+    --from-file=novnc-index.html="${ROOT}/linkedin-login/novnc-index.html" \
     --dry-run=client -o yaml | kubectl apply -f - >/dev/null
   sed -e "s#image: jobsrss-api:local#image: ${image}#" \
     -e "s#SCRIPT_CHECKSUM#${checksum}#" \
@@ -163,20 +164,19 @@ case "${ACTION}" in
     echo "============================================================"
     echo "NOVNC_READY pod=${POD}"
     echo
-    echo "/vnc.html?autoconnect=1&resize=remote  不要在终端里输入。"
-    echo "那是浏览器地址栏路径。"
+    echo "不要改 Cloud Shell Web Preview 的地址栏。"
+    echo "一改路径就会跳回默认空白页并一直转圈。"
     echo
-    echo "现在才开第二个 Cloud Shell 终端（一直挂着，不要 Ctrl+C）："
+    echo "现在开第二个终端（一直挂着）："
     echo "  bash deploy/gke/scripts/linkedin-session.sh port-forward"
-    echo "或："
-    echo "  kubectl -n ${NAMESPACE} port-forward pod/${POD} 6080:6080"
-    echo "不要再用 svc/linkedin-login（会误连正在退出的旧 Pod）。"
     echo
-    echo "然后：Web Preview -> Change port -> 6080 -> Preview"
-    echo "地址栏改成（只改路径，主机名保持 cloudshell.dev）："
-    echo "  https://6080-cs-xxxx.cloudshell.dev/vnc.html?autoconnect=1&resize=remote"
+    echo "优先：Web Preview -> Change port -> 8080 -> Preview"
+    echo "不要改网址。页面上填邮箱/密码/2FA，或点截图。"
     echo
-    echo "登录 LinkedIn 直到 Feed 出现，再回到这个终端："
+    echo "备选：Web Preview -> 6080，同样不要改地址栏（/ 就是桌面）。"
+    echo "若 6080 一直转圈，回到 8080。"
+    echo
+    echo "Feed 出来后回到这个终端："
     echo "  bash deploy/gke/scripts/linkedin-session.sh --export"
     echo "  bash deploy/gke/scripts/linkedin-session.sh stop"
     echo "============================================================"
@@ -185,8 +185,9 @@ case "${ACTION}" in
     print_checkout
     wait_novnc
     POD="$(ready_login_pod)"
-    echo "Forwarding pod/${POD} 6080:6080  (leave this running; use Web Preview on 6080)"
-    exec kubectl -n "${NAMESPACE}" port-forward "pod/${POD}" 6080:6080
+    echo "Forwarding pod/${POD} 8080+6080  (leave this running)"
+    echo "Web Preview 8080 first (HTTP login). Do not edit the preview URL."
+    exec kubectl -n "${NAMESPACE}" port-forward "pod/${POD}" 8080:8080 6080:6080
     ;;
   status)
     print_checkout

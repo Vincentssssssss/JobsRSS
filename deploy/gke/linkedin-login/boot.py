@@ -17,8 +17,8 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-BOOT = 4
-linkedin_login_boot = 4
+BOOT = 5
+linkedin_login_boot = 5
 DISPLAY = os.environ.get("DISPLAY", ":99")
 SCRIPT_DIR = Path(os.environ.get("JOBSRSS_LOGIN_SCRIPT_DIR", "/opt/linkedin-login"))
 READY_PATH = Path("/tmp/novnc.ready")
@@ -84,9 +84,8 @@ def current_body() -> bytes:
     return page(
         "JobsRSS LinkedIn desktop",
         "<h1>正在启动集群桌面（Xvfb / noVNC）</h1>"
-        "<p>页面会自动刷新。就绪后地址栏打开 "
-        "<code>/vnc.html?autoconnect=1&amp;resize=remote</code></p>"
-        "<p>这段路径写在浏览器地址栏，不要写在 Cloud Shell 终端里。</p>",
+        "<p>页面会自动刷新。不要改 Cloud Shell 地址栏，改了会跳回空白页。</p>"
+        "<p>若 6080 一直转圈，把 Web Preview 改到端口 8080。</p>",
         refresh=8,
     )
 
@@ -210,6 +209,18 @@ def start_x11vnc() -> subprocess.Popen[bytes]:
     return proc
 
 
+def prepare_novnc_web(src: str) -> str:
+    dest = Path("/tmp/novnc-web")
+    if dest.exists():
+        shutil.rmtree(dest)
+    shutil.copytree(src, dest)
+    custom = SCRIPT_DIR / "novnc-index.html"
+    if custom.is_file():
+        shutil.copy(custom, dest / "index.html")
+        log("novnc_index replaced so / is the desktop (do not change the preview URL)")
+    return str(dest)
+
+
 def start_websockify(novnc_web: str) -> subprocess.Popen[bytes]:
     bind = "0.0.0.0:6080"
     if which("websockify"):
@@ -260,6 +271,7 @@ def desktop_main() -> None:
             raise RuntimeError("noVNC web files not found")
         xvfb = start_xvfb()
         x11vnc = start_x11vnc()
+        novnc_web = prepare_novnc_web(novnc_web)
         stop_status_http()
         websockify = start_websockify(novnc_web)
         mark_ready()

@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>JobsRSS LinkedIn desktop</title>
+  <style>
+    html, body, #screen { height: 100%; margin: 0; background: #111; }
+    #screen { overflow: hidden; }
+    #status {
+      position: fixed; left: 0; right: 0; top: 0; z-index: 10;
+      padding: 0.6rem 1rem; font: 14px/1.4 sans-serif; color: #fff;
+      background: #333;
+    }
+    #screen { padding-top: 2.4rem; box-sizing: border-box; }
+    #status.error { background: #7a1f1f; }
+    #status.ok { background: #1f5a2c; }
+    a { color: #9cf; }
+  </style>
+</head>
+<body>
+  <div id="status">正在连接集群桌面，请不要改地址栏…</div>
+  <div id="screen"></div>
+  <script type="module">
+    import RFB from "./core/rfb.js";
+
+    const status = document.getElementById("status");
+    const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+    const port = window.location.port ? `:${window.location.port}` : "";
+    const url = `${protocol}://${window.location.hostname}${port}/websockify`;
+
+    function show(kind, html) {
+      status.className = kind;
+      status.innerHTML = html;
+    }
+
+    let connected = false;
+    const timer = setTimeout(() => {
+      if (connected) return;
+      show(
+        "error",
+        "Cloud Shell Web Preview 往往接不上 noVNC 的 WebSocket，所以会一直转圈。" +
+          "不要改地址栏。请把 Web Preview 端口改成 <strong>8080</strong>，打开的 <code>/</code> 就是登录页（截图，不需要 WebSocket）。"
+      );
+    }, 8000);
+
+    try {
+      const rfb = new RFB(document.getElementById("screen"), url, {
+        scaleViewport: true,
+        resizeSession: true,
+      });
+      rfb.addEventListener("connect", () => {
+        connected = true;
+        clearTimeout(timer);
+        show("ok", "已连上集群桌面。在这个窗口里登录 LinkedIn，不要改浏览器地址栏。");
+      });
+      rfb.addEventListener("disconnect", (ev) => {
+        const clean = ev.detail && ev.detail.clean;
+        if (clean) return;
+        show(
+          "error",
+          "桌面 WebSocket 已断开。把 Web Preview 改到端口 <strong>8080</strong>，用 HTTP 登录页继续。"
+        );
+      });
+    } catch (err) {
+      show("error", `无法启动 noVNC：${err}。请改用 Web Preview 端口 8080。`);
+    }
+  </script>
+</body>
+</html>

@@ -154,17 +154,13 @@ Wait until the first terminal prints `NOVNC_READY`. Only then, in another tab:
 bash deploy/gke/scripts/linkedin-session.sh port-forward
 ```
 
-That forwards the Ready pod, not `svc/linkedin-login` (the Service can still
-select a terminating pod and yield `connection refused` on :6080).
+That forwards the Ready pod (8080 HTTP login + 6080 noVNC), not
+`svc/linkedin-login`.
 
-`/vnc.html?autoconnect=1&resize=remote` is a **browser address-bar path**,
-not a Cloud Shell command. After Web Preview opens port 6080, keep the
-`6080-cs-....cloudshell.dev` host and change only the path:
-
-`https://6080-cs-xxxx.cloudshell.dev/vnc.html?autoconnect=1&resize=remote`
-
-If port-forward reports `connection refused`, you started it before
-`NOVNC_READY`. Run `bash deploy/gke/scripts/linkedin-session.sh status`.
+Do **not** edit the Cloud Shell Web Preview address bar. Preview resets
+custom paths back to `/`, which looks like a blank spinning page.
+Prefer Web Preview port **8080** (screenshot + login form). Port 6080 is
+the desktop; Cloud Shell often cannot proxy its WebSocket.
 
 ```bash
 bash deploy/gke/scripts/linkedin-session.sh --export
