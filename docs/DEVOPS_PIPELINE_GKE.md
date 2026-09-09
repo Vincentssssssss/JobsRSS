@@ -119,8 +119,13 @@ kubectl -n jobsrss rollout restart deploy/api deploy/worker
 ```
 
 GKE datacenter IPs are often blocked by LinkedIn/Liepin even with a valid
-session file. If the worker logs show login walls, keep official sources on
-and treat these two as best-effort.
+session file. Kubernetes does not strip cookies from the mounted Secret; the
+usual failures are a disabled flag, a missing `~/secrets/*.json` filename, or
+the site rejecting the cluster egress IP.
+
+```bash
+bash deploy/gke/scripts/check-collectors.sh
+```
 CI never overwrites `jobsrss-env`; missing that secret fails the deploy on
 purpose.
 
