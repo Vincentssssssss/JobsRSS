@@ -133,6 +133,32 @@ enable_gke_gateway_api() {
     --gateway-api=standard
 }
 
+require_ar_image() {
+  local image="${1:?image is required}"
+  if gcloud artifacts docker images describe "${image}" \
+    --project="${GCP_PROJECT_ID}" \
+    --quiet >/dev/null 2>&1; then
+    echo "Found ${image}"
+    return 0
+  fi
+  echo "Image not in Artifact Registry: ${image}"
+  echo "Existing tags (if any):"
+  gcloud artifacts docker images list "${image%:*}" \
+    --project="${GCP_PROJECT_ID}" \
+    --include-tags \
+    --limit=15 \
+    --format='table(version,tags,createTime)' || true
+  echo
+  echo "Do not set SKIP_CLOUD_BUILD=1 unless this tag already exists."
+  echo "To build frontend only and keep the current API image:"
+  echo "  unset SKIP_CLOUD_BUILD"
+  echo "  export IMAGE_API_TAG=2adea08"
+  echo "  export SKIP_API_BUILD=1"
+  echo "  unset IMAGE_TAG"
+  echo "  bash deploy/gke/scripts/cloud-shell-deploy.sh"
+  exit 1
+}
+
 ensure_cloudbuild_worker_sa() {
   CICD_SA_NAME="${CICD_SA_NAME:-jobsrss-cicd}"
   CLOUDBUILD_SA="${CICD_SA_NAME}@${GCP_PROJECT_ID}.iam.gserviceaccount.com"

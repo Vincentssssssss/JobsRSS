@@ -35,8 +35,11 @@ echo "Project=${GCP_PROJECT_ID} Artifact Registry region=${GCP_REGION}"
 
 if [ "${SKIP_CLOUD_BUILD}" = "1" ]; then
   echo "Skipping Cloud Build; applying existing ${IMAGE_API} and ${IMAGE_FRONTEND}"
+  require_ar_image "${IMAGE_API}"
+  require_ar_image "${IMAGE_FRONTEND}"
 elif [ "${SKIP_API_BUILD}" = "1" ]; then
   echo "Reusing API image ${IMAGE_API}"
+  require_ar_image "${IMAGE_API}"
   echo "Building ${IMAGE_FRONTEND} with Cloud Build"
   ensure_cloudbuild_worker_sa
   gcloud builds submit \
