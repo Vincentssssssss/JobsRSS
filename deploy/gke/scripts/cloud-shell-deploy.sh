@@ -25,18 +25,32 @@ fi
 gcloud config set project "${GCP_PROJECT_ID}"
 
 AR_HOST="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY}"
-export IMAGE_API="${AR_HOST}/jobsrss-api:${IMAGE_TAG}"
+SKIP_CLOUD_BUILD="${SKIP_CLOUD_BUILD:-0}"
+SKIP_API_BUILD="${SKIP_API_BUILD:-0}"
+IMAGE_API_TAG="${IMAGE_API_TAG:-${IMAGE_TAG}}"
+export IMAGE_API="${AR_HOST}/jobsrss-api:${IMAGE_API_TAG}"
 export IMAGE_FRONTEND="${AR_HOST}/jobsrss-frontend:${IMAGE_TAG}"
 
 echo "Project=${GCP_PROJECT_ID} Artifact Registry region=${GCP_REGION}"
 
-SKIP_CLOUD_BUILD="${SKIP_CLOUD_BUILD:-0}"
 if [ "${SKIP_CLOUD_BUILD}" = "1" ]; then
   echo "Skipping Cloud Build; applying existing ${IMAGE_API} and ${IMAGE_FRONTEND}"
+elif [ "${SKIP_API_BUILD}" = "1" ]; then
+  echo "Reusing API image ${IMAGE_API}"
+  echo "Building ${IMAGE_FRONTEND} with Cloud Build"
+  ensure_cloudbuild_worker_sa
+  gcloud builds submit \
+    --project="${GCP_PROJECT_ID}" \
+    --service-account="${CLOUDBUILD_SA_RESOURCE}" \
+    --config=deploy/gke/cloudbuild.frontend.yaml \
+    --substitutions="_REGION=${GCP_REGION},_AR_REPOSITORY=${AR_REPOSITORY},_IMAGE_TAG=${IMAGE_TAG}" \
+    .
 else
   echo "Building ${IMAGE_API} and ${IMAGE_FRONTEND} with Cloud Build"
   echo "To reuse an already-built tag later:"
   echo "  IMAGE_TAG=${IMAGE_TAG} SKIP_CLOUD_BUILD=1 bash deploy/gke/scripts/cloud-shell-deploy.sh"
+  echo "To rebuild frontend only:"
+  echo "  IMAGE_API_TAG=<existing-api-tag> SKIP_API_BUILD=1 bash deploy/gke/scripts/cloud-shell-deploy.sh"
   ensure_cloudbuild_worker_sa
   gcloud builds submit \
     --project="${GCP_PROJECT_ID}" \

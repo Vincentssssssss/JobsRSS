@@ -68,16 +68,28 @@ function buildDirectBackendBase(): string {
   return "http://localhost:8000";
 }
 
+function buildPublicBase(): string {
+  if (typeof window === "undefined") {
+    return "http://localhost:8000";
+  }
+  const { hostname, protocol, origin } = window.location;
+  if (hostname === "localhost" || hostname === "127.0.0.1") {
+    return `${protocol}//${hostname}:8000`;
+  }
+  return origin;
+}
+
 function normalizeBase(base: string): string {
   return (base || "").trim().replace(/\/+$/, "");
 }
 
 function apiBaseCandidates(): string[] {
+  const sameOrigin = "";
+  const proxied = "/api/backend";
   const direct = normalizeBase(buildDirectBackendBase());
   const localhost = "http://localhost:8000";
   const loopback = "http://127.0.0.1:8000";
-  const proxied = "/api/backend";
-  return Array.from(new Set([direct, localhost, loopback, proxied].map(normalizeBase).filter(Boolean)));
+  return Array.from(new Set([sameOrigin, proxied, direct, localhost, loopback]));
 }
 
 async function sleep(ms: number): Promise<void> {
@@ -134,11 +146,17 @@ export default function HomePage() {
   const [locationCategory, setLocationCategory] = useState("");
   const [selectedJob, setSelectedJob] = useState<JobDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [listLoading, setListLoading] = useState(true);
+  const [filterRelaxed, setFilterRelaxed] = useState(false);
+  const [inventoryCount, setInventoryCount] = useState(0);
+  const [scoredCount, setScoredCount] = useState(0);
 
-  const loadJobs = async () => {
+  const buildJobParams = (includeLlm: boolean, includeLimit: boolean): URLSearchParams => {
     const params = new URLSearchParams();
-    params.set("limit", String(limit));
-    params.set("min_score", aiPrecisionMode ? "0" : String(minScore));
+    if (includeLimit) {
+      params.set("limit", String(limit));
+    }
+    params.set("min_score", aiPrecisionMode || !includeLlm ? "0" : String(minScore));
     if (query.trim()) {
       params.set("q", query.trim());
     }
@@ -148,23 +166,31 @@ export default function HomePage() {
     if (locationCategory) {
       params.set("location_category", locationCategory);
     }
-    if (aiPrecisionMode) {
-      params.set("llm_verdict", "strong_fit,possible_fit");
-      if (minLlmScore) {
+    if (includeLlm) {
+      if (aiPrecisionMode) {
+        params.set("llm_verdict", "strong_fit,possible_fit");
+        if (minLlmScore) {
+          params.set("min_llm_score", minLlmScore);
+        }
+      } else if (minLlmScore) {
         params.set("min_llm_score", minLlmScore);
       }
-    } else if (minLlmScore) {
-      params.set("min_llm_score", minLlmScore);
     }
+    return params;
+  };
+
+  const loadJobs = async (includeLlm: boolean) => {
     try {
-      const payload = await fetchJsonWithFallback<JobCard[]>("/jobs", params);
+      const payload = await fetchJsonWithFallback<JobCard[]>("/jobs", buildJobParams(includeLlm, true));
       if (!payload) {
         setJobs([]);
-        return;
+        return [];
       }
       setJobs(payload);
+      return payload;
     } catch {
       setJobs([]);
+      return [];
     }
   };
 
@@ -181,51 +207,24 @@ export default function HomePage() {
     }
   };
 
-  const loadCount = async () => {
-    const params = new URLSearchParams();
-    params.set("min_score", aiPrecisionMode ? "0" : String(minScore));
-    if (query.trim()) {
-      params.set("q", query.trim());
-    }
-    if (source) {
-      params.set("source", source);
-    }
-    if (locationCategory) {
-      params.set("location_category", locationCategory);
-    }
-    if (aiPrecisionMode) {
-      params.set("llm_verdict", "strong_fit,possible_fit");
-      if (minLlmScore) {
-        params.set("min_llm_score", minLlmScore);
-      }
-    } else if (minLlmScore) {
-      params.set("min_llm_score", minLlmScore);
-    }
+  const loadCount = async (includeLlm: boolean) => {
     try {
-      const payload = await fetchJsonWithFallback<{ total?: number }>("/jobs/count", params);
-      setTotalCount(Number(payload?.total || 0));
+      const payload = await fetchJsonWithFallback<{ total?: number }>(
+        "/jobs/count",
+        buildJobParams(includeLlm, false),
+      );
+      const total = Number(payload?.total || 0);
+      setTotalCount(total);
+      return total;
     } catch {
       setTotalCount(0);
+      return 0;
     }
   };
 
-  const loadSourceCounts = async () => {
-    const params = new URLSearchParams();
-    params.set("min_score", aiPrecisionMode ? "0" : String(minScore));
-    if (query.trim()) {
-      params.set("q", query.trim());
-    }
-    if (locationCategory) {
-      params.set("location_category", locationCategory);
-    }
-    if (aiPrecisionMode) {
-      params.set("llm_verdict", "strong_fit,possible_fit");
-      if (minLlmScore) {
-        params.set("min_llm_score", minLlmScore);
-      }
-    } else if (minLlmScore) {
-      params.set("min_llm_score", minLlmScore);
-    }
+  const loadSourceCounts = async (includeLlm: boolean) => {
+    const params = buildJobParams(includeLlm, false);
+    params.delete("source");
     try {
       const payload = await fetchJsonWithFallback<SourceCountsResponse>("/jobs/source-counts", params);
       if (!payload) {
@@ -285,7 +284,35 @@ export default function HomePage() {
 
   useEffect(() => {
     const load = async () => {
-      await Promise.all([loadJobs(), loadSummary(), loadCount(), loadSourceCounts()]);
+      setListLoading(true);
+      try {
+        const llmFiltersOn = Boolean(aiPrecisionMode || minLlmScore);
+        const [inventoryPayload, scoredPayload] = await Promise.all([
+          fetchJsonWithFallback<{ total?: number }>("/jobs/count"),
+          fetchJsonWithFallback<{ total?: number }>(
+            "/jobs/count",
+            new URLSearchParams({ min_llm_score: "0" }),
+          ),
+          loadSummary(),
+        ]);
+        const inventory = Number(inventoryPayload?.total || 0);
+        const scored = Number(scoredPayload?.total || 0);
+        setInventoryCount(inventory);
+        setScoredCount(scored);
+
+        const filteredJobs = await loadJobs(true);
+        const shouldRelax =
+          llmFiltersOn && filteredJobs.length === 0 && scored === 0 && inventory > 0;
+        if (shouldRelax) {
+          setFilterRelaxed(true);
+          await Promise.all([loadJobs(false), loadCount(false), loadSourceCounts(false)]);
+        } else {
+          setFilterRelaxed(false);
+          await Promise.all([loadCount(true), loadSourceCounts(true)]);
+        }
+      } finally {
+        setListLoading(false);
+      }
     };
     void load();
   }, [query, source, minScore, minLlmScore, aiPrecisionMode, limit, locationCategory]);
@@ -295,7 +322,7 @@ export default function HomePage() {
   }, []);
 
   const highMatchCount = useMemo(() => jobs.filter((job) => job.match_score >= 80).length, [jobs]);
-  const rssBase = useMemo(() => buildDirectBackendBase(), []);
+  const rssBase = useMemo(() => buildPublicBase(), []);
   const allSourcesCount = useMemo(() => {
     if (!sourceCountsLoaded) {
       return null;
@@ -465,10 +492,22 @@ export default function HomePage() {
         </section>
       )}
 
+      {filterRelaxed && (
+        <section className="notice glass">
+          Worker has collected <strong>{inventoryCount}</strong> jobs, but AI scoring has not
+          finished yet ({scoredCount} scored). Showing collected jobs by rule score. AI Precision
+          will apply automatically once the LLM rerank writes scores.
+        </section>
+      )}
+
       <section className="job-list">
-        {jobs.length === 0 ? (
+        {listLoading ? (
+          <div className="empty glass">Loading collected jobs...</div>
+        ) : jobs.length === 0 ? (
           <div className="empty glass">
-            No jobs matched current filters. Try setting AI Score to All or turning AI Precision Mode Off.
+            {inventoryCount > 0
+              ? "No jobs matched current filters. Try setting AI Score to All or turning AI Precision Mode Off."
+              : "No collected jobs yet. The worker is still running official-source collectors."}
           </div>
         ) : (
           jobs.map((job) => (
@@ -479,10 +518,12 @@ export default function HomePage() {
                 <p className="job-meta">
                   {job.location} · {job.source}
                 </p>
-                {job.llm_fit_score != null && (
+                {job.llm_fit_score != null ? (
                   <p className="job-meta">
                     LLM Fit: {Math.round(job.llm_fit_score)} ({job.llm_verdict || "n/a"})
                   </p>
+                ) : (
+                  <p className="job-meta">AI score pending</p>
                 )}
                 <span className="location-badge">
                   {job.location_category === "confirmed_shanghai"

@@ -229,6 +229,17 @@ body {
   color: var(--muted);
 }
 
+.notice {
+  padding: 14px 18px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.notice strong {
+  color: var(--text);
+}
+
 .detail-btn {
   background: #fff;
 }

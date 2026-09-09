@@ -140,6 +140,14 @@ This submits `deploy/gke/cloudbuild.yaml` (backend + frontend in parallel),
 then `kubectl apply` to the existing cluster. Backend image build can take
 15–30 minutes because of Playwright.
 
+To ship a frontend-only change without rebuilding the Playwright API image:
+
+```bash
+export IMAGE_API_TAG=2adea08
+export SKIP_API_BUILD=1
+bash deploy/gke/scripts/cloud-shell-deploy.sh
+```
+
 If Cloud Build already succeeded and only `kubectl apply -k` failed, reuse
 the built tag instead of rebuilding:
 
