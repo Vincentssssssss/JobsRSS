@@ -6,6 +6,7 @@ set -euo pipefail
 #
 # Usage:
 #   IMAGE_API=... bash deploy/gke/scripts/linkedin-session.sh start
+#   bash deploy/gke/scripts/linkedin-session.sh status
 #   bash deploy/gke/scripts/linkedin-session.sh --export
 #   bash deploy/gke/scripts/linkedin-session.sh stop
 
@@ -23,13 +24,15 @@ source "$(dirname "$0")/gke-env.sh"
 
 apply_login_manifest() {
   local image="${IMAGE_API:?Set IMAGE_API to the existing jobsrss-api image}"
-  local work
+  local work checksum
   work="$(mktemp)"
+  checksum="$(cat "${ROOT}/linkedin-login/start.sh" "${ROOT}/linkedin-login/session.py" | sha256sum | awk '{print $1}')"
   kubectl -n "${NAMESPACE}" create configmap linkedin-login-scripts \
     --from-file=start.sh="${ROOT}/linkedin-login/start.sh" \
     --from-file=session.py="${ROOT}/linkedin-login/session.py" \
     --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-  sed "s#image: jobsrss-api:local#image: ${image}#" \
+  sed -e "s#image: jobsrss-api:local#image: ${image}#" \
+    -e "s#SCRIPT_CHECKSUM#${checksum}#" \
     "${ROOT}/linkedin-login.yaml" > "${work}"
   kubectl apply -f "${work}"
   rm -f "${work}"
@@ -42,18 +45,43 @@ case "${ACTION}" in
     echo "You must complete login + 2FA yourself in noVNC."
     echo "A Windows GKE node does not help: egress is still a Google Cloud IP."
     apply_login_manifest
-    echo "Waiting for linkedin-login (first start installs xvfb/novnc, ~1-3 minutes)..."
-    kubectl -n "${NAMESPACE}" rollout status deploy/linkedin-login --timeout=300s
+    echo "Waiting for noVNC on :6080 (first start installs xvfb/novnc, ~1-3 minutes)..."
+    kubectl -n "${NAMESPACE}" rollout status deploy/linkedin-login --timeout=600s
     echo
-    echo "Linux GUI path (browser desktop, no Windows node):"
-    echo "  1) Other Cloud Shell tab:"
-    echo "       kubectl -n ${NAMESPACE} port-forward svc/linkedin-login 6080:6080"
-    echo "  2) Web Preview -> port 6080, then open:"
-    echo "       /vnc.html?autoconnect=1&resize=remote"
-    echo "  3) In that desktop, log into LinkedIn (complete 2FA) until the feed loads."
-    echo "  4) This tab:"
-    echo "       bash deploy/gke/scripts/linkedin-session.sh --export"
-    echo "       bash deploy/gke/scripts/linkedin-session.sh stop"
+    echo "============================================================"
+    echo "/vnc.html?autoconnect=1&resize=remote  不要在 Cloud Shell 终端里输入。"
+    echo "那是浏览器地址栏的路径，接在 Web Preview 主机名后面。"
+    echo
+    echo "1) 另开一个 Cloud Shell 终端，一直挂着（不要 Ctrl+C）："
+    echo "     kubectl -n ${NAMESPACE} port-forward svc/linkedin-login 6080:6080"
+    echo "   必须看到：Forwarding from 127.0.0.1:6080 -> 6080"
+    echo
+    echo "2) 原终端右上角 Web Preview（预览网页）-> Change port -> 6080 -> Preview"
+    echo
+    echo "3) 浏览器打开后，只改地址栏路径（主机名保持 cloudshell.dev 给你的）："
+    echo "     https://6080-cs-xxxx.cloudshell.dev/vnc.html?autoconnect=1&resize=remote"
+    echo
+    echo "4) 应出现黑底 noVNC 桌面和 LinkedIn 登录页。登录并完成 2FA，直到 Feed 出来。"
+    echo
+    echo "5) 回到这个终端："
+    echo "     bash deploy/gke/scripts/linkedin-session.sh --export"
+    echo "     bash deploy/gke/scripts/linkedin-session.sh stop"
+    echo "============================================================"
+    echo
+    echo "If port-forward says connection refused, run:"
+    echo "  bash deploy/gke/scripts/linkedin-session.sh status"
+    ;;
+  status)
+    echo "--- pods ---"
+    kubectl -n "${NAMESPACE}" get pods -l app.kubernetes.io/component=linkedin-login -o wide
+    echo
+    echo "--- :6080 inside the pod (must serve /vnc.html) ---"
+    kubectl -n "${NAMESPACE}" exec deploy/linkedin-login -c login -- \
+      python3 -c 'import urllib.request; r=urllib.request.urlopen("http://127.0.0.1:6080/vnc.html",timeout=5); print("vnc.html", r.status, r.headers.get("content-type"))' \
+      || echo "6080 is not serving /vnc.html yet (apt-get still running, or start.sh failed)"
+    echo
+    echo "--- recent login logs ---"
+    kubectl -n "${NAMESPACE}" logs deploy/linkedin-login -c login --tail=80 || true
     ;;
   --export|export)
     echo "Exporting LinkedIn storage state from the login pod (cookie values are not printed)..."
@@ -82,7 +110,7 @@ case "${ACTION}" in
     echo "linkedin-login replicas=0"
     ;;
   *)
-    echo "Usage: $0 {start|--export|stop}"
+    echo "Usage: $0 {start|status|--export|stop}"
     exit 1
     ;;
 esac

@@ -17,6 +17,8 @@ spec:
       labels:
         app.kubernetes.io/name: jobsrss
         app.kubernetes.io/component: linkedin-login
+      annotations:
+        jobsrss/scripts-checksum: SCRIPT_CHECKSUM
     spec:
       terminationGracePeriodSeconds: 20
       containers:
@@ -42,13 +44,18 @@ spec:
               mountPath: /session
             - name: dshm
               mountPath: /dev/shm
+          startupProbe:
+            httpGet:
+              path: /vnc.html
+              port: 6080
+            periodSeconds: 10
+            failureThreshold: 60
           readinessProbe:
             httpGet:
-              path: /health
-              port: 8080
-            initialDelaySeconds: 25
-            periodSeconds: 10
-            failureThreshold: 18
+              path: /vnc.html
+              port: 6080
+            periodSeconds: 5
+            failureThreshold: 6
           resources:
             requests:
               cpu: 250m

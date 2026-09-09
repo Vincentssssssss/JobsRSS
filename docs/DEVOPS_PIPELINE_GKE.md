@@ -135,8 +135,21 @@ and still not guaranteed — LinkedIn can checkpoint Google Cloud IPs.
 ```bash
 export IMAGE_API=asia-southeast1-docker.pkg.dev/$GCP_PROJECT_ID/jobsrss/jobsrss-api:2adea08
 bash deploy/gke/scripts/linkedin-session.sh start
+# Wait until the script says noVNC is ready (1/1), then in another tab:
 kubectl -n jobsrss port-forward svc/linkedin-login 6080:6080
-# Cloud Shell Web Preview → 6080 → /vnc.html?autoconnect=1&resize=remote
+```
+
+`/vnc.html?autoconnect=1&resize=remote` is a **browser address-bar path**,
+not a Cloud Shell command. After Web Preview opens port 6080, keep the
+`6080-cs-....cloudshell.dev` host and change only the path:
+
+`https://6080-cs-xxxx.cloudshell.dev/vnc.html?autoconnect=1&resize=remote`
+
+If port-forward reports `connection refused`, the desktop is not listening
+yet. Re-run `start` from current git, wait for Ready, then
+`bash deploy/gke/scripts/linkedin-session.sh status`.
+
+```bash
 bash deploy/gke/scripts/linkedin-session.sh --export
 bash deploy/gke/scripts/linkedin-session.sh stop
 ```
