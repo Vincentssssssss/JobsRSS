@@ -21,13 +21,18 @@ IMAGE_API="${IMAGE_API:-${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/jobsrss/j
 # shellcheck source=gke-env.sh
 source "$(dirname "$0")/gke-env.sh"
 
-render_login_manifest() {
-  local image="${IMAGE_API:?Set IMAGE_API to the existing jobsrss-api image, for example asia-southeast1-docker.pkg.dev/PROJECT/jobsrss/jobsrss-api:2adea08}"
+apply_login_manifest() {
+  local image="${IMAGE_API:?Set IMAGE_API to the existing jobsrss-api image}"
+  local work
+  work="$(mktemp)"
   kubectl -n "${NAMESPACE}" create configmap linkedin-login-scripts \
     --from-file=start.sh="${ROOT}/linkedin-login/start.sh" \
     --from-file=session.py="${ROOT}/linkedin-login/session.py" \
-    --dry-run=client -o yaml | kubectl apply -f -
-  sed "s#image: jobsrss-api:local#image: ${image}#" "${ROOT}/linkedin-login.yaml"
+    --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+  sed "s#image: jobsrss-api:local#image: ${image}#" \
+    "${ROOT}/linkedin-login.yaml" > "${work}"
+  kubectl apply -f "${work}"
+  rm -f "${work}"
 }
 
 case "${ACTION}" in
@@ -35,7 +40,8 @@ case "${ACTION}" in
     echo "This pod is ClusterIP only. Use kubectl port-forward; do not put it on demo-gateway."
     echo "Same-IP login can still hit a LinkedIn checkpoint because the ASN is Google Cloud."
     echo "You must complete login + 2FA yourself in noVNC."
-    render_login_manifest | kubectl apply -f -
+    echo "A Windows GKE node does not help: egress is still a Google Cloud IP."
+    apply_login_manifest
     echo "Waiting for linkedin-login (first start installs xvfb/novnc, ~1-3 minutes)..."
     kubectl -n "${NAMESPACE}" rollout status deploy/linkedin-login --timeout=300s
     echo
