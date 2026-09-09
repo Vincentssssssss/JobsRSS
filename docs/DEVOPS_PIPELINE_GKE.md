@@ -106,7 +106,21 @@ kubectl -n jobsrss describe httproute jobsrss
 - `linkedin_state.json`
 - `liepin_state.json`
 
-Those files are mounted at `/secrets` (read-only), matching the Compose layout.
+Those files are merged into Secret `jobsrss-collector-files` and mounted at
+`/secrets` (read-only). Uploading only one file keeps the other cookie.
+
+To enable both platforms on GKE after the files are in `~/secrets`:
+
+```bash
+sed -i 's/^LINKEDIN_AUTH_ENABLED=.*/LINKEDIN_AUTH_ENABLED=true/' ~/jobsrss.env.gke
+sed -i 's/^LIEPIN_AUTH_ENABLED=.*/LIEPIN_AUTH_ENABLED=true/' ~/jobsrss.env.gke
+bash deploy/gke/scripts/apply-secrets.sh ~/jobsrss.env.gke ~/secrets
+kubectl -n jobsrss rollout restart deploy/api deploy/worker
+```
+
+GKE datacenter IPs are often blocked by LinkedIn/Liepin even with a valid
+session file. If the worker logs show login walls, keep official sources on
+and treat these two as best-effort.
 CI never overwrites `jobsrss-env`; missing that secret fails the deploy on
 purpose.
 
