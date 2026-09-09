@@ -52,6 +52,12 @@ fi
 
 copied=()
 if [ -n "${SECRETS_DIR}" ]; then
+  if [ ! -d "${SECRETS_DIR}" ]; then
+    echo "Secrets directory does not exist: ${SECRETS_DIR}"
+    exit 1
+  fi
+  echo "Collector files in ${SECRETS_DIR}:"
+  ls -la "${SECRETS_DIR}" || true
   for name in linkedin_state.json liepin_state.json; do
     if [ -f "${SECRETS_DIR}/${name}" ]; then
       python3 -c "import json,sys; json.load(open(sys.argv[1], encoding='utf-8'))" \
@@ -61,6 +67,14 @@ if [ -n "${SECRETS_DIR}" ]; then
       copied+=("${name}")
     fi
   done
+  if [ "${#copied[@]}" -eq 0 ]; then
+    echo
+    echo "No linkedin_state.json or liepin_state.json in ${SECRETS_DIR}."
+    echo "Cloud Shell uploads often keep the original filename. Rename them exactly:"
+    echo "  mv ~/secrets/<your-linkedin-file> ~/secrets/linkedin_state.json"
+    echo "  mv ~/secrets/<your-liepin-file>   ~/secrets/liepin_state.json"
+    exit 1
+  fi
 fi
 
 from_file_args=()
