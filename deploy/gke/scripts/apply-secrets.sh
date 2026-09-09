@@ -51,30 +51,36 @@ PY
 fi
 
 copied=()
+search_dirs=()
 if [ -n "${SECRETS_DIR}" ]; then
-  if [ ! -d "${SECRETS_DIR}" ]; then
-    echo "Secrets directory does not exist: ${SECRETS_DIR}"
-    exit 1
-  fi
-  echo "Collector files in ${SECRETS_DIR}:"
-  ls -la "${SECRETS_DIR}" || true
-  for name in linkedin_state.json liepin_state.json; do
-    if [ -f "${SECRETS_DIR}/${name}" ]; then
-      python3 -c "import json,sys; json.load(open(sys.argv[1], encoding='utf-8'))" \
-        "${SECRETS_DIR}/${name}"
-      cp "${SECRETS_DIR}/${name}" "${WORK}/${name}"
-      chmod 600 "${WORK}/${name}"
-      copied+=("${name}")
+  search_dirs+=("${SECRETS_DIR}")
+fi
+search_dirs+=("${HOME}/secrets" "${HOME}")
+
+echo "Looking for collector session files in: ${search_dirs[*]}"
+for name in linkedin_state.json liepin_state.json; do
+  src=""
+  for dir in "${search_dirs[@]}"; do
+    if [ -f "${dir}/${name}" ]; then
+      src="${dir}/${name}"
+      break
     fi
   done
-  if [ "${#copied[@]}" -eq 0 ]; then
-    echo
-    echo "No linkedin_state.json or liepin_state.json in ${SECRETS_DIR}."
-    echo "Cloud Shell uploads often keep the original filename. Rename them exactly:"
-    echo "  mv ~/secrets/<your-linkedin-file> ~/secrets/linkedin_state.json"
-    echo "  mv ~/secrets/<your-liepin-file>   ~/secrets/liepin_state.json"
-    exit 1
+  if [ -n "${src}" ]; then
+    python3 -c "import json,sys; json.load(open(sys.argv[1], encoding='utf-8'))" "${src}"
+    cp "${src}" "${WORK}/${name}"
+    chmod 600 "${WORK}/${name}"
+    copied+=("${name}<=${src}")
   fi
+done
+if [ -n "${SECRETS_DIR}" ] && [ "${#copied[@]}" -eq 0 ]; then
+  echo
+  echo "No linkedin_state.json or liepin_state.json in ${SECRETS_DIR}, ~/secrets, or \$HOME."
+  echo "Cloud Shell uploads often land in \$HOME. Copy them first:"
+  echo "  mkdir -p ~/secrets"
+  echo "  cp ~/linkedin_state.json ~/secrets/linkedin_state.json"
+  echo "  cp ~/liepin_state.json ~/secrets/liepin_state.json"
+  exit 1
 fi
 
 from_file_args=()
@@ -99,6 +105,13 @@ if [ "${#from_file_args[@]}" -gt 0 ]; then
     | python3 -c 'import json,sys; print(" ".join(sorted(json.load(sys.stdin).get("data") or {})))'
 else
   echo "No collector session files provided; worker will run without LinkedIn/Liepin cookies."
+fi
+
+if grep -q '^LINKEDIN_AUTH_ENABLED=false' "${ENV_FILE}"; then
+  echo "Note: LINKEDIN_AUTH_ENABLED=false — LinkedIn collector will stay skipped."
+fi
+if grep -q '^LIEPIN_AUTH_ENABLED=false' "${ENV_FILE}"; then
+  echo "Note: LIEPIN_AUTH_ENABLED=false — Liepin collector will stay skipped."
 fi
 
 echo "Secrets applied in namespace ${NAMESPACE}."
