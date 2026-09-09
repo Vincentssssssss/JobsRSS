@@ -24,7 +24,7 @@ GCP_REGION="${GCP_REGION:-asia-southeast1}"
 AR_REPOSITORY="${AR_REPOSITORY:-jobsrss}"
 IMAGE_API="${IMAGE_API:-${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/jobsrss/jobsrss-api:2adea08}"
 API_TAG="${IMAGE_API##*:}"
-LOGIN_TAG="${LOGIN_TAG:-desktop-${API_TAG}-r1}"
+LOGIN_TAG="${LOGIN_TAG:-desktop-${API_TAG}-r2}"
 IMAGE_LOGIN="${IMAGE_LOGIN:-${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY}/jobsrss-linkedin-login:${LOGIN_TAG}}"
 
 # shellcheck source=gke-env.sh
@@ -76,7 +76,7 @@ ensure_login_image() {
     --project="${GCP_PROJECT_ID}" \
     --service-account="${CLOUDBUILD_SA_RESOURCE}" \
     --config="${LOGIN_CLOUDBUILD}" \
-    --substitutions="_REGION=${GCP_REGION},_AR_REPOSITORY=${AR_REPOSITORY},_API_TAG=${API_TAG},_LOGIN_TAG=${LOGIN_TAG}" \
+    --substitutions="_REGION=${GCP_REGION},_AR_REPOSITORY=${AR_REPOSITORY},_API_TAG=${API_TAG},_LOGIN_TAG=${LOGIN_TAG},_API_IMAGE=${IMAGE_API},_LOGIN_IMAGE=${IMAGE_LOGIN}" \
     "${REPO_ROOT}"
   require_ar_image "${IMAGE_LOGIN}"
 }
