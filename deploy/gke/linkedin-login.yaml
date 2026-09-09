@@ -18,8 +18,8 @@ spec:
         app.kubernetes.io/name: jobsrss
         app.kubernetes.io/component: linkedin-login
       annotations:
-        jobsrss/scripts-checksum: SCRIPT_CHECKSUM
-        jobsrss/forced-at: RESTART_TS
+        jobsrss/scripts-checksum: "SCRIPT_CHECKSUM"
+        jobsrss/forced-at: "RESTART_TS"
     spec:
       terminationGracePeriodSeconds: 5
       containers:

@@ -50,7 +50,7 @@ apply_login_manifest() {
   local work checksum restart_ts
   work="$(mktemp)"
   checksum="$(cat "${ROOT}/linkedin-login/start.sh" "${ROOT}/linkedin-login/session.py" | sha256sum | awk '{print $1}')"
-  restart_ts="$(date +%s)"
+  restart_ts="ts-$(date +%s)"
   kubectl -n "${NAMESPACE}" create configmap linkedin-login-scripts \
     --from-file=start.sh="${ROOT}/linkedin-login/start.sh" \
     --from-file=session.py="${ROOT}/linkedin-login/session.py" \
