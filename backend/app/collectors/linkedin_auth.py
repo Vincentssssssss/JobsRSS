@@ -192,12 +192,48 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
                 )
                 self.perform_login(page)
 
+            logger.info(
+                "collector_linkedin_fetch_start state=%s urls=%d",
+                bool(state_path),
+                len(search_urls),
+            )
             for search_url in search_urls:
                 try:
                     fallback_location = self._expected_location_from_search_url(search_url)
                     page.goto(search_url, wait_until="domcontentloaded", timeout=60000)
                     page.wait_for_timeout(3500)
                     cards = self._extract_linkedin_cards(page)
+                    title = ""
+                    final_url = search_url
+                    html_hint = ""
+                    try:
+                        title = (page.title() or "")[:180]
+                        final_url = page.url or search_url
+                        html_hint = (page.content() or "")[:2500].lower()
+                    except Exception:
+                        pass
+                    auth_wall = any(
+                        token in f"{title} {final_url} {html_hint}".lower()
+                        for token in (
+                            "authwall",
+                            "checkpoint",
+                            "login",
+                            "sign in",
+                            "join now",
+                            "security verification",
+                            "captcha",
+                            "登录",
+                            "加入领英",
+                        )
+                    )
+                    logger.info(
+                        "collector_linkedin_page url=%s final=%s title=%s cards=%d auth_wall=%s",
+                        search_url,
+                        final_url,
+                        title.replace("\n", " "),
+                        len(cards),
+                        auth_wall,
+                    )
                     for card in cards[:25]:
                         detail = self._collect_detail(context, card["job_url"])
                         merged = self._merge_job_data(card, detail, fallback_location=fallback_location)
@@ -219,6 +255,7 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
                         merged["status"] = "active"
                         results[source_job_id] = merged
                 except Exception:
+                    logger.exception("collector_linkedin_search_failed url=%s", search_url)
                     continue
 
             context.close()
