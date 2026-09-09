@@ -73,7 +73,7 @@ function buildPublicBase(): string {
     return "http://localhost:8000";
   }
   const { hostname, protocol, origin } = window.location;
-  if (hostname === "localhost" || hostname === "127.0.0.1") {
+  if (isLocalHostname(hostname)) {
     return `${protocol}//${hostname}:8000`;
   }
   return origin;
@@ -83,9 +83,17 @@ function normalizeBase(base: string): string {
   return (base || "").trim().replace(/\/+$/, "");
 }
 
+function isLocalHostname(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1";
+}
+
 function apiBaseCandidates(): string[] {
   const sameOrigin = "";
   const proxied = "/api/backend";
+  if (typeof window !== "undefined" && !isLocalHostname(window.location.hostname)) {
+    // GKE Gateway only listens on :80/:443. :8000 hangs for tens of seconds.
+    return [sameOrigin, proxied];
+  }
   const direct = normalizeBase(buildDirectBackendBase());
   const localhost = "http://localhost:8000";
   const loopback = "http://127.0.0.1:8000";
@@ -106,7 +114,10 @@ async function fetchJsonWithFallback<T>(path: string, params?: URLSearchParams):
     for (const base of candidates) {
       const target = `${base}${suffix}`;
       try {
-        const response = await fetch(target, { cache: "no-store" });
+        const response = await fetch(target, {
+          cache: "no-store",
+          signal: AbortSignal.timeout(2500),
+        });
         if (!response.ok) {
           continue;
         }
