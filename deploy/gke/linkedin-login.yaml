@@ -19,8 +19,9 @@ spec:
         app.kubernetes.io/component: linkedin-login
       annotations:
         jobsrss/scripts-checksum: SCRIPT_CHECKSUM
+        jobsrss/forced-at: RESTART_TS
     spec:
-      terminationGracePeriodSeconds: 20
+      terminationGracePeriodSeconds: 5
       containers:
         - name: login
           image: jobsrss-api:local

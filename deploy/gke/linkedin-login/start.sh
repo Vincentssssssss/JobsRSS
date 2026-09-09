@@ -9,6 +9,7 @@ export DEBIAN_FRONTEND=noninteractive
 export DISPLAY="${DISPLAY:-:99}"
 SESSION_DIR="${JOBSRSS_SESSION_DIR:-/session}"
 mkdir -p "${SESSION_DIR}"
+echo "linkedin_login_boot=3 bind6080=wait-page-then-novnc"
 
 wait_tcp() {
   local host="$1" port="$2" tries="${3:-60}"

@@ -6,11 +6,13 @@ set -euo pipefail
 #
 # Usage:
 #   IMAGE_API=... bash deploy/gke/scripts/linkedin-session.sh start
+#   bash deploy/gke/scripts/linkedin-session.sh port-forward
 #   bash deploy/gke/scripts/linkedin-session.sh status
 #   bash deploy/gke/scripts/linkedin-session.sh --export
 #   bash deploy/gke/scripts/linkedin-session.sh stop
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+REPO_ROOT="$(cd "${ROOT}/.." && pwd)"
 NAMESPACE="${NAMESPACE:-jobsrss}"
 ACTION="${1:-start}"
 ENV_FILE="${JOBSRSS_ENV_FILE:-$HOME/jobsrss.env.gke}"
@@ -22,56 +24,134 @@ IMAGE_API="${IMAGE_API:-${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/jobsrss/j
 # shellcheck source=gke-env.sh
 source "$(dirname "$0")/gke-env.sh"
 
+print_checkout() {
+  local sha branch
+  sha="$(git -C "${REPO_ROOT}" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+  branch="$(git -C "${REPO_ROOT}" branch --show-current 2>/dev/null || echo unknown)"
+  echo "linkedin-session checkout=${sha} branch=${branch}"
+}
+
+require_current_scripts() {
+  if grep -q start_wait_page "${ROOT}/linkedin-login/start.sh"; then
+    return 0
+  fi
+  echo "This ~/JobsRSS checkout is too old (start.sh has no 6080 wait page)."
+  echo "Cloud Shell 'git pull' on the wrong branch stays 'Already up to date'."
+  echo "Fix:"
+  echo "  git fetch origin"
+  echo "  git checkout cursor/jobs-intelligence-bootstrap-0a74"
+  echo "  git reset --hard origin/cursor/jobs-intelligence-bootstrap-0a74"
+  echo "  git log -1 --oneline"
+  exit 1
+}
+
 apply_login_manifest() {
   local image="${IMAGE_API:?Set IMAGE_API to the existing jobsrss-api image}"
-  local work checksum
+  local work checksum restart_ts
   work="$(mktemp)"
   checksum="$(cat "${ROOT}/linkedin-login/start.sh" "${ROOT}/linkedin-login/session.py" | sha256sum | awk '{print $1}')"
+  restart_ts="$(date +%s)"
   kubectl -n "${NAMESPACE}" create configmap linkedin-login-scripts \
     --from-file=start.sh="${ROOT}/linkedin-login/start.sh" \
     --from-file=session.py="${ROOT}/linkedin-login/session.py" \
     --dry-run=client -o yaml | kubectl apply -f - >/dev/null
   sed -e "s#image: jobsrss-api:local#image: ${image}#" \
     -e "s#SCRIPT_CHECKSUM#${checksum}#" \
+    -e "s#RESTART_TS#${restart_ts}#" \
     "${ROOT}/linkedin-login.yaml" > "${work}"
   kubectl apply -f "${work}"
   rm -f "${work}"
 }
 
+remove_old_login_pods() {
+  echo "Removing leftover linkedin-login pods so port-forward cannot hit a dying one..."
+  kubectl -n "${NAMESPACE}" scale deploy/linkedin-login --replicas=0 >/dev/null 2>&1 || true
+  kubectl -n "${NAMESPACE}" delete pod -l app.kubernetes.io/component=linkedin-login \
+    --wait=true --timeout=120s >/dev/null 2>&1 || true
+}
+
+wait_novnc() {
+  local i
+  echo "Waiting until the new pod serves http://127.0.0.1:6080/vnc.html ..."
+  for i in $(seq 1 120); do
+    if kubectl -n "${NAMESPACE}" exec deploy/linkedin-login -c login -- \
+      python3 -c 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:6080/vnc.html", timeout=3)' \
+      >/dev/null 2>&1; then
+      echo "NOVNC_READY :6080 /vnc.html"
+      return 0
+    fi
+    echo "  still installing desktop (${i}/120) — do not port-forward yet"
+    sleep 5
+  done
+  echo "Timed out waiting for /vnc.html. Recent logs:"
+  kubectl -n "${NAMESPACE}" logs deploy/linkedin-login -c login --tail=80 || true
+  return 1
+}
+
+ready_login_pod() {
+  kubectl -n "${NAMESPACE}" get pods -l app.kubernetes.io/component=linkedin-login -o json \
+  | python3 -c '
+import json, sys
+doc = json.load(sys.stdin)
+for item in doc.get("items", []):
+    if item.get("metadata", {}).get("deletionTimestamp"):
+        continue
+    status = item.get("status", {})
+    if status.get("phase") != "Running":
+        continue
+    for cs in status.get("containerStatuses") or []:
+        if cs.get("name") == "login" and cs.get("ready"):
+            print(item["metadata"]["name"])
+            raise SystemExit(0)
+raise SystemExit(1)
+'
+}
+
 case "${ACTION}" in
   start)
-    echo "This pod is ClusterIP only. Use kubectl port-forward; do not put it on demo-gateway."
+    print_checkout
+    require_current_scripts
+    echo "This pod is ClusterIP only. Do not put it on demo-gateway."
     echo "Same-IP login can still hit a LinkedIn checkpoint because the ASN is Google Cloud."
-    echo "You must complete login + 2FA yourself in noVNC."
     echo "A Windows GKE node does not help: egress is still a Google Cloud IP."
+    echo "Do not open a second terminal for port-forward until this script prints NOVNC_READY."
+    remove_old_login_pods
     apply_login_manifest
-    echo "Waiting for noVNC on :6080 (first start installs xvfb/novnc, ~1-3 minutes)..."
+    echo "Waiting for linkedin-login rollout..."
     kubectl -n "${NAMESPACE}" rollout status deploy/linkedin-login --timeout=600s
+    wait_novnc
+    POD="$(ready_login_pod)"
     echo
     echo "============================================================"
-    echo "/vnc.html?autoconnect=1&resize=remote  不要在 Cloud Shell 终端里输入。"
-    echo "那是浏览器地址栏的路径，接在 Web Preview 主机名后面。"
+    echo "NOVNC_READY pod=${POD}"
     echo
-    echo "1) 另开一个 Cloud Shell 终端，一直挂着（不要 Ctrl+C）："
-    echo "     kubectl -n ${NAMESPACE} port-forward svc/linkedin-login 6080:6080"
-    echo "   必须看到：Forwarding from 127.0.0.1:6080 -> 6080"
+    echo "/vnc.html?autoconnect=1&resize=remote  不要在终端里输入。"
+    echo "那是浏览器地址栏路径。"
     echo
-    echo "2) 原终端右上角 Web Preview（预览网页）-> Change port -> 6080 -> Preview"
+    echo "现在才开第二个 Cloud Shell 终端（一直挂着，不要 Ctrl+C）："
+    echo "  bash deploy/gke/scripts/linkedin-session.sh port-forward"
+    echo "或："
+    echo "  kubectl -n ${NAMESPACE} port-forward pod/${POD} 6080:6080"
+    echo "不要再用 svc/linkedin-login（会误连正在退出的旧 Pod）。"
     echo
-    echo "3) 浏览器打开后，只改地址栏路径（主机名保持 cloudshell.dev 给你的）："
-    echo "     https://6080-cs-xxxx.cloudshell.dev/vnc.html?autoconnect=1&resize=remote"
+    echo "然后：Web Preview -> Change port -> 6080 -> Preview"
+    echo "地址栏改成（只改路径，主机名保持 cloudshell.dev）："
+    echo "  https://6080-cs-xxxx.cloudshell.dev/vnc.html?autoconnect=1&resize=remote"
     echo
-    echo "4) 应出现黑底 noVNC 桌面和 LinkedIn 登录页。登录并完成 2FA，直到 Feed 出来。"
-    echo
-    echo "5) 回到这个终端："
-    echo "     bash deploy/gke/scripts/linkedin-session.sh --export"
-    echo "     bash deploy/gke/scripts/linkedin-session.sh stop"
+    echo "登录 LinkedIn 直到 Feed 出现，再回到这个终端："
+    echo "  bash deploy/gke/scripts/linkedin-session.sh --export"
+    echo "  bash deploy/gke/scripts/linkedin-session.sh stop"
     echo "============================================================"
-    echo
-    echo "If port-forward says connection refused, run:"
-    echo "  bash deploy/gke/scripts/linkedin-session.sh status"
+    ;;
+  port-forward|pf)
+    print_checkout
+    wait_novnc
+    POD="$(ready_login_pod)"
+    echo "Forwarding pod/${POD} 6080:6080  (leave this running; use Web Preview on 6080)"
+    exec kubectl -n "${NAMESPACE}" port-forward "pod/${POD}" 6080:6080
     ;;
   status)
+    print_checkout
     echo "--- pods ---"
     kubectl -n "${NAMESPACE}" get pods -l app.kubernetes.io/component=linkedin-login -o wide
     echo
@@ -110,7 +190,7 @@ case "${ACTION}" in
     echo "linkedin-login replicas=0"
     ;;
   *)
-    echo "Usage: $0 {start|status|--export|stop}"
+    echo "Usage: $0 {start|port-forward|status|--export|stop}"
     exit 1
     ;;
 esac

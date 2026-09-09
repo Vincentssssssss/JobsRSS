@@ -132,12 +132,25 @@ A laptop-minted LinkedIn cookie used from GKE usually yields `found=0`
 the only in-cluster option. It is interactive (you complete 2FA in noVNC)
 and still not guaranteed — LinkedIn can checkpoint Google Cloud IPs.
 
+Use the PR branch (plain `git pull` on `main` stays "Already up to date"
+and keeps the old login scripts):
+
 ```bash
+git fetch origin
+git checkout cursor/jobs-intelligence-bootstrap-0a74
+git reset --hard origin/cursor/jobs-intelligence-bootstrap-0a74
 export IMAGE_API=asia-southeast1-docker.pkg.dev/$GCP_PROJECT_ID/jobsrss/jobsrss-api:2adea08
 bash deploy/gke/scripts/linkedin-session.sh start
-# Wait until the script says noVNC is ready (1/1), then in another tab:
-kubectl -n jobsrss port-forward svc/linkedin-login 6080:6080
 ```
+
+Wait until the first terminal prints `NOVNC_READY`. Only then, in another tab:
+
+```bash
+bash deploy/gke/scripts/linkedin-session.sh port-forward
+```
+
+That forwards the Ready pod, not `svc/linkedin-login` (the Service can still
+select a terminating pod and yield `connection refused` on :6080).
 
 `/vnc.html?autoconnect=1&resize=remote` is a **browser address-bar path**,
 not a Cloud Shell command. After Web Preview opens port 6080, keep the
@@ -145,9 +158,8 @@ not a Cloud Shell command. After Web Preview opens port 6080, keep the
 
 `https://6080-cs-xxxx.cloudshell.dev/vnc.html?autoconnect=1&resize=remote`
 
-If port-forward reports `connection refused`, the desktop is not listening
-yet. Re-run `start` from current git, wait for Ready, then
-`bash deploy/gke/scripts/linkedin-session.sh status`.
+If port-forward reports `connection refused`, you started it before
+`NOVNC_READY`. Run `bash deploy/gke/scripts/linkedin-session.sh status`.
 
 ```bash
 bash deploy/gke/scripts/linkedin-session.sh --export
