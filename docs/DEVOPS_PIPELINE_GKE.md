@@ -167,17 +167,42 @@ bash deploy/gke/scripts/linkedin-session.sh --export
 bash deploy/gke/scripts/linkedin-session.sh stop
 ```
 
-Cloud Shell Web Preview often cannot show the desktop. Prefer the laptop
-browser through an SSH local forward (not `*.cloudshell.dev`):
+Cloud Shell Web Preview cannot show this desktop: it resets custom paths to
+`/` and does not proxy the noVNC WebSocket. Any interactive session needs a
+browser or RDP client outside Cloud Shell.
+
+### Option A: laptop browser into the Linux pod (no new infrastructure)
 
 ```bash
-# Cloud Shell, after NOVNC_READY
-bash deploy/gke/scripts/linkedin-session.sh port-forward
-
-# Laptop
-gcloud cloud-shell ssh --ssh-flag='-L 8080:127.0.0.1:8080'
-# then http://127.0.0.1:8080/
+gcloud container clusters get-credentials asp-gke-dev-gke-d9df \
+  --zone=asia-southeast1-a --project=$GCP_PROJECT_ID
+kubectl -n jobsrss port-forward deploy/linkedin-login 6080:6080 8080:8080
 ```
+
+Open `http://127.0.0.1:6080/` in the laptop browser for the full noVNC
+desktop (real mouse and keyboard). `http://127.0.0.1:8080/` is the fallback
+form. Then `linkedin-session.sh --export`.
+
+### Option B: Windows desktop VM
+
+Windows **containers do not support RDP or GUI** — Microsoft removed both by
+design — so a Windows node pool or "Windows pod" cannot give an interactive
+desktop. Use a Windows VM in the existing VPC instead. Placing it on the GKE
+subnet with no external IP makes it share the same Cloud NAT egress IP as the
+worker.
+
+```bash
+bash deploy/gke/scripts/windows-login-vm.sh create
+bash deploy/gke/scripts/windows-login-vm.sh password   # copy it once
+bash deploy/gke/scripts/windows-login-vm.sh tunnel     # on your laptop
+# Microsoft Remote Desktop -> 127.0.0.1:13389
+# desktop icons: 1-start-linkedin-login.bat, then 2-export-cookies.bat
+bash deploy/gke/scripts/windows-login-vm.sh export
+bash deploy/gke/scripts/windows-login-vm.sh delete
+```
+
+The VM bills Windows licensing while it runs. Delete it once the cookie is
+exported.
 
 ## Pause worker / save Azure LLM spend
 
