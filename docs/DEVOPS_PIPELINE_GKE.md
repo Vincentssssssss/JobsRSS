@@ -127,20 +127,30 @@ the site rejecting the cluster egress IP.
 bash deploy/gke/scripts/check-collectors.sh
 ```
 
-### Simplest path: log in locally, push the cookie into the cluster
+### Simplest path: drive the in-cluster browser from your own machine
 
-Run this from any machine that has `kubectl` and a desktop browser. It does
-not need `~/jobsrss.env.gke`, and it never prints cookie values.
+The browser stays in the cluster, so LinkedIn sees the GKE egress IP. Your
+laptop is only the screen. This needs `kubectl` and a browser, no Playwright
+locally, and no `~/jobsrss.env.gke` on that machine.
 
 ```bash
+gcloud auth login            # must be the account that can read the cluster
+gcloud config set account <that-account>
 gcloud container clusters get-credentials asp-gke-dev-gke-d9df \
   --zone=asia-southeast1-a --project=gcp-bcgx-dev-vincents-d597
-python3 -m pip install playwright && python3 -m playwright install chromium
 
-bash deploy/gke/scripts/cookie-to-k8s.sh                 # linkedin: mint + push
-bash deploy/gke/scripts/cookie-to-k8s.sh all liepin
+bash deploy/gke/scripts/cookie-to-k8s.sh desktop     # leave running
+# local browser -> http://127.0.0.1:6080/   (fallback http://127.0.0.1:8080/)
+# log in until the feed loads, then Ctrl+C
+
+bash deploy/gke/scripts/cookie-to-k8s.sh from-pod
 bash deploy/gke/scripts/cookie-to-k8s.sh check
 ```
+
+Minting on the laptop instead (`cookie-to-k8s.sh all`) works mechanically but
+uses the laptop IP, which LinkedIn usually rejects once the worker reuses the
+cookie. On Homebrew Python, install Playwright in a venv and pass
+`PYTHON_BIN=~/.jobsrss-venv/bin/python`.
 
 It patches `jobsrss-collector-files`, sets the matching `*_AUTH_ENABLED`
 flag in `jobsrss-env`, and restarts the worker, which then refreshes jobs on

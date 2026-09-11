@@ -8,10 +8,15 @@ set -euo pipefail
 # and never prints cookie values.
 #
 # Usage:
-#   bash deploy/gke/scripts/cookie-to-k8s.sh              # mint linkedin, then push
+#   bash deploy/gke/scripts/cookie-to-k8s.sh desktop      # cluster-IP browser, drive it locally
+#   bash deploy/gke/scripts/cookie-to-k8s.sh from-pod     # take that pod's cookie into the secret
+#   bash deploy/gke/scripts/cookie-to-k8s.sh              # mint locally instead (laptop egress IP)
 #   bash deploy/gke/scripts/cookie-to-k8s.sh mint liepin
 #   bash deploy/gke/scripts/cookie-to-k8s.sh push linkedin ~/secrets/linkedin_state.json
 #   bash deploy/gke/scripts/cookie-to-k8s.sh check
+#
+# desktop + from-pod keep the GKE egress IP. Plain mint uses your laptop IP,
+# which LinkedIn usually rejects when the worker later reuses the cookie.
 
 REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 NAMESPACE="${NAMESPACE:-jobsrss}"
@@ -38,10 +43,17 @@ require_cluster() {
 }
 
 mint_state() {
+  echo "NOTE: this mints the cookie on THIS machine's IP."
+  echo "LinkedIn usually rejects it once the GKE worker reuses it."
+  echo "For the cluster egress IP use: cookie-to-k8s.sh desktop"
   if ! "${PYTHON_BIN}" -c "import playwright" >/dev/null 2>&1; then
-    echo "Playwright is missing locally. Install it once:"
-    echo "  ${PYTHON_BIN} -m pip install playwright"
-    echo "  ${PYTHON_BIN} -m playwright install chromium"
+    echo
+    echo "Playwright is missing locally. Homebrew Python blocks plain pip (PEP 668),"
+    echo "so use a virtualenv:"
+    echo "  python3 -m venv ~/.jobsrss-venv"
+    echo "  ~/.jobsrss-venv/bin/pip install playwright"
+    echo "  ~/.jobsrss-venv/bin/playwright install chromium"
+    echo "  PYTHON_BIN=~/.jobsrss-venv/bin/python bash $0 ${ACTION} ${SITE}"
     exit 1
   fi
   mkdir -p "$(dirname "${STATE_FILE}")"
@@ -113,7 +125,60 @@ for key in ("LINKEDIN_AUTH_ENABLED", "LIEPIN_AUTH_ENABLED"):
     || echo "no collector lines yet; the worker runs LinkedIn every 20 minutes"
 }
 
+wait_login_pod() {
+  local i
+  kubectl -n "${NAMESPACE}" scale deploy/linkedin-login --replicas=1 >/dev/null
+  for i in $(seq 1 120); do
+    if kubectl -n "${NAMESPACE}" exec deploy/linkedin-login -c login -- \
+      python3 -c 'import pathlib,sys; sys.exit(0 if pathlib.Path("/tmp/novnc.ready").exists() else 1)' \
+      >/dev/null 2>&1; then
+      return 0
+    fi
+    echo "  waiting for the in-cluster desktop (${i}/120)"
+    sleep 5
+  done
+  echo "Desktop never became ready. Logs:"
+  kubectl -n "${NAMESPACE}" logs deploy/linkedin-login -c login --tail=80 || true
+  return 1
+}
+
 case "${ACTION}" in
+  desktop)
+    require_cluster
+    if ! kubectl -n "${NAMESPACE}" get deploy/linkedin-login >/dev/null 2>&1; then
+      echo "deploy/linkedin-login does not exist yet. Create it once from Cloud Shell:"
+      echo "  export IMAGE_API=asia-southeast1-docker.pkg.dev/gcp-bcgx-dev-vincents-d597/jobsrss/jobsrss-api:2adea08"
+      echo "  bash deploy/gke/scripts/linkedin-session.sh start"
+      exit 1
+    fi
+    wait_login_pod
+    echo
+    echo "The browser runs inside the cluster, so LinkedIn sees the GKE egress IP."
+    echo "Your local browser is only a screen for it."
+    echo
+    echo "Open this in your local browser once the forward is up:"
+    echo "  http://127.0.0.1:6080/"
+    echo "Fallback if the desktop will not paint: http://127.0.0.1:8080/"
+    echo
+    echo "Leave this running. Ctrl+C when the LinkedIn feed has loaded, then:"
+    echo "  bash deploy/gke/scripts/cookie-to-k8s.sh from-pod"
+    echo
+    exec kubectl -n "${NAMESPACE}" port-forward deploy/linkedin-login 6080:6080 8080:8080
+    ;;
+  from-pod)
+    require_cluster
+    WORK="$(mktemp -d)"
+    echo "Asking the in-cluster browser to save its ${SITE} cookies..."
+    kubectl -n "${NAMESPACE}" exec deploy/linkedin-login -c login -- \
+      python3 -c 'import urllib.request; req=urllib.request.Request("http://127.0.0.1:8080/export",method="POST"); print(urllib.request.urlopen(req,timeout=30).read().decode())'
+    kubectl -n "${NAMESPACE}" exec deploy/linkedin-login -c login -- \
+      cat "/session/${SECRET_KEY}" > "${WORK}/${SECRET_KEY}"
+    STATE_FILE="${WORK}/${SECRET_KEY}"
+    push_state
+    echo
+    echo "Scale the desktop back down:"
+    echo "  kubectl -n ${NAMESPACE} scale deploy/linkedin-login --replicas=0"
+    ;;
   all)
     mint_state
     push_state
@@ -130,7 +195,7 @@ case "${ACTION}" in
     check_state
     ;;
   *)
-    echo "Usage: $0 {all|mint|push|check} [linkedin|liepin] [state.json]"
+    echo "Usage: $0 {desktop|from-pod|all|mint|push|check} [linkedin|liepin] [state.json]"
     exit 1
     ;;
 esac
