@@ -6,11 +6,10 @@ set -euo pipefail
 #   bash deploy/gke/scripts/apply-secrets.sh /path/to/.env.gke [/path/to/secrets-dir]
 #
 # secrets-dir may contain:
-#   linkedin_state.json
 #   liepin_state.json
 #
-# New session files are merged into jobsrss-collector-files. Uploading only
-# Liepin does not delete an existing LinkedIn cookie, and the reverse.
+# LinkedIn collection is intentionally disabled on GKE. This script only keeps
+# the optional Liepin session.
 
 ENV_FILE="${1:?Usage: apply-secrets.sh /path/to/.env.gke [/path/to/secrets-dir]}"
 SECRETS_DIR="${2:-}"
@@ -21,6 +20,11 @@ trap 'rm -rf "$WORK"' EXIT
 
 if [ ! -f "$ENV_FILE" ]; then
   echo "Missing env file: $ENV_FILE"
+  exit 1
+fi
+if ! grep -q '^LINKEDIN_AUTH_ENABLED=false' "${ENV_FILE}"; then
+  echo "Refusing to enable LinkedIn on GKE."
+  echo "Set LINKEDIN_AUTH_ENABLED=false in ${ENV_FILE}."
   exit 1
 fi
 
@@ -41,7 +45,7 @@ raw = subprocess.check_output(
 )
 doc = json.loads(raw)
 for name, encoded in (doc.get("data") or {}).items():
-    if name not in {"linkedin_state.json", "liepin_state.json"}:
+    if name != "liepin_state.json":
         continue
     path = os.path.join(dest, name)
     with open(path, "wb") as handle:
@@ -58,7 +62,7 @@ fi
 search_dirs+=("${HOME}/secrets" "${HOME}")
 
 echo "Looking for collector session files in: ${search_dirs[*]}"
-for name in linkedin_state.json liepin_state.json; do
+for name in liepin_state.json; do
   src=""
   for dir in "${search_dirs[@]}"; do
     if [ -f "${dir}/${name}" ]; then
@@ -75,16 +79,15 @@ for name in linkedin_state.json liepin_state.json; do
 done
 if [ -n "${SECRETS_DIR}" ] && [ "${#copied[@]}" -eq 0 ]; then
   echo
-  echo "No linkedin_state.json or liepin_state.json in ${SECRETS_DIR}, ~/secrets, or \$HOME."
+  echo "No liepin_state.json in ${SECRETS_DIR}, ~/secrets, or \$HOME."
   echo "Cloud Shell uploads often land in \$HOME. Copy them first:"
   echo "  mkdir -p ~/secrets"
-  echo "  cp ~/linkedin_state.json ~/secrets/linkedin_state.json"
   echo "  cp ~/liepin_state.json ~/secrets/liepin_state.json"
   exit 1
 fi
 
 from_file_args=()
-for name in linkedin_state.json liepin_state.json; do
+for name in liepin_state.json; do
   if [ -f "${WORK}/${name}" ]; then
     from_file_args+=(--from-file="${name}=${WORK}/${name}")
   fi
@@ -104,12 +107,15 @@ if [ "${#from_file_args[@]}" -gt 0 ]; then
   kubectl -n "${NAMESPACE}" get secret jobsrss-collector-files -o json \
     | python3 -c 'import json,sys; print(" ".join(sorted(json.load(sys.stdin).get("data") or {})))'
 else
-  echo "No collector session files provided; worker will run without LinkedIn/Liepin cookies."
+  echo "No Liepin session file provided; official collectors still run."
 fi
 
-if grep -q '^LINKEDIN_AUTH_ENABLED=false' "${ENV_FILE}"; then
-  echo "Note: LINKEDIN_AUTH_ENABLED=false — LinkedIn collector will stay skipped."
-fi
+# Remove any stale LinkedIn cookie without touching the Liepin key.
+kubectl -n "${NAMESPACE}" patch secret jobsrss-collector-files --type=json \
+  -p='[{"op":"remove","path":"/data/linkedin_state.json"}]' \
+  >/dev/null 2>&1 || true
+
+echo "LinkedIn collectors are disabled on GKE."
 if grep -q '^LIEPIN_AUTH_ENABLED=false' "${ENV_FILE}"; then
   echo "Note: LIEPIN_AUTH_ENABLED=false — Liepin collector will stay skipped."
 fi

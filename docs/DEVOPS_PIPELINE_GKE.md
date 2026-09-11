@@ -78,9 +78,9 @@ It may still create (if missing):
 Skip creating a JSON key unless you later enable GitHub Actions.
 
 Autopilot already NATs node egress. Official collectors (Microsoft, BCG, etc.)
-can reach the public internet. LinkedIn/Liepin from GKE IPs are still usually
-blocked; leave those collectors disabled unless you front the worker with a
-residential VPN.
+can reach the public internet. LinkedIn collection is intentionally disabled
+on GKE because Google Cloud datacenter egress is blocked. Liepin remains
+optional.
 
 ## 3) App secrets (once per cluster, from Cloud Shell)
 
@@ -101,138 +101,31 @@ bash deploy/gke/scripts/apply-route.sh
 kubectl -n jobsrss describe httproute jobsrss
 ```
 
-`/path/to/secrets` is optional. If present it may contain:
+`/path/to/secrets` is optional. On GKE it may only contain
+`liepin_state.json`. `apply-secrets.sh` refuses
+`LINKEDIN_AUTH_ENABLED=true` and removes stale `linkedin_state.json` data.
 
-- `linkedin_state.json`
-- `liepin_state.json`
-
-Those files are merged into Secret `jobsrss-collector-files` and mounted at
-`/secrets` (read-only). Uploading only one file keeps the other cookie.
-
-To enable both platforms on GKE after the files are in `~/secrets`:
+To enable Liepin:
 
 ```bash
-sed -i 's/^LINKEDIN_AUTH_ENABLED=.*/LINKEDIN_AUTH_ENABLED=true/' ~/jobsrss.env.gke
 sed -i 's/^LIEPIN_AUTH_ENABLED=.*/LIEPIN_AUTH_ENABLED=true/' ~/jobsrss.env.gke
 bash deploy/gke/scripts/apply-secrets.sh ~/jobsrss.env.gke ~/secrets
-kubectl -n jobsrss rollout restart deploy/api deploy/worker
+kubectl -n jobsrss rollout restart deploy/worker
 ```
 
-GKE datacenter IPs are often blocked by LinkedIn/Liepin even with a valid
-session file. Kubernetes does not strip cookies from the mounted Secret; the
-usual failures are a disabled flag, a missing `~/secrets/*.json` filename, or
-the site rejecting the cluster egress IP.
+Apply the supported GKE mode once to remove any old LinkedIn login resources,
+keep official/Liepin collection, and retain cost-controlled LLM scoring:
 
 ```bash
+bash deploy/gke/scripts/jobsrss-control.sh mainstream-mode
 bash deploy/gke/scripts/check-collectors.sh
 ```
 
-### Simplest path: drive the in-cluster browser from your own machine
-
-The browser stays in the cluster, so LinkedIn sees the GKE egress IP. Your
-laptop is only the screen. This needs `kubectl` and a browser, no Playwright
-locally, and no `~/jobsrss.env.gke` on that machine.
-
-```bash
-gcloud auth login            # must be the account that can read the cluster
-gcloud config set account <that-account>
-gcloud components install gke-gcloud-auth-plugin   # kubectl cannot auth without it
-gcloud container clusters get-credentials asp-gke-dev-gke-d9df \
-  --zone=asia-southeast1-a --project=gcp-bcgx-dev-vincents-d597
-
-bash deploy/gke/scripts/cookie-to-k8s.sh desktop     # leave running
-# local browser -> http://127.0.0.1:6080/   (fallback http://127.0.0.1:8080/)
-# log in until the feed loads, then Ctrl+C
-
-bash deploy/gke/scripts/cookie-to-k8s.sh from-pod
-bash deploy/gke/scripts/cookie-to-k8s.sh check
-```
-
-Minting on the laptop instead (`cookie-to-k8s.sh all`) works mechanically but
-uses the laptop IP, which LinkedIn usually rejects once the worker reuses the
-cookie. On Homebrew Python, install Playwright in a venv and pass
-`PYTHON_BIN=~/.jobsrss-venv/bin/python`.
-
-It patches `jobsrss-collector-files`, sets the matching `*_AUTH_ENABLED`
-flag in `jobsrss-env`, and restarts the worker, which then refreshes jobs on
-its own schedule until the cookie expires. Re-run the same command to renew.
-
-A laptop-minted LinkedIn cookie used from GKE often still yields `found=0`
-(datacenter ASN). Minting the session **on the same cluster egress IP** is
-the in-cluster alternative below. It is interactive and still not
-guaranteed — LinkedIn can checkpoint Google Cloud IPs.
-
-Use the PR branch (plain `git pull` on `main` stays "Already up to date"
-and keeps the old login scripts):
-
-```bash
-git fetch origin
-git checkout cursor/jobs-intelligence-bootstrap-0a74
-git reset --hard origin/cursor/jobs-intelligence-bootstrap-0a74
-export IMAGE_API=asia-southeast1-docker.pkg.dev/$GCP_PROJECT_ID/jobsrss/jobsrss-api:2adea08
-bash deploy/gke/scripts/linkedin-session.sh start
-```
-
-`start` Cloud Builds `jobsrss-linkedin-login` (xvfb/x11vnc/novnc on top of
-`jobsrss-api:2adea08`). Do not `docker build` that image in Cloud Shell.
-Runtime `apt-get` inside the login pod is what caused CrashLoopBackOff
-(`6080 connection refused` then kubelet restart).
-
-Wait until the first terminal prints `NOVNC_READY`. Only then, in another tab:
-
-```bash
-bash deploy/gke/scripts/linkedin-session.sh port-forward
-```
-
-That forwards the Ready pod (8080 HTTP login + 6080 noVNC), not
-`svc/linkedin-login`.
-
-Do **not** edit the Cloud Shell Web Preview address bar. Preview resets
-custom paths back to `/`, which looks like a blank spinning page.
-Prefer Web Preview port **8080** (screenshot + login form). Port 6080 is
-the desktop; Cloud Shell often cannot proxy its WebSocket.
-
-```bash
-bash deploy/gke/scripts/linkedin-session.sh --export
-bash deploy/gke/scripts/linkedin-session.sh stop
-```
-
-Cloud Shell Web Preview cannot show this desktop: it resets custom paths to
-`/` and does not proxy the noVNC WebSocket. Any interactive session needs a
-browser or RDP client outside Cloud Shell.
-
-### Option A: laptop browser into the Linux pod (no new infrastructure)
-
-```bash
-gcloud container clusters get-credentials asp-gke-dev-gke-d9df \
-  --zone=asia-southeast1-a --project=$GCP_PROJECT_ID
-kubectl -n jobsrss port-forward deploy/linkedin-login 6080:6080 8080:8080
-```
-
-Open `http://127.0.0.1:6080/` in the laptop browser for the full noVNC
-desktop (real mouse and keyboard). `http://127.0.0.1:8080/` is the fallback
-form. Then `linkedin-session.sh --export`.
-
-### Option B: Windows desktop VM
-
-Windows **containers do not support RDP or GUI** — Microsoft removed both by
-design — so a Windows node pool or "Windows pod" cannot give an interactive
-desktop. Use a Windows VM in the existing VPC instead. Placing it on the GKE
-subnet with no external IP makes it share the same Cloud NAT egress IP as the
-worker.
-
-```bash
-bash deploy/gke/scripts/windows-login-vm.sh create
-bash deploy/gke/scripts/windows-login-vm.sh password   # copy it once
-bash deploy/gke/scripts/windows-login-vm.sh tunnel     # on your laptop
-# Microsoft Remote Desktop -> 127.0.0.1:13389
-# desktop icons: 1-start-linkedin-login.bat, then 2-export-cookies.bat
-bash deploy/gke/scripts/windows-login-vm.sh export
-bash deploy/gke/scripts/windows-login-vm.sh delete
-```
-
-The VM bills Windows licensing while it runs. Delete it once the cookie is
-exported.
+`mainstream-mode` enables official sources and LLM reranking, disables both
+LinkedIn collectors, deletes the old login Deployment/Service/ConfigMap and
+cookie, and restarts the worker. Liepin's current enabled/disabled state is
+left unchanged. LLM only processes new or changed unscored jobs, at most 60
+per run.
 
 ## Pause worker / save Azure LLM spend
 
@@ -247,10 +140,6 @@ bash deploy/gke/scripts/jobsrss-control.sh llm-off       # collect, but no Azure
 bash deploy/gke/scripts/jobsrss-control.sh llm-on
 ```
 
-This is a Linux GUI pod (Xvfb + noVNC), not a headless collector. Do not add a
-Windows node pool for LinkedIn: GKE Windows egress is still a Google Cloud IP.
-
-The login Service is ClusterIP only. Do not attach it to `demo-gateway`.
 CI never overwrites `jobsrss-env`; missing that secret fails the deploy on
 purpose.
 

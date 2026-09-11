@@ -9,7 +9,7 @@ set -euo pipefail
 #   bash deploy/gke/scripts/jobsrss-control.sh worker-start
 #   bash deploy/gke/scripts/jobsrss-control.sh llm-off
 #   bash deploy/gke/scripts/jobsrss-control.sh llm-on
-#   bash deploy/gke/scripts/jobsrss-control.sh login-stop
+#   bash deploy/gke/scripts/jobsrss-control.sh mainstream-mode
 
 NAMESPACE="${NAMESPACE:-jobsrss}"
 ENV_FILE="${JOBSRSS_ENV_FILE:-$HOME/jobsrss.env.gke}"
@@ -40,10 +40,22 @@ set_env_flag() {
   bash "$(dirname "$0")/apply-secrets.sh" "${ENV_FILE}"
 }
 
+persist_env_value() {
+  local key="$1" value="$2"
+  if [ ! -f "${ENV_FILE}" ]; then
+    return
+  fi
+  if grep -q "^${key}=" "${ENV_FILE}"; then
+    sed -i "s/^${key}=.*/${key}=${value}/" "${ENV_FILE}"
+  else
+    echo "${key}=${value}" >> "${ENV_FILE}"
+  fi
+}
+
 case "${ACTION}" in
   status)
     echo "=== deployments ==="
-    kubectl -n "${NAMESPACE}" get deploy worker linkedin-login api frontend \
+    kubectl -n "${NAMESPACE}" get deploy worker api frontend \
       -o custom-columns=NAME:.metadata.name,READY:.status.readyReplicas,DESIRED:.spec.replicas \
       2>/dev/null || kubectl -n "${NAMESPACE}" get deploy
     echo
@@ -56,8 +68,7 @@ case "${ACTION}" in
     ;;
   worker-stop|pause)
     kubectl -n "${NAMESPACE}" scale deploy/worker --replicas=0
-    kubectl -n "${NAMESPACE}" scale deploy/linkedin-login --replicas=0 2>/dev/null || true
-    echo "worker=0 linkedin-login=0"
+    echo "worker=0"
     echo "No collectors and no LLM rerank until worker-start."
     echo "Portal (api/frontend) is unchanged."
     ;;
@@ -81,12 +92,50 @@ case "${ACTION}" in
       echo "LLM_RERANK_ENABLED=true. Worker restarted."
     fi
     ;;
-  login-stop)
-    kubectl -n "${NAMESPACE}" scale deploy/linkedin-login --replicas=0 2>/dev/null || true
-    echo "linkedin-login=0"
+  mainstream-mode)
+    for pair in \
+      "LINKEDIN_AUTH_ENABLED false" \
+      "LINKEDIN_EMAIL_ENABLED false" \
+      "OFFICIAL_SOURCES_ENABLED true" \
+      "LLM_RERANK_ENABLED true" \
+      "LLM_ONLY_UNSCORED true" \
+      "LLM_MAX_JOBS_PER_RUN 60"
+    do
+      read -r key value <<< "${pair}"
+      persist_env_value "${key}" "${value}"
+    done
+
+    kubectl -n "${NAMESPACE}" patch secret jobsrss-env --type=merge -p \
+      '{"stringData":{
+        "LINKEDIN_AUTH_ENABLED":"false",
+        "LINKEDIN_EMAIL_ENABLED":"false",
+        "OFFICIAL_SOURCES_ENABLED":"true",
+        "LLM_RERANK_ENABLED":"true",
+        "LLM_ONLY_UNSCORED":"true",
+        "LLM_MAX_JOBS_PER_RUN":"60"
+      }}' >/dev/null
+
+    kubectl -n "${NAMESPACE}" delete deploy/linkedin-login svc/linkedin-login \
+      configmap/linkedin-login-scripts --ignore-not-found
+    kubectl -n "${NAMESPACE}" patch secret jobsrss-collector-files --type=json \
+      -p='[{"op":"remove","path":"/data/linkedin_state.json"}]' \
+      >/dev/null 2>&1 || true
+
+    kubectl -n "${NAMESPACE}" scale deploy/worker --replicas=1
+    kubectl -n "${NAMESPACE}" rollout restart deploy/worker
+    echo "GKE mainstream mode enabled:"
+    echo "  LinkedIn auth/email: disabled"
+    echo "  Official sources: enabled"
+    echo "  Liepin: unchanged"
+    echo "  LLM: enabled, only new/changed unscored jobs, max 60 per run"
+    if [ -f "${ENV_FILE}" ]; then
+      echo "Persisted in ${ENV_FILE}"
+    else
+      echo "Warning: ${ENV_FILE} is missing; Kubernetes is updated, but a future secret apply could overwrite these values."
+    fi
     ;;
   *)
-    echo "Usage: $0 {status|worker-stop|worker-start|llm-off|llm-on|login-stop}"
+    echo "Usage: $0 {status|worker-stop|worker-start|llm-off|llm-on|mainstream-mode}"
     exit 1
     ;;
 esac

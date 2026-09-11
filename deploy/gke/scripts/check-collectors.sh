@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Diagnose LinkedIn/Liepin collection on the live GKE worker.
+# Diagnose official/Liepin collection and LLM scoring on the live GKE worker.
 # Prints flags, whether cookie files are mounted, and relevant log lines.
 # Does not print cookie contents.
 
@@ -13,10 +13,13 @@ import base64, json, sys
 data = json.load(sys.stdin).get("data") or {}
 keys = [
     "LINKEDIN_AUTH_ENABLED",
+    "LINKEDIN_EMAIL_ENABLED",
     "LIEPIN_AUTH_ENABLED",
-    "LINKEDIN_REQUIRE_STORAGE_STATE",
-    "LINKEDIN_AUTH_STORAGE_STATE_PATH",
     "LIEPIN_AUTH_STORAGE_STATE_PATH",
+    "OFFICIAL_SOURCES_ENABLED",
+    "LLM_RERANK_ENABLED",
+    "LLM_ONLY_UNSCORED",
+    "LLM_MAX_JOBS_PER_RUN",
 ]
 for key in keys:
     raw = data.get(key)
@@ -46,18 +49,15 @@ else
 fi
 
 echo
-echo "== worker log lines for LinkedIn/Liepin (last 400) =="
+echo "== worker log lines for official/Liepin/LLM (last 400) =="
 kubectl -n "${NAMESPACE}" logs deploy/worker -c worker --tail=400 \
-  | grep -E 'linkedin|liepin|storage_state|collector_skipped|collector_run |collector_run_failed|auth_wall|missing_storage' \
+  | grep -E 'official_|liepin|llm_rerank|storage_state|collector_skipped|collector_run |collector_run_failed|auth_wall|missing_storage' \
   || echo "no matching worker log lines yet"
 
 echo
 echo "== jobs already in the API =="
 echo "Use these from Cloud Shell or a laptop:"
-echo "  curl -sS http://jobsrss.vincentspace.com/jobs?source=linkedin_auth&limit=1"
 echo "  curl -sS http://jobsrss.vincentspace.com/jobs?source=liepin_auth&limit=1"
 echo
-echo "If flags are false, cookies were never applied, or /secrets is empty,"
-echo "this is configuration, not cookie interception."
-echo "If flags are true, files are mounted, and logs show login/auth walls,"
-echo "LinkedIn/Liepin are rejecting the GKE datacenter egress IP."
+echo "Expected GKE mode: LinkedIn flags false; official + LLM true."
+echo "Liepin is optional and needs /secrets/liepin_state.json only when enabled."
