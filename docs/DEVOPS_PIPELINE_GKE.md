@@ -136,6 +136,7 @@ locally, and no `~/jobsrss.env.gke` on that machine.
 ```bash
 gcloud auth login            # must be the account that can read the cluster
 gcloud config set account <that-account>
+gcloud components install gke-gcloud-auth-plugin   # kubectl cannot auth without it
 gcloud container clusters get-credentials asp-gke-dev-gke-d9df \
   --zone=asia-southeast1-a --project=gcp-bcgx-dev-vincents-d597
 

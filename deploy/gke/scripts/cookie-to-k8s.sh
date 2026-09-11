@@ -33,13 +33,37 @@ esac
 SECRET_KEY="${SITE}_state.json"
 
 require_cluster() {
-  if ! kubectl -n "${NAMESPACE}" get deploy/worker >/dev/null 2>&1; then
-    echo "Cannot see deploy/worker in namespace ${NAMESPACE}."
-    echo "Point kubectl at the cluster first:"
+  local err
+  if err="$(kubectl -n "${NAMESPACE}" get deploy/worker 2>&1 >/dev/null)"; then
+    return 0
+  fi
+  if printf '%s' "${err}" | grep -q 'gke-gcloud-auth-plugin'; then
+    echo "kubectl cannot authenticate: gke-gcloud-auth-plugin is missing."
+    echo "The Homebrew gcloud-cli cask uses gcloud's own component manager:"
+    echo "  gcloud components install gke-gcloud-auth-plugin"
+    echo "  gke-gcloud-auth-plugin --version"
     echo "  gcloud container clusters get-credentials asp-gke-dev-gke-d9df \\"
     echo "    --zone=asia-southeast1-a --project=gcp-bcgx-dev-vincents-d597"
+    echo
+    echo "If the component manager is disabled, skip local kubectl entirely:"
+    echo "  bash deploy/gke/scripts/cookie-to-k8s.sh cloudshell"
     exit 1
   fi
+  if printf '%s' "${err}" | grep -qi 'forbidden\|permission'; then
+    echo "kubectl reached the cluster but this account is not allowed."
+    echo "Active account: $(gcloud config get-value account 2>/dev/null)"
+    echo "Switch to the account you use in Cloud Shell:"
+    echo "  gcloud auth login"
+    echo "  gcloud config set account <cloud-shell-account>"
+    exit 1
+  fi
+  echo "Cannot see deploy/worker in namespace ${NAMESPACE}."
+  echo "${err}"
+  echo
+  echo "Point kubectl at the cluster first:"
+  echo "  gcloud container clusters get-credentials asp-gke-dev-gke-d9df \\"
+  echo "    --zone=asia-southeast1-a --project=gcp-bcgx-dev-vincents-d597"
+  exit 1
 }
 
 mint_state() {
@@ -143,6 +167,30 @@ wait_login_pod() {
 }
 
 case "${ACTION}" in
+  cloudshell)
+    cat <<'EOS'
+No local kubectl needed. Cloud Shell holds the forward; your browser is local.
+
+1) Cloud Shell tab (keep it running):
+     cd ~/JobsRSS
+     git pull origin cursor/jobs-intelligence-bootstrap-0a74
+     bash deploy/gke/scripts/cookie-to-k8s.sh desktop
+
+2) Local terminal (keep it running):
+     gcloud cloud-shell ssh --ssh-flag='-L 6080:127.0.0.1:6080' \
+                            --ssh-flag='-L 8080:127.0.0.1:8080'
+
+3) Local browser:
+     http://127.0.0.1:6080/        (fallback http://127.0.0.1:8080/)
+   Log into LinkedIn until the feed loads.
+
+4) Back in the Cloud Shell tab: Ctrl+C, then
+     bash deploy/gke/scripts/cookie-to-k8s.sh from-pod
+     bash deploy/gke/scripts/cookie-to-k8s.sh check
+
+The browser still runs in the cluster, so LinkedIn sees the GKE egress IP.
+EOS
+    ;;
   desktop)
     require_cluster
     if ! kubectl -n "${NAMESPACE}" get deploy/linkedin-login >/dev/null 2>&1; then
@@ -195,7 +243,7 @@ case "${ACTION}" in
     check_state
     ;;
   *)
-    echo "Usage: $0 {desktop|from-pod|all|mint|push|check} [linkedin|liepin] [state.json]"
+    echo "Usage: $0 {desktop|from-pod|cloudshell|all|mint|push|check} [linkedin|liepin] [state.json]"
     exit 1
     ;;
 esac
