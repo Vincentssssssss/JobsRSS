@@ -127,10 +127,29 @@ the site rejecting the cluster egress IP.
 bash deploy/gke/scripts/check-collectors.sh
 ```
 
-A laptop-minted LinkedIn cookie used from GKE usually yields `found=0`
+### Simplest path: log in locally, push the cookie into the cluster
+
+Run this from any machine that has `kubectl` and a desktop browser. It does
+not need `~/jobsrss.env.gke`, and it never prints cookie values.
+
+```bash
+gcloud container clusters get-credentials asp-gke-dev-gke-d9df \
+  --zone=asia-southeast1-a --project=gcp-bcgx-dev-vincents-d597
+python3 -m pip install playwright && python3 -m playwright install chromium
+
+bash deploy/gke/scripts/cookie-to-k8s.sh                 # linkedin: mint + push
+bash deploy/gke/scripts/cookie-to-k8s.sh all liepin
+bash deploy/gke/scripts/cookie-to-k8s.sh check
+```
+
+It patches `jobsrss-collector-files`, sets the matching `*_AUTH_ENABLED`
+flag in `jobsrss-env`, and restarts the worker, which then refreshes jobs on
+its own schedule until the cookie expires. Re-run the same command to renew.
+
+A laptop-minted LinkedIn cookie used from GKE often still yields `found=0`
 (datacenter ASN). Minting the session **on the same cluster egress IP** is
-the only in-cluster option. It is interactive (you complete 2FA in noVNC)
-and still not guaranteed — LinkedIn can checkpoint Google Cloud IPs.
+the in-cluster alternative below. It is interactive and still not
+guaranteed — LinkedIn can checkpoint Google Cloud IPs.
 
 Use the PR branch (plain `git pull` on `main` stays "Already up to date"
 and keeps the old login scripts):
