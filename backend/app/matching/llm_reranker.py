@@ -226,8 +226,10 @@ def run_llm_rerank(
     abort_after_failures = max(
         1, int(getattr(settings, "llm_abort_after_consecutive_failures", 8))
     )
+    commit_every = max(1, int(getattr(settings, "llm_commit_every_jobs", 20)))
     consecutive_failures = 0
     stats.updated += _enforce_early_career_guard(db, settings)
+    db.commit()
 
     query = (
         db.query(Job)
@@ -246,6 +248,7 @@ def run_llm_rerank(
         )
     jobs = query.limit(settings.llm_max_jobs_per_run).all()
 
+    pending = 0
     for job in jobs:
         stats.scanned += 1
         early_career_markers = (
@@ -265,29 +268,44 @@ def run_llm_rerank(
                 "heuristic-early-career-guard",
             )
             stats.updated += 1
+            pending += 1
             consecutive_failures = 0
-            continue
-        try:
-            result = client.evaluate_job(job, settings.llm_target_profile)
-            _apply_match(job, result, client.model)
-            stats.updated += 1
-            consecutive_failures = 0
-        except Exception as exc:
-            stats.failed += 1
-            consecutive_failures += 1
-            logger.warning(
-                "llm_rerank_item_failed job_id=%s source=%s error=%s",
-                job.id,
-                job.source,
-                str(exc),
-            )
-            if consecutive_failures >= abort_after_failures:
-                logger.error(
-                    "llm_rerank_aborted reason=consecutive_failures failures=%d threshold=%d",
-                    consecutive_failures,
-                    abort_after_failures,
+        else:
+            try:
+                result = client.evaluate_job(job, settings.llm_target_profile)
+                _apply_match(job, result, client.model)
+                stats.updated += 1
+                pending += 1
+                consecutive_failures = 0
+            except Exception as exc:
+                stats.failed += 1
+                consecutive_failures += 1
+                logger.warning(
+                    "llm_rerank_item_failed job_id=%s source=%s error=%s",
+                    job.id,
+                    job.source,
+                    str(exc),
                 )
-                break
+                if consecutive_failures >= abort_after_failures:
+                    logger.error(
+                        "llm_rerank_aborted reason=consecutive_failures failures=%d threshold=%d",
+                        consecutive_failures,
+                        abort_after_failures,
+                    )
+                    break
+
+        # Persist in batches so a restart cannot discard a long run and so
+        # progress stays queryable while the run is still going.
+        if pending >= commit_every:
+            db.commit()
+            logger.info(
+                "llm_rerank_progress scanned=%d updated=%d failed=%d total=%d",
+                stats.scanned,
+                stats.updated,
+                stats.failed,
+                len(jobs),
+            )
+            pending = 0
     db.commit()
     return stats
 

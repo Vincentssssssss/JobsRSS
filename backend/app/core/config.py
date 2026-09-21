@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     llm_abort_after_consecutive_failures: int = 8
     llm_rerank_interval_minutes: int = 30
     llm_max_jobs_per_run: int = 60
+    llm_commit_every_jobs: int = 20
     llm_min_rule_score: float = 20
     llm_only_unscored: bool = True
     llm_reject_early_career: bool = True
