@@ -92,7 +92,7 @@ def count_unscored(db: Session, settings: Settings) -> int:
         .filter(
             Job.status == "active",
             Job.match_score >= settings.llm_min_rule_score,
-            Job.llm_fit_score.is_(None),
+            or_(Job.llm_fit_score.is_(None), Job.llm_verdict.is_(None)),
         )
         .count()
     )

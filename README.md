@@ -154,10 +154,22 @@ API filtering:
 
 The scheduler only scores `LLM_MAX_JOBS_PER_RUN` jobs per interval, so a backlog
 takes many intervals to clear. To re-collect every enabled source and re-evaluate
-the whole history in one command:
+the whole history in one command, run it in its own container with the worker
+stopped (otherwise the scheduler scores the same jobs concurrently and doubles
+token spend):
 
 ```bash
-docker compose exec worker python scripts/refresh_all.py --reset-scores
+docker compose build worker
+docker compose stop worker
+docker compose run -d --name jobsrss-refresh worker python scripts/refresh_all.py --reset-scores
+docker logs -f jobsrss-refresh
+```
+
+When the log prints `refresh_rescore_done`, clean up and resume the scheduler:
+
+```bash
+docker rm jobsrss-refresh
+docker compose start worker
 ```
 
 - `--reset-scores` clears stored LLM verdicts first so historical jobs become

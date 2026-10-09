@@ -243,6 +243,7 @@ def run_llm_rerank(
         query = query.filter(
             or_(
                 Job.llm_fit_score.is_(None),
+                Job.llm_verdict.is_(None),
                 _early_career_candidates_filter(settings),
             )
         )

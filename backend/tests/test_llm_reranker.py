@@ -245,8 +245,10 @@ def test_run_llm_rerank_respects_score_and_unscored_filters():
     )
 
     with Session(engine) as db:
+        already_scored = _make_job(source_job_id="already-scored", match_score=90, llm_fit_score=60)
+        already_scored.llm_verdict = "possible_fit"
         db.add(_make_job(source_job_id="low-rule-score", match_score=10))
-        db.add(_make_job(source_job_id="already-scored", match_score=90, llm_fit_score=60))
+        db.add(already_scored)
         db.add(_make_job(source_job_id="eligible", match_score=90))
         db.commit()
 
@@ -260,6 +262,28 @@ def test_run_llm_rerank_respects_score_and_unscored_filters():
         assert eligible.llm_fit_score == 84
         assert already.llm_fit_score == 60
         assert low.llm_fit_score is None
+
+
+def test_run_llm_rerank_rescores_jobs_with_score_but_no_verdict():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    settings = SimpleNamespace(
+        llm_min_rule_score=0,
+        llm_only_unscored=True,
+        llm_max_jobs_per_run=10,
+        llm_target_profile="Cybersecurity architect and cloud security roles",
+    )
+
+    with Session(engine) as db:
+        db.add(_make_job(source_job_id="orphaned-score", match_score=90, llm_fit_score=24))
+        db.commit()
+
+        stats = run_llm_rerank(db, settings=settings, client=FakeLLMClient())
+        stored = db.query(Job).filter(Job.source_job_id == "orphaned-score").one()
+
+        assert stats.updated == 1
+        assert stored.llm_fit_score == 84
+        assert stored.llm_verdict == "strong_fit"
 
 
 def test_run_llm_rerank_hard_rejects_early_career_jobs_without_llm_call():

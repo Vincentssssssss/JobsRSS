@@ -113,11 +113,13 @@ def test_count_unscored_respects_rule_score_floor_and_status():
     low_score = _make_job(source_job_id="low")
     low_score.match_score = 5
     closed = _make_job(source_job_id="closed", status="closed")
-    db.add_all([_make_job(source_job_id="open"), low_score, closed])
+    scored = _make_job(source_job_id="scored", llm_fit_score=70, llm_verdict="possible_fit")
+    orphaned = _make_job(source_job_id="orphaned", llm_fit_score=24)
+    db.add_all([_make_job(source_job_id="open"), low_score, closed, scored, orphaned])
     db.commit()
 
     class _Settings:
         llm_min_rule_score = 20
 
-    assert count_unscored(db, _Settings()) == 1
+    assert count_unscored(db, _Settings()) == 2
     db.close()
