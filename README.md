@@ -91,6 +91,7 @@ LLM_REQUEST_RETRY_BACKOFF_SECONDS=1.5
 LLM_ABORT_AFTER_CONSECUTIVE_FAILURES=8
 LLM_RERANK_INTERVAL_MINUTES=30
 LLM_MAX_JOBS_PER_RUN=60
+LLM_COMMIT_EVERY_JOBS=20
 LLM_MIN_RULE_SCORE=20
 LLM_ONLY_UNSCORED=true
 LLM_REJECT_EARLY_CAREER=true
@@ -148,6 +149,37 @@ API filtering:
 - `GET /jobs?min_llm_score=70`
 - `GET /jobs?llm_verdict=strong_fit`
 - `GET /jobs/count?min_llm_score=70&llm_verdict=strong_fit`
+
+## Full Refresh (Re-collect + Re-score Everything)
+
+The scheduler only scores `LLM_MAX_JOBS_PER_RUN` jobs per interval, so a backlog
+takes many intervals to clear. To re-collect every enabled source and re-evaluate
+the whole history in one command:
+
+```bash
+docker compose exec worker python scripts/refresh_all.py --reset-scores
+```
+
+- `--reset-scores` clears stored LLM verdicts first so historical jobs become
+  candidates again. Deterministic early-career rejections are kept (they cost no
+  tokens); add `--reset-early-career-guard` to revisit them too.
+- The rerank then runs repeated passes until no job is left unscored, printing
+  `refresh_rescore_pass ... remaining=N` after each pass.
+- `--skip-collect` re-scores without touching the collectors;
+  `--skip-rescore` only refreshes job data.
+- `--batch-size` overrides `LLM_MAX_JOBS_PER_RUN` for this run only.
+
+Track progress from another terminal:
+
+```bash
+docker compose exec -T postgres psql -U jobsrss -d jobsrss -c \
+  "SELECT llm_verdict, count(*) FROM jobs WHERE status='active' GROUP BY llm_verdict;"
+```
+
+To stop LLM spend, stop the worker (`docker compose stop worker`) or set
+`LLM_RERANK_ENABLED=false` and recreate it with
+`docker compose up -d --force-recreate worker`. `docker compose restart` does not
+reload `env_file`.
 
 ## Authenticated Platform Collection (LinkedIn / 51job / Liepin)
 
