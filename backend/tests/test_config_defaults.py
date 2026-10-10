@@ -24,6 +24,14 @@ def test_official_sources_enabled_by_default_for_v2(monkeypatch):
     assert settings.llm_abort_after_consecutive_failures == 8
 
 
+def test_blank_llm_temperature_is_treated_as_unset(monkeypatch):
+    monkeypatch.setenv("LLM_TEMPERATURE", "")
+    assert Settings(_env_file=None).llm_temperature is None
+
+    monkeypatch.setenv("LLM_TEMPERATURE", "0.2")
+    assert Settings(_env_file=None).llm_temperature == 0.2
+
+
 def test_allowed_origins_accepts_csv_value(monkeypatch):
     monkeypatch.setenv(
         "ALLOWED_ORIGINS",

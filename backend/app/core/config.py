@@ -111,6 +111,13 @@ class Settings(BaseSettings):
     digest_email_recipients: str = ""
     digest_email_use_tls: bool = True
 
+    @field_validator("llm_temperature", mode="before")
+    @classmethod
+    def blank_temperature_means_unset(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
     @field_validator("allowed_origins", mode="before")
     @classmethod
     def parse_allowed_origins(cls, value: object) -> object:
