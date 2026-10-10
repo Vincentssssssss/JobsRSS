@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 from app.db.session import Base
 from app.matching.llm_reranker import (
     LLMMatchResult,
+    LLMQuotaExhaustedError,
+    OpenAICompatibleClient,
     _build_auth_headers,
     _is_retryable_status,
     _normalize_verdict,
@@ -47,6 +49,17 @@ class AlwaysFailClient:
 
     def evaluate_job(self, job: Job, target_profile: str) -> LLMMatchResult:
         raise TimeoutError("simulated timeout")
+
+
+class QuotaExhaustedClient:
+    model = "no-credits"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def evaluate_job(self, job: Job, target_profile: str) -> LLMMatchResult:
+        self.calls += 1
+        raise LLMQuotaExhaustedError("http_status=429 error_code=credit_balance_exhausted")
 
 
 def _make_job(
@@ -433,3 +446,97 @@ def test_run_llm_rerank_aborts_after_consecutive_failures_threshold():
 
         assert stats.failed == 2
         assert stats.scanned == 2
+
+
+def test_run_llm_rerank_stops_at_first_quota_exhausted_error():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    settings = SimpleNamespace(
+        llm_min_rule_score=0,
+        llm_only_unscored=True,
+        llm_max_jobs_per_run=10,
+        llm_target_profile="Experienced cybersecurity architect roles only",
+        llm_reject_early_career=False,
+        llm_abort_after_consecutive_failures=8,
+    )
+    client = QuotaExhaustedClient()
+
+    with Session(engine) as db:
+        for index in range(3):
+            db.add(_make_job(source_job_id=f"q{index}", match_score=80))
+        db.commit()
+
+        stats = run_llm_rerank(db, settings=settings, client=client)
+
+        assert client.calls == 1
+        assert stats.failed == 1
+        assert stats.updated == 0
+
+
+def _openai_429(error: dict):
+    import httpx
+
+    return lambda request: httpx.Response(429, request=request, json={"error": error})
+
+
+def _client_with_transport(monkeypatch, handler):
+    import httpx
+
+    real_client = httpx.Client
+    monkeypatch.setattr(
+        httpx,
+        "Client",
+        lambda **kwargs: real_client(transport=httpx.MockTransport(handler), **kwargs),
+    )
+    return OpenAICompatibleClient(
+        api_key="secret",
+        model="gpt-6-luna",
+        base_url="https://api.openai.com/v1",
+        api_version=None,
+        temperature=None,
+        timeout_seconds=5,
+        verify_tls=True,
+        request_max_retries=2,
+        request_retry_backoff_seconds=0,
+    )
+
+
+def test_quota_exhausted_response_is_not_retried(monkeypatch):
+    import pytest
+
+    calls = []
+    respond = _openai_429(
+        {
+            "type": "insufficient_quota",
+            "code": "credit_balance_exhausted",
+            "message": "You have no credits remaining.",
+        }
+    )
+
+    def handler(request):
+        calls.append(request)
+        return respond(request)
+
+    client = _client_with_transport(monkeypatch, handler)
+
+    with pytest.raises(LLMQuotaExhaustedError):
+        client._post_chat_completions_with_retry({"model": "gpt-6-luna"})
+    assert len(calls) == 1
+
+
+def test_rate_limit_429_is_still_retried(monkeypatch):
+    import pytest
+
+    calls = []
+    respond = _openai_429({"type": "requests", "code": "rate_limit_exceeded", "message": "slow down"})
+
+    def handler(request):
+        calls.append(request)
+        return respond(request)
+
+    client = _client_with_transport(monkeypatch, handler)
+
+    with pytest.raises(RuntimeError) as excinfo:
+        client._post_chat_completions_with_retry({"model": "gpt-6-luna"})
+    assert not isinstance(excinfo.value, LLMQuotaExhaustedError)
+    assert len(calls) == 3

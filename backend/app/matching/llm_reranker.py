@@ -17,6 +17,7 @@ from app.models.job import Job
 
 logger = logging.getLogger(__name__)
 _RETRYABLE_HTTP_STATUS = {408, 425, 429, 500, 502, 503, 504}
+_QUOTA_EXHAUSTED_CODES = {"insufficient_quota", "credit_balance_exhausted"}
 _VERDICT_ALIAS_MAP = {
     "strong fit": "strong_fit",
     "strong-fit": "strong_fit",
@@ -55,6 +56,10 @@ class LLMMatchResult:
     match_reasons: list[str]
     reject_reasons: list[str]
     missing_skills: list[str]
+
+
+class LLMQuotaExhaustedError(RuntimeError):
+    """The provider refused the request for billing reasons; retrying cannot help."""
 
 
 @dataclass
@@ -142,6 +147,8 @@ class OpenAICompatibleClient:
                 last_error = exc
                 status = exc.response.status_code if exc.response is not None else None
                 summary = _summarize_http_status_error(exc)
+                if _is_quota_exhausted(exc):
+                    raise LLMQuotaExhaustedError(summary) from exc
                 if attempt >= self.request_max_retries or not _is_retryable_status(status):
                     raise RuntimeError(summary) from exc
                 delay = _retry_delay_seconds(self.request_retry_backoff_seconds, attempt)
@@ -278,6 +285,10 @@ def run_llm_rerank(
                 stats.updated += 1
                 pending += 1
                 consecutive_failures = 0
+            except LLMQuotaExhaustedError as exc:
+                stats.failed += 1
+                logger.error("llm_rerank_aborted reason=quota_exhausted %s", str(exc))
+                break
             except Exception as exc:
                 stats.failed += 1
                 consecutive_failures += 1
@@ -554,6 +565,22 @@ def _is_retryable_status(status_code: Optional[int]) -> bool:
 
 def _retry_delay_seconds(base_seconds: float, attempt: int) -> float:
     return max(0.0, base_seconds) * (2 ** max(0, attempt))
+
+
+def _is_quota_exhausted(exc: httpx.HTTPStatusError) -> bool:
+    response = exc.response
+    if response is None or response.status_code != 429:
+        return False
+    try:
+        err = (response.json() or {}).get("error") or {}
+    except Exception:
+        return False
+    if not isinstance(err, dict):
+        return False
+    return (
+        str(err.get("type") or "") in _QUOTA_EXHAUSTED_CODES
+        or str(err.get("code") or "") in _QUOTA_EXHAUSTED_CODES
+    )
 
 
 def _summarize_http_status_error(exc: httpx.HTTPStatusError) -> str:
