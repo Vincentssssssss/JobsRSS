@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: jobsrss
+resources:
+  - postgres.yaml
+  - api.yaml
+  - worker.yaml
+  - frontend.yaml
+images:
+  - name: jobsrss-api
+    newName: jobsrss-api
+    newTag: local
+  - name: jobsrss-frontend
+    newName: jobsrss-frontend
+    newTag: local
