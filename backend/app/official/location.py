@@ -4,8 +4,17 @@ from enum import Enum
 
 class LocationCategory(str, Enum):
     CONFIRMED_SHANGHAI = "confirmed_shanghai"
+    CONFIRMED_MALAYSIA = "confirmed_malaysia"
     UNCLASSIFIED = "unclassified"
     EXCLUDED = "excluded"
+
+
+_CATEGORY_COUNTRY = {LocationCategory.CONFIRMED_MALAYSIA: "Malaysia"}
+
+
+def country_for_category(category: LocationCategory, default: str = "China") -> str:
+    return _CATEGORY_COUNTRY.get(category, default)
+
 
 
 SHANGHAI_DIRECT_MARKERS = {
@@ -46,6 +55,35 @@ SHANGHAI_DISTRICT_MARKERS = {
     "chongming",
     "崇明",
 }
+MALAYSIA_MARKERS = {
+    "malaysia",
+    "kuala lumpur",
+    "selangor",
+    "petaling jaya",
+    "cyberjaya",
+    "putrajaya",
+    "penang",
+    "johor",
+    "sepang",
+    "subang",
+    "shah alam",
+    "bayan lepas",
+    "ipoh",
+    "melaka",
+    "malacca",
+    "kuching",
+    "kota kinabalu",
+    "sarawak",
+    "sabah",
+    "马来西亚",
+    "吉隆坡",
+    "雪兰莪",
+    "槟城",
+    "新山",
+    "柔佛",
+}
+# ISO codes: Amazon uses "MYS"; Microsoft ends segments with ", MY" or lists a bare "MY".
+_MALAYSIA_COUNTRY_CODE = re.compile(r"\bmys\b|(?:^|[/,])\s*my\s*(?:/|$)")
 EXPLICIT_NON_TARGET_MARKERS = {
     "beijing",
     "shenzhen",
@@ -82,6 +120,12 @@ def classify_official_location(location: str) -> LocationCategory:
     normalized = " ".join((location or "").lower().split())
     if any(marker in normalized for marker in SHANGHAI_DIRECT_MARKERS):
         return LocationCategory.CONFIRMED_SHANGHAI
+    # Checked before the exclusion list so multi-country listings such as
+    # "Singapore / Kuala Lumpur" stay eligible.
+    if any(marker in normalized for marker in MALAYSIA_MARKERS) or _MALAYSIA_COUNTRY_CODE.search(
+        normalized
+    ):
+        return LocationCategory.CONFIRMED_MALAYSIA
     if not normalized or normalized == "unknown":
         return LocationCategory.UNCLASSIFIED
     if any(marker in normalized for marker in EXPLICIT_NON_TARGET_MARKERS):

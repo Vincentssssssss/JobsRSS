@@ -8,14 +8,19 @@ from bs4 import BeautifulSoup
 
 from app.core.config import get_settings
 from app.enrichment.external_job import ExternalJobEnricher
-from app.official.collectors.base import OfficialCollectorBase
-from app.official.location import LocationCategory, classify_official_location
+from app.official.collectors.base import OfficialCollectorBase, interleave_capped
+from app.official.location import (
+    LocationCategory,
+    classify_official_location,
+    country_for_category,
+)
 from app.official.registry import get_official_source
 
-GOOGLE_SEARCH_URL = (
+GOOGLE_RESULTS_URL = (
     "https://www.google.com/about/careers/applications/jobs/results/"
-    "?location=Shanghai%2C%20China&sort_by=date"
 )
+GOOGLE_SEARCH_LOCATIONS = ("Shanghai, China", "Malaysia")
+GOOGLE_PAGE_SIZE = 20
 GOOGLE_ROOT = "https://www.google.com"
 GOOGLE_CAREERS_ROOT = (
     "https://www.google.com/about/careers/applications/"
@@ -35,23 +40,58 @@ class GoogleOfficialCollector(OfficialCollectorBase):
 
     def fetch_raw(self) -> List[Dict[str, Any]]:
         settings = get_settings()
+        limit = settings.official_source_max_jobs_per_source
         with httpx.Client(
             timeout=settings.official_source_timeout_seconds,
             verify=settings.official_source_verify_tls,
             headers={"User-Agent": "JobsRSS/2.0 (+personal job monitor)"},
             follow_redirects=False,
         ) as client:
-            listing_response = client.get(GOOGLE_SEARCH_URL)
-            listing_response.raise_for_status()
-            links = discover_google_job_links(listing_response.text)
+            groups = [
+                [
+                    (link, location)
+                    for link in _discover_location_links(
+                        client,
+                        location,
+                        limit=limit,
+                        max_pages=settings.official_source_max_pages_per_source,
+                    )
+                ]
+                for location in GOOGLE_SEARCH_LOCATIONS
+            ]
             jobs = []
-            for link in links[: settings.official_source_max_jobs_per_source]:
+            for link, location in interleave_capped(
+                groups, limit, key=lambda pair: pair[0]
+            ):
                 response = client.get(link)
                 response.raise_for_status()
-                job = parse_google_job_detail(response.text, str(response.url))
+                job = parse_google_job_detail(
+                    response.text, str(response.url), default_location=location
+                )
                 if job is not None:
                     jobs.append(job)
             return jobs
+
+
+def _discover_location_links(
+    client: httpx.Client, location: str, *, limit: int, max_pages: int
+) -> List[str]:
+    links: List[str] = []
+    for page in range(1, max_pages + 1):
+        if len(links) >= limit:
+            break
+        response = client.get(
+            GOOGLE_RESULTS_URL,
+            params={"location": location, "sort_by": "date", "page": page},
+        )
+        response.raise_for_status()
+        new_links = [
+            link for link in discover_google_job_links(response.text) if link not in links
+        ]
+        links.extend(new_links)
+        if len(new_links) < GOOGLE_PAGE_SIZE:
+            break
+    return links
 
 
 def discover_google_job_links(html: str) -> List[str]:
@@ -83,7 +123,9 @@ def discover_google_job_links(html: str) -> List[str]:
     return list(dict.fromkeys(links))
 
 
-def parse_google_job_detail(html: str, source_url: str) -> Dict[str, Any] | None:
+def parse_google_job_detail(
+    html: str, source_url: str, default_location: str = "Shanghai, China"
+) -> Dict[str, Any] | None:
     match = GOOGLE_JOB_PATH.search(source_url)
     if not match:
         return None
@@ -116,7 +158,7 @@ def parse_google_job_detail(html: str, source_url: str) -> Dict[str, Any] | None
             "[aria-label*='location' i]",
         ],
     )
-    location = location or "Shanghai, China"
+    location = location or default_location
     location_category = classify_official_location(location)
     if location_category == LocationCategory.EXCLUDED:
         return None
@@ -139,7 +181,7 @@ def parse_google_job_detail(html: str, source_url: str) -> Dict[str, Any] | None
         "company": "Google",
         "title": title,
         "location": location,
-        "country": "China",
+        "country": country_for_category(location_category),
         "description": description,
         "apply_url": source_url,
         "source_url": source_url,

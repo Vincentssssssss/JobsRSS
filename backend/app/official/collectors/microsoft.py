@@ -7,10 +7,17 @@ import httpx
 from bs4 import BeautifulSoup
 
 from app.core.config import get_settings
-from app.official.collectors.base import OfficialCollectorBase
-from app.official.location import LocationCategory, classify_official_location
+from app.official.collectors.base import OfficialCollectorBase, interleave_capped
+from app.official.location import (
+    LocationCategory,
+    classify_official_location,
+    country_for_category,
+)
 from app.official.registry import get_official_source
 
+MICROSOFT_SEARCH_LOCATIONS = ("Shanghai", "Malaysia")
+# The pcsx search API returns at most 10 positions per request.
+MICROSOFT_PAGE_SIZE = 10
 MICROSOFT_SEARCH_URL = "https://apply.careers.microsoft.com/api/pcsx/search"
 MICROSOFT_DETAIL_URL = (
     "https://apply.careers.microsoft.com/api/pcsx/position_details"
@@ -35,8 +42,8 @@ class MicrosoftOfficialCollector(OfficialCollectorBase):
 
     def fetch_raw(self) -> List[Dict[str, Any]]:
         settings = get_settings()
+        limit = settings.official_source_max_jobs_per_source
         jobs: List[Dict[str, Any]] = []
-        page_size = 10
         with httpx.Client(
             timeout=settings.official_source_timeout_seconds,
             verify=settings.official_source_verify_tls,
@@ -47,51 +54,82 @@ class MicrosoftOfficialCollector(OfficialCollectorBase):
                 )
             },
         ) as client:
-            starts = list(
-                range(
-                    0,
-                    settings.official_source_max_jobs_per_source,
-                    page_size,
-                )
-            )[: settings.official_source_max_pages_per_source]
-            for start in starts:
-                payload = _get_json_with_backoff(
+            groups = [
+                _search_positions(
                     client,
-                    MICROSOFT_SEARCH_URL,
+                    location,
+                    limit=limit,
+                    max_pages=settings.official_source_max_pages_per_source,
+                    retries=settings.collector_default_retries,
+                )
+                for location in MICROSOFT_SEARCH_LOCATIONS
+            ]
+            for item in interleave_capped(groups, limit, key=_position_id):
+                detail_payload = _get_json_with_backoff(
+                    client,
+                    MICROSOFT_DETAIL_URL,
                     params={
+                        "position_id": _position_id(item),
                         "domain": "microsoft.com",
-                        "query": "",
-                        "location": "Shanghai",
-                        "sort_by": "timestamp",
-                        "start": start,
-                        "num": page_size,
                     },
                     retries=settings.collector_default_retries,
                 )
-                positions = extract_microsoft_positions(payload)
-                if not positions:
-                    break
-                for item in positions:
-                    position_id = str(
-                        item.get("id") or item.get("position_id") or ""
-                    ).strip()
-                    if not position_id:
-                        continue
-                    detail_payload = _get_json_with_backoff(
-                        client,
-                        MICROSOFT_DETAIL_URL,
-                        params={
-                            "position_id": position_id,
-                            "domain": "microsoft.com",
-                        },
-                        retries=settings.collector_default_retries,
-                    )
-                    job = parse_microsoft_position(item, detail_payload)
-                    if job is not None:
-                        jobs.append(job)
-                if len(positions) < page_size:
-                    break
-        return jobs[: settings.official_source_max_jobs_per_source]
+                job = parse_microsoft_position(item, detail_payload)
+                if job is not None:
+                    jobs.append(job)
+        return jobs
+
+
+def _search_positions(
+    client: httpx.Client,
+    location: str,
+    *,
+    limit: int,
+    max_pages: int,
+    retries: int,
+) -> List[Dict[str, Any]]:
+    positions: List[Dict[str, Any]] = []
+    for page in range(max_pages):
+        if len(positions) >= limit:
+            break
+        payload = _get_json_with_backoff(
+            client,
+            MICROSOFT_SEARCH_URL,
+            params={
+                "domain": "microsoft.com",
+                "query": "",
+                "location": location,
+                "sort_by": "timestamp",
+                "start": page * MICROSOFT_PAGE_SIZE,
+                "num": MICROSOFT_PAGE_SIZE,
+            },
+            retries=retries,
+        )
+        batch = extract_microsoft_positions(payload)
+        positions.extend(
+            item
+            for item in batch
+            if _position_id(item) and not _listing_is_excluded(item)
+        )
+        if len(batch) < MICROSOFT_PAGE_SIZE:
+            break
+    return positions
+
+
+def _position_id(item: Dict[str, Any]) -> str:
+    return str(item.get("id") or item.get("position_id") or "").strip()
+
+
+def _listing_is_excluded(item: Dict[str, Any]) -> bool:
+    location = _render_locations(
+        _coalesce(
+            item.get("standardizedLocations"),
+            item.get("standardized_locations"),
+            item.get("locations"),
+            item.get("location"),
+        )
+    )
+    return classify_official_location(location) == LocationCategory.EXCLUDED
 
 
 def extract_microsoft_positions(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -188,7 +226,7 @@ def parse_microsoft_position(
         "company": "Microsoft",
         "title": title,
         "location": location,
-        "country": "China",
+        "country": country_for_category(location_category),
         "description": description,
         "apply_url": apply_url,
         "source_url": source_url,

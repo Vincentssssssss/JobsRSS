@@ -49,7 +49,42 @@ def test_parses_roche_phenom_detail_job():
     assert job["source_job_id"] == listing["jobSeqNo"]
     assert job["company"] == "Roche"
     assert job["location_category"] == LocationCategory.CONFIRMED_SHANGHAI.value
+    assert job["country"] == "China"
     assert "IAM" in job["description"]
+
+
+def test_parses_roche_malaysia_job():
+    listing = {
+        "jobId": "202608-121656",
+        "jobSeqNo": "ROCHGLOBAL202608121656EXTERNALENGLOBAL",
+        "title": "IT Security Lead",
+        "multi_location": ["Petaling Jaya, Selangor, Malaysia"],
+    }
+    detail = {
+        "jobDetail": {
+            "data": {
+                "job": {
+                    "structureData": {
+                        "title": "IT Security Lead",
+                        "description": "<p>Own IAM for APAC.</p>",
+                        "jobLocation": {
+                            "address": {
+                                "addressLocality": "Petaling Jaya",
+                                "addressRegion": "Selangor",
+                                "addressCountry": "Malaysia",
+                            }
+                        },
+                    }
+                }
+            }
+        }
+    }
+
+    job = parse_roche_job(listing, detail)
+
+    assert job["location"] == "Petaling Jaya, Selangor, Malaysia"
+    assert job["location_category"] == LocationCategory.CONFIRMED_MALAYSIA.value
+    assert job["country"] == "Malaysia"
 
 
 def test_decrypts_and_parses_moka_job():

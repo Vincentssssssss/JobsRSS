@@ -28,8 +28,8 @@ class Settings(BaseSettings):
     official_sources_enabled: bool = True
     official_source_interval_minutes: int = 360
     official_source_timeout_seconds: int = 30
-    official_source_max_jobs_per_source: int = 50
-    official_source_max_pages_per_source: int = 10
+    official_source_max_jobs_per_source: int = 150
+    official_source_max_pages_per_source: int = 20
     official_source_stale_after_days: int = 30
     official_source_verify_tls: bool = True
     llm_rerank_enabled: bool = False

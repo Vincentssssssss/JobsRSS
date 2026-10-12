@@ -1,6 +1,8 @@
+import json
+
 import httpx
 
-from app.official.collectors.amazon import parse_amazon_jobs
+from app.official.collectors.amazon import AmazonOfficialCollector, parse_amazon_jobs
 from app.official.collectors.google import discover_google_job_links, parse_google_job_detail
 from app.official.collectors.microsoft import (
     MicrosoftOfficialCollector,
@@ -38,6 +40,86 @@ def test_parses_amazon_search_json_and_keeps_multilocation_shanghai_role():
     assert "Shanghai" in jobs[0]["location"]
     assert jobs[0]["location_category"] == LocationCategory.CONFIRMED_SHANGHAI.value
     assert "IAM" in jobs[0]["description"]
+
+
+def _amazon_live_location(normalized: str, country_code: str) -> str:
+    return json.dumps(
+        {
+            "normalizedLocation": normalized,
+            "countryIso3a": country_code,
+            "location": "MY, 15, Kuala Lumpur",
+        }
+    )
+
+
+def test_amazon_renders_json_encoded_locations_and_tags_malaysia():
+    payload = {
+        "jobs": [
+            {
+                "id_icims": "10572892",
+                "title": "Sr Account Manager, Malaysia FSI",
+                "normalized_location": "Kuala Lumpur, Wilayah Persekutuan Kuala Lumpur, MYS",
+                "locations": [
+                    _amazon_live_location(
+                        "Kuala Lumpur, Wilayah Persekutuan Kuala Lumpur, MYS", "MYS"
+                    )
+                ],
+                "job_path": "/en/jobs/10572892/sr-account-manager",
+            }
+        ]
+    }
+
+    jobs = parse_amazon_jobs(payload)
+
+    assert jobs[0]["location"] == "Kuala Lumpur, Wilayah Persekutuan Kuala Lumpur, MYS"
+    assert jobs[0]["location_category"] == LocationCategory.CONFIRMED_MALAYSIA.value
+    assert jobs[0]["country"] == "Malaysia"
+
+
+def test_amazon_fetch_queries_shanghai_and_malaysia_within_cap(monkeypatch):
+    requests = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        params = dict(request.url.params)
+        requests.append(params)
+        assert params["result_limit"] == "100"
+        if params["country"] == "CHN":
+            prefix, location = "sh", "Shanghai, CHN"
+            total = 230
+        else:
+            prefix, location = "my", "Kuala Lumpur, MYS"
+            total = 40
+        offset = int(params["offset"])
+        count = max(0, min(100, total - offset))
+        jobs = [
+            {
+                "id_icims": f"{prefix}{offset + i}",
+                "title": "Security Manager",
+                "normalized_location": location,
+                "job_path": f"/en/jobs/{prefix}{offset + i}",
+            }
+            for i in range(count)
+        ]
+        return httpx.Response(200, json={"jobs": jobs})
+
+    real_client = httpx.Client
+    monkeypatch.setattr(
+        httpx,
+        "Client",
+        lambda **kwargs: real_client(transport=httpx.MockTransport(handler), **kwargs),
+    )
+
+    jobs = AmazonOfficialCollector().fetch_raw()
+
+    ids = [job["source_job_id"] for job in jobs]
+    assert len(ids) == 150
+    assert sum(1 for job_id in ids if job_id.startswith("my")) == 40
+    assert ids[:4] == ["sh0", "my0", "sh1", "my1"]
+    assert [(r["country"], r["offset"]) for r in requests] == [
+        ("CHN", "0"),
+        ("CHN", "100"),
+        ("MYS", "0"),
+    ]
 
 
 def test_parses_microsoft_search_and_detail_payload():
@@ -223,6 +305,66 @@ def test_discovers_and_parses_google_ssr_job_page():
     assert job["source_job_id"] == "127276011858338502"
     assert job["title"] == "Security Architect"
     assert job["location_category"] == LocationCategory.CONFIRMED_SHANGHAI.value
+
+
+def test_google_detail_without_location_falls_back_to_query_location():
+    detail = """
+    <html>
+      <head><meta property="og:title" content="Data Center Technician — Google Careers"></head>
+      <body><h1>Data Center Technician</h1><div class="job-description">Run sites.</div></body>
+    </html>
+    """
+
+    job = parse_google_job_detail(
+        detail,
+        "https://www.google.com/about/careers/applications/jobs/results/"
+        "88780877651157702-data-center-technician",
+        default_location="Malaysia",
+    )
+
+    assert job["location"] == "Malaysia"
+    assert job["location_category"] == LocationCategory.CONFIRMED_MALAYSIA.value
+    assert job["country"] == "Malaysia"
+
+
+def test_microsoft_fetch_searches_malaysia_and_skips_out_of_scope_listings(monkeypatch):
+    searched_locations = []
+    detail_ids = []
+
+    def fake_get(_client, url, params, retries):
+        if "position_details" in url:
+            detail_ids.append(params["position_id"])
+            return {
+                "data": {
+                    "id": params["position_id"],
+                    "name": "Datacenter Security Manager",
+                    "jobDescription": "Own physical and cloud security.",
+                    "standardizedLocations": ["Johor Bahru, Johor, MY"],
+                }
+            }
+        searched_locations.append(params["location"])
+        if params["location"] == "Malaysia":
+            return {
+                "data": {
+                    "positions": [
+                        {"id": 11, "standardizedLocations": ["Johor Bahru, Johor, MY"]},
+                        {"id": 12, "standardizedLocations": ["Singapore, SG"]},
+                    ]
+                }
+            }
+        return {"data": {"positions": []}}
+
+    monkeypatch.setattr(
+        "app.official.collectors.microsoft._get_json_with_backoff",
+        fake_get,
+    )
+
+    jobs = MicrosoftOfficialCollector().fetch_raw()
+
+    assert searched_locations == ["Shanghai", "Malaysia"]
+    assert detail_ids == ["11"]
+    assert jobs[0]["location_category"] == LocationCategory.CONFIRMED_MALAYSIA.value
+    assert jobs[0]["country"] == "Malaysia"
 
 
 def test_microsoft_json_request_retries_rate_limit(monkeypatch):

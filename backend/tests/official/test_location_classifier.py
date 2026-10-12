@@ -1,4 +1,8 @@
-from app.official.location import LocationCategory, classify_official_location
+from app.official.location import (
+    LocationCategory,
+    classify_official_location,
+    country_for_category,
+)
 
 
 def test_explicit_shanghai_is_confirmed():
@@ -50,5 +54,39 @@ def test_explicit_non_shanghai_city_is_excluded():
         "Baoshan, Yunnan, China",
         "Putuo District, Zhoushan, Zhejiang, China",
         "Huangpu District, Guangzhou, China",
+        "Yangon, Myanmar",
+        "Jakarta, Indonesia",
     ]:
         assert classify_official_location(location) == LocationCategory.EXCLUDED
+
+
+def test_malaysia_locations_from_each_source_format_are_confirmed():
+    for location in [
+        "Kuala Lumpur, Malaysia",
+        "Petaling Jaya, Selangor, Malaysia",
+        "Kuala Lumpur, Wilayah Persekutuan Kuala Lumpur, MYS",
+        "Johor Bahru, Johor, MY",
+        "Sepang, Selangor, MY",
+        "MY",
+        "MY / Sepang, Selangor, MY",
+        "SG / Kuala Lumpur, Federal Territory of Kuala Lumpur, MY / ID / TH / PH",
+        "Jakarta, Indonesia / Kuala Lumpur, Malaysia / Bangkok, Thailand",
+        "Johor Bahru",
+        "吉隆坡",
+    ]:
+        assert (
+            classify_official_location(location) == LocationCategory.CONFIRMED_MALAYSIA
+        ), location
+
+
+def test_shanghai_wins_over_malaysia_for_multi_country_roles():
+    assert (
+        classify_official_location("Shanghai, China / Kuala Lumpur, Malaysia")
+        == LocationCategory.CONFIRMED_SHANGHAI
+    )
+
+
+def test_country_follows_location_category():
+    assert country_for_category(LocationCategory.CONFIRMED_MALAYSIA) == "Malaysia"
+    assert country_for_category(LocationCategory.CONFIRMED_SHANGHAI) == "China"
+    assert country_for_category(LocationCategory.UNCLASSIFIED) == "China"

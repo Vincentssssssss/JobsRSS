@@ -6,11 +6,20 @@ import httpx
 from bs4 import BeautifulSoup
 
 from app.core.config import get_settings
-from app.official.collectors.base import OfficialCollectorBase
-from app.official.location import LocationCategory, classify_official_location
+from app.official.collectors.base import OfficialCollectorBase, interleave_capped
+from app.official.location import (
+    LocationCategory,
+    classify_official_location,
+    country_for_category,
+)
 from app.official.registry import get_official_source
 
 AMAZON_SEARCH_URL = "https://www.amazon.jobs/en/search.json"
+AMAZON_PAGE_SIZE = 100
+AMAZON_LOCATION_QUERIES = (
+    {"country": "CHN", "city": "Shanghai"},
+    {"country": "MYS"},
+)
 
 
 class AmazonOfficialCollector(OfficialCollectorBase):
@@ -23,37 +32,44 @@ class AmazonOfficialCollector(OfficialCollectorBase):
 
     def fetch_raw(self) -> List[Dict[str, Any]]:
         settings = get_settings()
-        jobs: List[Dict[str, Any]] = []
-        page_size = 10
+        limit = settings.official_source_max_jobs_per_source
         with httpx.Client(
             timeout=settings.official_source_timeout_seconds,
             verify=settings.official_source_verify_tls,
             headers={"User-Agent": "JobsRSS/2.0 (+personal job monitor)"},
         ) as client:
-            offsets = list(
-                range(
-                    0,
-                    settings.official_source_max_jobs_per_source,
-                    page_size,
-                )
-            )[: settings.official_source_max_pages_per_source]
-            for offset in offsets:
-                response = client.get(
-                    AMAZON_SEARCH_URL,
-                    params={
-                        "country": "CHN",
-                        "city": "Shanghai",
-                        "offset": offset,
-                        "result_limit": page_size,
-                        "sort": "recent",
-                    },
-                )
-                response.raise_for_status()
-                parsed = parse_amazon_jobs(response.json())
-                jobs.extend(parsed)
-                if len(parsed) < page_size:
-                    break
-        return jobs[: settings.official_source_max_jobs_per_source]
+            groups = [
+                self._search(client, query, limit, settings.official_source_max_pages_per_source)
+                for query in AMAZON_LOCATION_QUERIES
+            ]
+        return interleave_capped(groups, limit, key=lambda job: job["source_job_id"])
+
+    @staticmethod
+    def _search(
+        client: httpx.Client,
+        query: Dict[str, str],
+        limit: int,
+        max_pages: int,
+    ) -> List[Dict[str, Any]]:
+        jobs: List[Dict[str, Any]] = []
+        for page in range(max_pages):
+            if len(jobs) >= limit:
+                break
+            response = client.get(
+                AMAZON_SEARCH_URL,
+                params={
+                    **query,
+                    "offset": page * AMAZON_PAGE_SIZE,
+                    "result_limit": AMAZON_PAGE_SIZE,
+                    "sort": "recent",
+                },
+            )
+            response.raise_for_status()
+            payload = response.json()
+            jobs.extend(parse_amazon_jobs(payload))
+            if len(payload.get("jobs") or []) < AMAZON_PAGE_SIZE:
+                break
+        return jobs
 
 
 def parse_amazon_jobs(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -89,7 +105,7 @@ def parse_amazon_jobs(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "company": company,
                 "title": title,
                 "location": location,
-                "country": "China",
+                "country": country_for_category(location_category),
                 "description": description,
                 "apply_url": str(item.get("apply_url") or source_url),
                 "source_url": source_url,
@@ -102,23 +118,47 @@ def parse_amazon_jobs(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def _amazon_location(item: Dict[str, Any]) -> str:
-    values: List[str] = []
-    for key in ("locations", "normalized_location", "location", "city"):
-        raw = item.get(key)
-        if not raw:
-            continue
-        if isinstance(raw, str) and raw.startswith("["):
-            try:
-                raw = json.loads(raw)
-            except json.JSONDecodeError:
-                pass
-        if isinstance(raw, list):
-            values.extend(str(value) for value in raw if value)
-        elif isinstance(raw, dict):
-            values.extend(str(value) for value in raw.values() if value)
-        else:
-            values.append(str(raw))
+    values = [
+        label
+        for label in (_amazon_location_label(entry) for entry in _as_list(item.get("locations")))
+        if label
+    ]
+    if not values:
+        values = [
+            str(item.get(key))
+            for key in ("normalized_location", "location", "city")
+            if item.get(key)
+        ]
     return " / ".join(dict.fromkeys(values)) or "Unknown"
+
+
+def _as_list(raw: Any) -> List[Any]:
+    if not raw:
+        return []
+    if isinstance(raw, str) and raw.startswith("["):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            return [raw]
+    return raw if isinstance(raw, list) else [raw]
+
+
+def _amazon_location_label(entry: Any) -> str:
+    # Live search results encode each location as a JSON object string.
+    if isinstance(entry, str) and entry.lstrip().startswith("{"):
+        try:
+            entry = json.loads(entry)
+        except json.JSONDecodeError:
+            return entry.strip()
+    if isinstance(entry, dict):
+        return str(
+            entry.get("normalizedLocation")
+            or entry.get("location")
+            or ", ".join(
+                str(entry[key]) for key in ("city", "normalizedCountryName") if entry.get(key)
+            )
+        ).strip()
+    return str(entry).strip()
 
 
 def _clean_html(value: str) -> str:

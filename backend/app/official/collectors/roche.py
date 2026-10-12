@@ -5,11 +5,24 @@ import httpx
 from bs4 import BeautifulSoup
 
 from app.core.config import get_settings
-from app.official.collectors.base import OfficialCollectorBase
-from app.official.location import LocationCategory, classify_official_location
+from app.official.collectors.base import OfficialCollectorBase, interleave_capped
+from app.official.collectors.phenom import (
+    fetch_phenom_listing,
+    phenom_job_key,
+    phenom_multi_location,
+)
+from app.official.location import (
+    LocationCategory,
+    classify_official_location,
+    country_for_category,
+)
 from app.official.registry import get_official_source
 
 ROCHE_WIDGETS_URL = "https://careers.roche.com/widgets"
+ROCHE_LOCATION_FILTERS = (
+    {"country": ["China's Mainland"], "city": ["Shanghai"]},
+    {"country": ["Malaysia"]},
+)
 
 
 class RocheOfficialCollector(OfficialCollectorBase):
@@ -40,33 +53,20 @@ class RocheOfficialCollector(OfficialCollectorBase):
                 )
             },
         ) as client:
-            response = client.post(
-                ROCHE_WIDGETS_URL,
-                json={
-                    **base_payload,
-                    "size": min(
-                        settings.official_source_max_jobs_per_source, 500
-                    ),
-                    "from": 0,
-                    "jobs": True,
-                    "counts": True,
-                    "selected_fields": {
-                        "country": ["China's Mainland"],
-                        "city": ["Shanghai"],
-                    },
-                    "sort": {"field": "postedDate", "order": "desc"},
-                    "ddoKey": "refineSearch",
-                },
-            )
-            response.raise_for_status()
-            listing_jobs = (
-                response.json()
-                .get("refineSearch", {})
-                .get("data", {})
-                .get("jobs", [])
-            )
+            limit = settings.official_source_max_jobs_per_source
+            groups = [
+                fetch_phenom_listing(
+                    client,
+                    ROCHE_WIDGETS_URL,
+                    base_payload,
+                    selected_fields,
+                    limit=limit,
+                    max_pages=settings.official_source_max_pages_per_source,
+                )
+                for selected_fields in ROCHE_LOCATION_FILTERS
+            ]
             jobs: List[Dict[str, Any]] = []
-            for item in listing_jobs:
+            for item in interleave_capped(groups, limit, key=phenom_job_key):
                 detail_response = client.post(
                     ROCHE_WIDGETS_URL,
                     json={
@@ -113,6 +113,9 @@ def parse_roche_job(
     )
     location = location or str(listing.get("location") or "Unknown")
     category = classify_official_location(location)
+    if category == LocationCategory.EXCLUDED and phenom_multi_location(listing):
+        location = phenom_multi_location(listing)
+        category = classify_official_location(location)
     if category == LocationCategory.EXCLUDED:
         return None
     description = BeautifulSoup(
@@ -132,7 +135,7 @@ def parse_roche_job(
         "company": company,
         "title": title,
         "location": location,
-        "country": "China",
+        "country": country_for_category(category),
         "description": description,
         "apply_url": apply_url,
         "source_url": source_url,

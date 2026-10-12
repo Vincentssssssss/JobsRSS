@@ -5,12 +5,25 @@ import httpx
 from bs4 import BeautifulSoup
 
 from app.core.config import get_settings
-from app.official.collectors.base import OfficialCollectorBase
-from app.official.location import LocationCategory, classify_official_location
+from app.official.collectors.base import OfficialCollectorBase, interleave_capped
+from app.official.collectors.phenom import (
+    fetch_phenom_listing,
+    phenom_job_key,
+    phenom_multi_location,
+)
+from app.official.location import (
+    LocationCategory,
+    classify_official_location,
+    country_for_category,
+)
 from app.official.registry import get_official_source
 
 BCG_WIDGETS_URL = "https://careers.bcg.com/widgets"
 BCG_CAREER_ROOT = "https://careers.bcg.com/global/en"
+BCG_LOCATION_FILTERS = (
+    {"city": ["Shanghai"]},
+    {"city": ["Kuala Lumpur"]},
+)
 
 
 class BcgOfficialCollector(OfficialCollectorBase):
@@ -39,31 +52,20 @@ class BcgOfficialCollector(OfficialCollectorBase):
                 )
             },
         ) as client:
-            response = client.post(
-                BCG_WIDGETS_URL,
-                json={
-                    **base_payload,
-                    "size": min(
-                        settings.official_source_max_jobs_per_source, 50
-                    ),
-                    "from": 0,
-                    "jobs": True,
-                    "selected_fields": {"city": ["Shanghai"]},
-                    "sort": {"field": "postedDate", "order": "desc"},
-                    "ddoKey": "refineSearch",
-                },
-            )
-            response.raise_for_status()
-            listing_jobs = (
-                response.json()
-                .get("refineSearch", {})
-                .get("data", {})
-                .get("jobs", [])
-            )
+            limit = settings.official_source_max_jobs_per_source
+            groups = [
+                fetch_phenom_listing(
+                    client,
+                    BCG_WIDGETS_URL,
+                    base_payload,
+                    selected_fields,
+                    limit=limit,
+                    max_pages=settings.official_source_max_pages_per_source,
+                )
+                for selected_fields in BCG_LOCATION_FILTERS
+            ]
             jobs: List[Dict[str, Any]] = []
-            for item in listing_jobs:
-                if len(jobs) >= settings.official_source_max_jobs_per_source:
-                    break
+            for item in interleave_capped(groups, limit, key=phenom_job_key):
                 detail_response = client.post(
                     BCG_WIDGETS_URL,
                     json={
@@ -100,7 +102,8 @@ def parse_bcg_job(
     if not source_job_id or not title:
         return None
     location = str(
-        detail.get("location")
+        phenom_multi_location(listing)
+        or detail.get("location")
         or listing.get("location")
         or " / ".join(
             str(value)
@@ -137,7 +140,7 @@ def parse_bcg_job(
         "company": company,
         "title": title,
         "location": location,
-        "country": "China",
+        "country": country_for_category(category),
         "description": description,
         "apply_url": apply_url,
         "source_url": source_url,

@@ -1,11 +1,13 @@
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Hashable, Iterable, List, Optional, TypeVar
 
 from app.collectors.base import BaseCollector, CollectorMeta
 from app.enrichment.external_job import ExternalJobEnricher
 from app.official.location import LocationCategory
 from app.official.registry import OfficialSourceSpec
 from app.schemas.job import UnifiedJob
+
+T = TypeVar("T")
 
 
 class OfficialCollectorBase(BaseCollector):
@@ -63,6 +65,33 @@ class OfficialCollectorBase(BaseCollector):
             enrichment_source=self.spec.source_id,
             location_category=location_category,
         )
+
+
+def interleave_capped(
+    groups: Iterable[Iterable[T]],
+    limit: int,
+    key: Callable[[T], Hashable],
+) -> List[T]:
+    """Round-robin across per-location result lists, dropping repeats, until
+    ``limit`` items are taken, so one busy location cannot crowd out another."""
+    iterators = [iter(group) for group in groups]
+    seen: set = set()
+    merged: List[T] = []
+    while iterators and len(merged) < limit:
+        still_open = []
+        for iterator in iterators:
+            for item in iterator:
+                item_key = key(item)
+                if item_key in seen:
+                    continue
+                seen.add(item_key)
+                merged.append(item)
+                still_open.append(iterator)
+                break
+            if len(merged) >= limit:
+                break
+        iterators = still_open
+    return merged
 
 
 def parse_source_datetime(value: Any) -> Optional[datetime]:

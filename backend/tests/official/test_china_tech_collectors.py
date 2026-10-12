@@ -198,6 +198,37 @@ def test_parses_bcg_phenom_shanghai_job():
     assert job["source_url"].startswith("https://careers.bcg.com/global/en/job/")
 
 
+def test_bcg_multi_location_role_is_kept_when_any_site_is_malaysia():
+    listing = {
+        "jobId": "59506",
+        "jobSeqNo": "BCG1US59506EXTERNALENGLOBAL",
+        "title": "Project Leader to Partner, Insurance Practice",
+        "location": "Jakarta, Indonesia",
+        "multi_location": [
+            "Jakarta, Indonesia",
+            "Kuala Lumpur, Wilayah Persekutuan Kuala Lumpur, Malaysia",
+            "Bangkok, Bangkok, Thailand",
+        ],
+    }
+    detail = {
+        "jobDetail": {
+            "data": {
+                "job": {
+                    "title": listing["title"],
+                    "location": "Jakarta, Indonesia",
+                    "description": "<p>Lead insurance cases.</p>",
+                }
+            }
+        }
+    }
+
+    job = parse_bcg_job(listing, detail)
+
+    assert job["location_category"] == LocationCategory.CONFIRMED_MALAYSIA.value
+    assert job["country"] == "Malaysia"
+    assert "Kuala Lumpur" in job["location"]
+
+
 def test_parses_kpmg_moka_detail_with_city_id_only():
     detail_item = {
         "id": "87db5020-8673-42f9-a8f5-0b7e983f19cc",

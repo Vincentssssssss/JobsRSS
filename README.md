@@ -48,18 +48,25 @@ Enable official collection:
 ```env
 OFFICIAL_SOURCES_ENABLED=true
 OFFICIAL_SOURCE_INTERVAL_MINUTES=360
-OFFICIAL_SOURCE_MAX_JOBS_PER_SOURCE=50
-OFFICIAL_SOURCE_MAX_PAGES_PER_SOURCE=10
+OFFICIAL_SOURCE_MAX_JOBS_PER_SOURCE=150
+OFFICIAL_SOURCE_MAX_PAGES_PER_SOURCE=20
 OFFICIAL_SOURCE_STALE_AFTER_DAYS=30
 ```
+
+`OFFICIAL_SOURCE_MAX_JOBS_PER_SOURCE` caps each company. Amazon, Microsoft,
+Google, BCG and Roche search Shanghai and Malaysia separately; when the two
+together exceed the cap, results are taken alternately from each location
+(newest first) so neither crowds out the other.
 
 Official jobs are classified before publication:
 
 - `confirmed_shanghai`: explicitly includes Shanghai/上海.
+- `confirmed_malaysia`: explicitly includes Malaysia or a Malaysian city
+  (Kuala Lumpur, Selangor, Johor, Penang, ...).
 - `unclassified`: broad China/APAC/Greater China/Remote or missing location.
-- `excluded`: explicit non-Shanghai location.
+- `excluded`: any other explicit location.
 
-Only confirmed Shanghai and unclassified jobs are ingested.
+Only confirmed Shanghai, confirmed Malaysia and unclassified jobs are ingested.
 
 ## LLM Targeted Matching (V2.1)
 
