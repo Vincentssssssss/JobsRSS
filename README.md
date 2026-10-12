@@ -108,7 +108,7 @@ LLM_COMMIT_EVERY_JOBS=20
 LLM_MIN_RULE_SCORE=20
 LLM_ONLY_UNSCORED=true
 LLM_REJECT_EARLY_CAREER=true
-LLM_TARGET_PROFILE=Senior cybersecurity roles focused on cloud security across Shanghai/Jiangsu/Zhejiang, Hong Kong, and Singapore...
+LLM_TARGET_PROFILE=Manager-level or above cybersecurity roles ... across Shanghai/Jiangsu/Zhejiang, Hong Kong, Singapore, and Malaysia...
 ```
 
 Qwen example:
@@ -270,10 +270,12 @@ Configuration:
 - `LINKEDIN_EXTERNAL_ENRICHMENT_ENABLED=true`
 - `LINKEDIN_EXTERNAL_ENRICHMENT_TIMEOUT_SECONDS=20`
 - `LINKEDIN_STRICT_LOCATION_FILTER=true`
-- `LINKEDIN_ALLOWED_LOCATIONS=Singapore,Hong Kong,Shanghai,Jiangsu,Zhejiang`
+- `LINKEDIN_ALLOWED_LOCATIONS=Singapore,Malaysia,Hong Kong,Shanghai,Jiangsu,Zhejiang`
 
-With strict filtering enabled, LinkedIn jobs outside Singapore, Hong Kong,
-Shanghai, Jiangsu, and Zhejiang are discarded before database ingestion.
+With strict filtering enabled, LinkedIn jobs outside Singapore, Malaysia,
+Hong Kong, Shanghai, Jiangsu, and Zhejiang are discarded before database
+ingestion. `Malaysia` also matches Malaysian cities such as Kuala Lumpur,
+Petaling Jaya, Cyberjaya, Penang and Johor Bahru.
 
 ## Refreshing LinkedIn Login State
 

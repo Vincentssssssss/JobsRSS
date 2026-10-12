@@ -14,6 +14,7 @@ from app.enrichment.external_job import (
     merge_job_fields,
 )
 from app.official.collectors.microsoft import is_microsoft_career_homepage
+from app.official.location import MALAYSIA_MARKERS
 
 _DESCRIPTION_NOISE_MARKERS = {
     "skip to main content",
@@ -799,6 +800,7 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
             return False
         aliases = {
             "singapore": {"singapore", "新加坡"},
+            "malaysia": MALAYSIA_MARKERS,
             "hong kong": {"hong kong", "hong kong sar", "香港", "香港特别行政区"},
             "shanghai": {"shanghai", "上海"},
             "hangzhou": {"hangzhou", "杭州"},

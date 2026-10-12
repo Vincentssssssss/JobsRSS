@@ -61,6 +61,11 @@ type SourceCountsResponse = {
   }>;
 };
 
+const LOCATION_BADGES: Record<string, string> = {
+  confirmed_shanghai: "Shanghai",
+  confirmed_malaysia: "Malaysia",
+};
+
 function buildDirectBackendBase(): string {
   if (typeof window !== "undefined" && window.location?.hostname) {
     return `${window.location.protocol}//${window.location.hostname}:8000`;
@@ -485,6 +490,7 @@ export default function HomePage() {
           >
             <option value="">All</option>
             <option value="confirmed_shanghai">Confirmed Shanghai</option>
+            <option value="confirmed_malaysia">Confirmed Malaysia</option>
             <option value="unclassified">Unclassified</option>
           </select>
         </div>
@@ -537,9 +543,7 @@ export default function HomePage() {
                   <p className="job-meta">AI score pending</p>
                 )}
                 <span className="location-badge">
-                  {job.location_category === "confirmed_shanghai"
-                    ? "Shanghai"
-                    : "Location unclassified"}
+                  {LOCATION_BADGES[job.location_category] ?? "Location unclassified"}
                 </span>
                 {job.posted_at && <p className="job-meta">Posted: {new Date(job.posted_at).toLocaleString()}</p>}
               </div>

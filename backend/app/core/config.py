@@ -57,7 +57,7 @@ class Settings(BaseSettings):
         "Head of Security, Security Engineering Manager, Lead/Principal Security Architect) "
         "focused on cloud security, application security, IAM/PAM, SOC/SIEM, threat "
         "detection, vulnerability management, and security architecture leadership across "
-        "Shanghai/Jiangsu/Zhejiang (Yangtze River Delta), Hong Kong, and Singapore. "
+        "Shanghai/Jiangsu/Zhejiang (Yangtze River Delta), Hong Kong, Singapore, and Malaysia. "
         "Individual-contributor engineer or analyst roles below lead level are not a fit."
     )
 
@@ -88,7 +88,7 @@ class Settings(BaseSettings):
     linkedin_external_enrichment_enabled: bool = True
     linkedin_external_enrichment_timeout_seconds: int = 20
     linkedin_strict_location_filter: bool = True
-    linkedin_allowed_locations: str = "Singapore,Hong Kong,Shanghai,Jiangsu,Zhejiang"
+    linkedin_allowed_locations: str = "Singapore,Malaysia,Hong Kong,Shanghai,Jiangsu,Zhejiang"
 
     job51_auth_enabled: bool = False
     job51_auth_username: Optional[str] = None

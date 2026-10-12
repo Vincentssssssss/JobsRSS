@@ -98,6 +98,20 @@ def test_strict_location_filter_accepts_only_configured_markets():
     assert not collector._is_allowed_location("Shenzhen", allowed)
     assert not collector._is_allowed_location("Remote - APAC", allowed)
     assert not collector._is_allowed_location("Unknown", allowed)
+    assert not collector._is_allowed_location("Kuala Lumpur", allowed)
+
+
+def test_strict_location_filter_malaysia_matches_malaysian_cities():
+    collector = LinkedInAuthCollector()
+    allowed = ["Malaysia"]
+
+    assert collector._is_allowed_location("Malaysia", allowed)
+    assert collector._is_allowed_location("Kuala Lumpur", allowed)
+    assert collector._is_allowed_location("Petaling Jaya", allowed)
+    assert collector._is_allowed_location("Cyberjaya", allowed)
+    assert collector._is_allowed_location("吉隆坡", allowed)
+    assert not collector._is_allowed_location("Singapore", allowed)
+    assert not collector._is_allowed_location("Jakarta", allowed)
 
 
 def test_strict_location_filter_supports_jiangzhehu_group_keyword():

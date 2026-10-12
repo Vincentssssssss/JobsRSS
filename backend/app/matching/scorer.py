@@ -1,5 +1,6 @@
 from typing import Iterable
 
+from app.official.location import MALAYSIA_MARKERS
 
 POSITIVE_KEYWORDS = {
     "cloud security architect",
@@ -18,6 +19,7 @@ POSITIVE_KEYWORDS = {
 }
 SENIORITY_KEYWORDS = {"senior", "lead", "principal", "manager", "director", "高级", "专家", "负责人", "经理", "总监"}
 NEGATIVE_KEYWORDS = {"intern", "junior", "entry level", "helpdesk", "desktop support", "实习", "初级", "桌面支持", "运维支持"}
+TARGET_LOCATION_MARKERS = {"hong kong", "singapore", "shanghai", "香港", "新加坡", "上海", *MALAYSIA_MARKERS}
 
 
 def _contains_any(text: str, keywords: Iterable[str]) -> bool:
@@ -35,7 +37,7 @@ def score_job(title: str, description: str, location: str) -> float:
         score += 55
     if _contains_any(blob, SENIORITY_KEYWORDS):
         score += 20
-    if any(place in blob for place in ["hong kong", "singapore", "shanghai", "香港", "新加坡", "上海"]):
+    if _contains_any(blob, TARGET_LOCATION_MARKERS):
         score += 15
     if any(term in blob for term in ["apac", "greater china", "亚太", "大中华"]):
         score += 10
