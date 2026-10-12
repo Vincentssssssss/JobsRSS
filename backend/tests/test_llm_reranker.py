@@ -10,6 +10,7 @@ from app.matching.llm_reranker import (
     LLMQuotaExhaustedError,
     OpenAICompatibleClient,
     _build_auth_headers,
+    _build_messages,
     _is_retryable_status,
     _normalize_verdict,
     _parse_match_result,
@@ -540,3 +541,13 @@ def test_rate_limit_429_is_still_retried(monkeypatch):
         client._post_chat_completions_with_retry({"model": "gpt-6-luna"})
     assert not isinstance(excinfo.value, LLMQuotaExhaustedError)
     assert len(calls) == 3
+
+
+def test_prompt_makes_seniority_a_hard_gate():
+    job = _make_job(source_job_id="prompt", match_score=80)
+    messages = _build_messages(job, "Manager-level cybersecurity roles")
+    task = messages[-1]["content"]
+
+    assert "Seniority is a hard gate" in task
+    assert "fit_score at most 40" in task
+    assert "'Seniority:'" in task

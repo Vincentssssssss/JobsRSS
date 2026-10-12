@@ -53,10 +53,12 @@ class Settings(BaseSettings):
     llm_only_unscored: bool = True
     llm_reject_early_career: bool = True
     llm_target_profile: str = (
-        "Senior cybersecurity roles focused on cloud security, application security, "
-        "IAM/PAM, SOC/SIEM, threat detection, vulnerability management, and "
-        "security architecture leadership across Shanghai/Jiangsu/Zhejiang "
-        "(Yangtze River Delta), Hong Kong, and Singapore."
+        "Manager-level or above cybersecurity roles (Security Manager, Senior Manager, "
+        "Head of Security, Security Engineering Manager, Lead/Principal Security Architect) "
+        "focused on cloud security, application security, IAM/PAM, SOC/SIEM, threat "
+        "detection, vulnerability management, and security architecture leadership across "
+        "Shanghai/Jiangsu/Zhejiang (Yangtze River Delta), Hong Kong, and Singapore. "
+        "Individual-contributor engineer or analyst roles below lead level are not a fit."
     )
 
     high_match_threshold: int = 80

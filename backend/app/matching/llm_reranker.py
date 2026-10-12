@@ -348,7 +348,14 @@ def _build_messages(job: Job, target_profile: str) -> list[Dict[str, str]]:
             "description": job.description[:6000],
         },
         "task": (
-            "Evaluate cybersecurity fit. Output JSON with keys: "
+            "Evaluate fit against target_profile on two axes: cybersecurity domain and seniority. "
+            "Infer the role's seniority from its title, required years of experience, and scope "
+            "(people management, budget, regional or programme ownership). "
+            "Seniority is a hard gate: if the role is clearly below the level described in "
+            "target_profile, verdict must be not_fit and fit_score at most 40, even when the "
+            "domain matches. Always include exactly one reason starting with 'Seniority:' that "
+            "names the inferred level, in match_reasons if it fits or reject_reasons if not. "
+            "Output JSON with keys: "
             "fit_score (0-100 number), verdict (strong_fit|possible_fit|not_fit), "
             "role_family (string), match_reasons (array of strings), "
             "reject_reasons (array of strings), missing_skills (array of strings)."
