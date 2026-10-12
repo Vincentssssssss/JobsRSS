@@ -13,6 +13,8 @@ from app.matching.scorer import score_job
 from app.models.job import Job
 from app.normalization.normalizer import normalize_job
 
+_SEARCH_PAGE_SOURCES = {"liepin_auth", "job51_auth"}
+
 
 @dataclass
 class IngestStats:
@@ -155,6 +157,21 @@ def ingest_collector(db: Session, collector: BaseCollector) -> IngestStats:
             db.query(Job)
             .filter(
                 Job.source == "linkedin_auth",
+                Job.status == "active",
+                Job.last_seen_at < cutoff,
+            )
+            .update({"status": "closed"}, synchronize_session=False)
+        )
+    # An empty run usually means the login cookie expired rather than every
+    # posting closing, so only age out rows when this run actually saw jobs.
+    if collector.meta.source_name in _SEARCH_PAGE_SOURCES and stats.found > 0:
+        cutoff = datetime.now(timezone.utc) - timedelta(
+            days=settings.platform_stale_after_days
+        )
+        (
+            db.query(Job)
+            .filter(
+                Job.source == collector.meta.source_name,
                 Job.status == "active",
                 Job.last_seen_at < cutoff,
             )

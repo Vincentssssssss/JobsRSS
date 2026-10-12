@@ -220,6 +220,12 @@ Key `.env` fields:
 
 Multiple search pages can be configured as comma-separated URLs.
 
+51job and Liepin only expose search result pages, so a posting that has been
+filled or withdrawn simply stops appearing. Rows not seen for
+`PLATFORM_STALE_AFTER_DAYS` (default 7) are closed after any run that returned
+results; a run that returns nothing (for example, an expired cookie) closes
+nothing. Cards that say 停止招聘 / 职位已关闭 are closed immediately.
+
 ## LinkedIn Official-Source Enrichment
 
 V1.1 uses LinkedIn for discovery, then enriches eligible jobs from the external

@@ -101,6 +101,7 @@ class Settings(BaseSettings):
     liepin_auth_storage_state_path: Optional[str] = None
     liepin_search_urls: str = ""
     liepin_polling_interval_minutes: int = 20
+    platform_stale_after_days: int = 7
 
     digest_email_enabled: bool = False
     digest_email_smtp_host: Optional[str] = None

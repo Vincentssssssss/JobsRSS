@@ -456,3 +456,106 @@ def test_ingest_applies_early_career_guard_without_waiting_for_llm_rerank():
         assert stored.llm_verdict == "not_fit"
         assert stored.llm_role_family == "early_career_program"
         assert stored.llm_model == "heuristic-early-career-guard"
+
+
+class StubLiepinCollector(StubCollector):
+    meta = CollectorMeta(
+        source_name="liepin_auth",
+        source_type="job_platform",
+        collection_method="test",
+        polling_interval_minutes=20,
+    )
+
+
+class EmptyLiepinCollector(StubLiepinCollector):
+    def __init__(self) -> None:
+        pass
+
+    def collect(self):
+        return []
+
+
+def _stale_liepin_job(days_ago: int) -> Job:
+    seen = datetime.now(timezone.utc) - timedelta(days=days_ago)
+    return Job(
+        source="liepin_auth",
+        source_job_id="old-lp",
+        company="Old Co",
+        title="安全经理",
+        location="上海",
+        country="China",
+        description="安全经理",
+        apply_url="https://www.liepin.com/job/111.shtml",
+        source_url="https://www.liepin.com/job/111.shtml",
+        posted_at=seen,
+        updated_at=seen,
+        first_seen_at=seen,
+        last_seen_at=seen,
+        content_hash="old-lp",
+        match_score=0,
+        status="active",
+    )
+
+
+def test_stale_liepin_job_is_closed_after_run_that_found_jobs():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    now = datetime.now(timezone.utc)
+
+    with Session(engine) as db:
+        db.add(_stale_liepin_job(days_ago=10))
+        db.commit()
+
+        current = UnifiedJob(
+            source="liepin_auth",
+            source_job_id="current-lp",
+            company="Current Co",
+            title="云安全经理",
+            location="上海",
+            country="China",
+            description="云安全经理",
+            apply_url="https://www.liepin.com/job/222.shtml",
+            source_url="https://www.liepin.com/job/222.shtml",
+            posted_at=now,
+            updated_at=now,
+            first_seen_at=now,
+            last_seen_at=now,
+            content_hash="current-lp",
+        )
+        ingest_collector(db, StubLiepinCollector(current))
+
+        assert db.query(Job).filter(Job.source_job_id == "old-lp").one().status == "closed"
+        assert db.query(Job).filter(Job.source_job_id == "current-lp").one().status == "active"
+
+
+def test_liepin_jobs_stay_active_when_run_finds_nothing():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        db.add(_stale_liepin_job(days_ago=10))
+        db.commit()
+
+        ingest_collector(db, EmptyLiepinCollector())
+
+        assert db.query(Job).filter(Job.source_job_id == "old-lp").one().status == "active"
+
+
+def test_card_with_closed_marker_is_ingested_as_closed():
+    from app.collectors.liepin_auth import LiepinAuthCollector
+
+    collector = LiepinAuthCollector()
+    job = collector.normalize(
+        {
+            "source_job_id": "lp-closed",
+            "title": "云安全经理",
+            "company": "Acme",
+            "location": "上海",
+            "description": "云安全经理 Acme 上海 该职位已停止招聘",
+            "apply_url": "https://www.liepin.com/job/333.shtml",
+            "source_url": "https://www.liepin.com/job/333.shtml",
+            "content_hash": "lp-closed",
+        }
+    )
+
+    assert job.status == "closed"

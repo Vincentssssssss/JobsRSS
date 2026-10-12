@@ -14,6 +14,14 @@ from app.schemas.job import UnifiedJob
 
 logger = logging.getLogger(__name__)
 
+CLOSED_POSTING_MARKERS = (
+    "停止招聘",
+    "职位已关闭",
+    "职位已下线",
+    "已结束招聘",
+    "职位已失效",
+)
+
 
 class AuthenticatedPlaywrightCollector(BaseCollector):
     """Shared collector for account-based browser collection.
@@ -71,6 +79,8 @@ class AuthenticatedPlaywrightCollector(BaseCollector):
                 posted_at = datetime.fromisoformat(posted_at.replace("Z", "+00:00"))
             except ValueError:
                 posted_at = None
+        card_text = f"{raw['title']} {raw.get('description', '')}"
+        is_closed = any(marker in card_text for marker in CLOSED_POSTING_MARKERS)
         return UnifiedJob(
             source=self.meta.source_name,
             source_job_id=raw["source_job_id"],
@@ -86,7 +96,7 @@ class AuthenticatedPlaywrightCollector(BaseCollector):
             first_seen_at=now,
             last_seen_at=now,
             content_hash=raw["content_hash"],
-            status="active",
+            status="closed" if is_closed else "active",
             enrichment_source=raw.get("enrichment_source"),
         )
 
