@@ -80,7 +80,7 @@ OFFICIAL_SOURCE_REGISTRY = [
         "alibaba",
         "Alibaba / Alibaba Cloud",
         "technology",
-        "https://campus-talent.alibaba.com/campus/position",
+        "https://talent.alibaba.com/off-campus/position-list?lang=zh",
         "json_xsrf",
     ),
     _source(

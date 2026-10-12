@@ -8,14 +8,21 @@ web APIs and must be monitored for schema changes.
 
 ## Alibaba / Alibaba Cloud
 
-- Official portal: `https://campus-talent.alibaba.com/campus/position`
-- Method: first-party JSON with XSRF token.
-- Scope currently verified: campus/intern recruitment.
-- Shanghai filter: `regions: "上海"`.
-- Alibaba Cloud requires dynamically discovered leaf department codes.
-- Limitation: no verified equivalent social-hire API; batches and department
-  codes change by campaign.
-- Live campus connector smoke test passed with Shanghai multi-location roles.
+- Official portal: `https://talent.alibaba.com/off-campus/position-list?lang=zh`
+  (social recruitment; the campus portal is no longer collected).
+- Search: `POST https://talent.alibaba.com/position/search` with
+  `{"channel", "language", "key", "pageIndex", "pageSize"}` (`pageSize` 100 works).
+- Channels: `group_official_site` (`language: zh`, China) and
+  `group_overseas_official_site` (`language: en`, overseas incl. Malaysia).
+- XSRF: `GET` the portal page (answers 302) to receive the `XSRF-TOKEN`
+  cookie, then send it as `X-XSRF-TOKEN` with a portal `Referer`.
+- Rows include `description`, `requirement`, `workLocations` (city names),
+  `experience.from`, `publishTime`; no detail call is needed.
+- Shanghai can be filtered server-side with `regions: "310100"`, but the
+  collector keyword-searches "安全" / "security" and filters `workLocations`
+  client-side because most roles list several cities.
+- Live smoke test (2026-10-09): 116 "安全" roles in China (13 in Shanghai) and
+  8 overseas "security" roles (1 in Johor Bahru).
 
 ## Tencent / Tencent Cloud
 

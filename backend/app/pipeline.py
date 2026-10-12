@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from urllib.parse import urlparse
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.collectors.base import BaseCollector
@@ -137,6 +138,22 @@ def ingest_collector(db: Session, collector: BaseCollector) -> IngestStats:
                 Job.source == collector.meta.source_name,
                 Job.status == "active",
                 Job.last_seen_at < cutoff,
+            )
+            .update({"status": "closed"}, synchronize_session=False)
+        )
+    retired_prefixes = getattr(collector, "retired_source_url_prefixes", ())
+    if retired_prefixes:
+        (
+            db.query(Job)
+            .filter(
+                Job.source == collector.meta.source_name,
+                Job.status == "active",
+                or_(
+                    *(
+                        Job.source_url.startswith(prefix, autoescape=True)
+                        for prefix in retired_prefixes
+                    )
+                ),
             )
             .update({"status": "closed"}, synchronize_session=False)
         )

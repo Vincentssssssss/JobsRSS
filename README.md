@@ -58,6 +58,12 @@ Google, BCG and Roche search Shanghai and Malaysia separately; when the two
 together exceed the cap, results are taken alternately from each location
 (newest first) so neither crowds out the other.
 
+Alibaba is collected from the social-recruitment portal
+(`talent.alibaba.com`), not the campus portal. Because that portal has
+~4,000 roles and no function filter, the collector keyword-searches
+"安全" / "security" on the China and overseas channels and keeps Shanghai and
+Malaysia roles. Any remaining campus-portal rows are closed on the next run.
+
 Official jobs are classified before publication:
 
 - `confirmed_shanghai`: explicitly includes Shanghai/上海.

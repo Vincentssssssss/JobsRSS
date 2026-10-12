@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, Hashable, Iterable, List, Optional, TypeVar
+from typing import Any, Callable, Dict, Hashable, Iterable, List, Optional, Tuple, TypeVar
 
 from app.collectors.base import BaseCollector, CollectorMeta
 from app.enrichment.external_job import ExternalJobEnricher
@@ -12,6 +12,9 @@ T = TypeVar("T")
 
 class OfficialCollectorBase(BaseCollector):
     spec: OfficialSourceSpec
+    # Rows from a portal this source no longer collects are closed on every run
+    # instead of waiting for official_source_stale_after_days.
+    retired_source_url_prefixes: Tuple[str, ...] = ()
 
     def __init__(self, spec: OfficialSourceSpec, method: str, parser_name: str) -> None:
         self.spec = spec

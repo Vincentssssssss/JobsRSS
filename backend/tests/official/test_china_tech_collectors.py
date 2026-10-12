@@ -1,4 +1,8 @@
-from app.official.collectors.alibaba import parse_alibaba_position
+import json
+
+import httpx
+
+from app.official.collectors.alibaba import AlibabaOfficialCollector, parse_alibaba_position
 from app.official.collectors.bcg import parse_bcg_job
 from app.official.collectors.feishu_jobs import parse_feishu_jobs
 from app.official.collectors.huawei import parse_huawei_jobs
@@ -86,28 +90,109 @@ def test_parses_shared_feishu_recruiting_payload():
     assert jobs[0]["source_url"].endswith("/experienced/position/BD-200/detail")
 
 
-def test_parses_alibaba_campus_position_detail():
-    detail = {
-        "content": {
-            "id": 199903220038,
-            "name": "阿里云安全工程师",
-            "description": "负责云平台安全架构。",
-            "requirement": "熟悉 IAM、DevSecOps 与应用安全。",
-            "workLocations": ["上海"],
-            "categoryName": "技术",
-            "batchName": "校园招聘",
-            "graduationDates": "2026-11-01 - 2027-10-31",
-            "hiringProgram": "Alibaba 2027 Graduate Recruitment",
-        }
+def _alibaba_social_item(**overrides):
+    item = {
+        "id": 100032880001,
+        "name": "淘宝闪购-应用安全专家-杭州/上海",
+        "description": "负责应用安全体系建设。",
+        "requirement": "熟悉 IAM、DevSecOps 与应用安全。",
+        "workLocations": ["杭州", "上海"],
+        "experience": {"from": 5, "to": None},
+        "publishTime": 1791734400000,
+        "modifyTime": 1791774007000,
+        "positionUrl": (
+            "/off-campus/position-detail?positionId=100032880001&track_id=SSP1"
+        ),
     }
+    item.update(overrides)
+    return item
 
-    job = parse_alibaba_position(detail)
 
-    assert job["source_job_id"] == "199903220038"
+def test_parses_alibaba_social_position():
+    job = parse_alibaba_position(_alibaba_social_item())
+
+    assert job["source_job_id"] == "100032880001"
     assert job["location_category"] == LocationCategory.CONFIRMED_SHANGHAI.value
+    assert job["country"] == "China"
     assert "DevSecOps" in job["description"]
-    assert "Batch Name: 校园招聘" in job["description"]
-    assert "Graduation Dates: 2026-11-01 - 2027-10-31" in job["description"]
+    assert "Experience: 5+ years" in job["description"]
+    assert job["posted_at"] == 1791734400000
+    assert job["source_url"] == (
+        "https://talent.alibaba.com/off-campus/position-detail?positionId=100032880001"
+    )
+
+
+def test_parses_alibaba_overseas_malaysia_position():
+    job = parse_alibaba_position(
+        _alibaba_social_item(
+            id=100008423001,
+            name="Alibaba Cloud-Data Center Security Manager-Malaysia",
+            workLocations=["Johor Bahru"],
+        ),
+        language="en",
+    )
+
+    assert job["location_category"] == LocationCategory.CONFIRMED_MALAYSIA.value
+    assert job["country"] == "Malaysia"
+    assert job["source_url"] == (
+        "https://talent.alibaba.com/en/off-campus/position-detail?positionId=100008423001"
+    )
+
+
+def test_skips_alibaba_position_outside_target_locations():
+    assert parse_alibaba_position(_alibaba_social_item(workLocations=["北京", "杭州"])) is None
+
+
+def test_alibaba_collector_searches_social_portal_with_xsrf(monkeypatch):
+    searches = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            assert request.url.host == "talent.alibaba.com"
+            return httpx.Response(
+                302,
+                headers={
+                    "set-cookie": "XSRF-TOKEN=tok123; Path=/",
+                    "location": "/off-campus/home",
+                },
+            )
+        assert request.url == "https://talent.alibaba.com/position/search"
+        assert request.headers["x-xsrf-token"] == "tok123"
+        body = json.loads(request.content)
+        searches.append((body["channel"], body["key"]))
+        assert request.headers["referer"].endswith(f"lang={body['language']}")
+        if body["channel"] == "group_overseas_official_site":
+            datas = [
+                _alibaba_social_item(id=2, workLocations=["Kuala Lumpur"]),
+                _alibaba_social_item(id=3, workLocations=["Singapore"]),
+            ]
+        else:
+            datas = [
+                _alibaba_social_item(id=1),
+                _alibaba_social_item(id=4, workLocations=["北京"]),
+            ]
+        return httpx.Response(
+            200, json={"success": True, "content": {"totalCount": 2, "datas": datas}}
+        )
+
+    real_client = httpx.Client
+    monkeypatch.setattr(
+        httpx,
+        "Client",
+        lambda **kwargs: real_client(transport=httpx.MockTransport(handler), **kwargs),
+    )
+
+    collector = AlibabaOfficialCollector()
+    jobs = collector.fetch_raw()
+
+    assert searches == [
+        ("group_official_site", "安全"),
+        ("group_official_site", "security"),
+        ("group_overseas_official_site", "security"),
+    ]
+    assert [job["source_job_id"] for job in jobs] == ["1", "2"]
+    assert all(job["source_url"].startswith("https://talent.alibaba.com/") for job in jobs)
+    assert collector.retired_source_url_prefixes == ("https://campus-talent.alibaba.com",)
 
 
 def test_parses_midea_position_detail():

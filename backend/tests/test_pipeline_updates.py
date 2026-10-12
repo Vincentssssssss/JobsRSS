@@ -458,6 +458,71 @@ def test_ingest_applies_early_career_guard_without_waiting_for_llm_rerank():
         assert stored.llm_model == "heuristic-early-career-guard"
 
 
+class StubAlibabaSocialCollector(StubCollector):
+    meta = CollectorMeta(
+        source_name="official_alibaba",
+        source_type="company_site",
+        collection_method="test",
+        polling_interval_minutes=360,
+    )
+    retired_source_url_prefixes = ("https://campus-talent.alibaba.com",)
+
+
+def test_rows_from_retired_portal_are_closed_on_next_run():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    now = datetime.now(timezone.utc)
+
+    def alibaba_job(source_job_id: str, url: str) -> Job:
+        return Job(
+            source="official_alibaba",
+            source_job_id=source_job_id,
+            company="Alibaba / Alibaba Cloud",
+            title="安全工程师",
+            location="上海",
+            country="China",
+            description="安全工程师",
+            apply_url=url,
+            source_url=url,
+            posted_at=now,
+            updated_at=now,
+            first_seen_at=now,
+            last_seen_at=now,
+            content_hash=source_job_id,
+            match_score=0,
+            status="active",
+            location_category="confirmed_shanghai",
+        )
+
+    social_url = "https://talent.alibaba.com/off-campus/position-detail?positionId="
+    with Session(engine) as db:
+        db.add(alibaba_job("campus", "https://campus-talent.alibaba.com/campus/position/1"))
+        db.add(alibaba_job("social-old", f"{social_url}2"))
+        db.commit()
+
+        current = UnifiedJob(
+            source="official_alibaba",
+            source_job_id="social-new",
+            company="Alibaba / Alibaba Cloud",
+            title="应用安全专家",
+            location="上海",
+            country="China",
+            description="应用安全专家",
+            apply_url=f"{social_url}3",
+            source_url=f"{social_url}3",
+            content_hash="social-new",
+            location_category="confirmed_shanghai",
+        )
+        ingest_collector(db, StubAlibabaSocialCollector(current))
+
+        statuses = {job.source_job_id: job.status for job in db.query(Job).all()}
+        assert statuses == {
+            "campus": "closed",
+            "social-old": "active",
+            "social-new": "active",
+        }
+
+
 class StubLiepinCollector(StubCollector):
     meta = CollectorMeta(
         source_name="liepin_auth",
