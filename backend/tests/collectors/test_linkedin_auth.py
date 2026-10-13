@@ -309,3 +309,128 @@ Requirements: Hands-on SOC and threat detection experience.
     assert "privacy policy" not in cleaned.lower()
     assert "Build and tune SIEM detection pipelines." in cleaned
     assert "Hands-on SOC and threat detection experience." in cleaned
+
+
+class _FakeDetailPage:
+    def __init__(self, html: str) -> None:
+        self.html = html
+        self.apply_lookups = 0
+
+    def goto(self, url, **kwargs):
+        return None
+
+    def wait_for_timeout(self, ms):
+        return None
+
+    def content(self):
+        return self.html
+
+    def evaluate(self, script):
+        if 'querySelectorAll("a[href]")' in script:
+            self.apply_lookups += 1
+            return ["https://jobs.acme.com/jobs/123"]
+        return {
+            "title": "Principal Cloud Security Architect",
+            "company": "Alignerr",
+            "location": "香港特别行政区",
+            "description": "Design cloud security architecture.",
+        }
+
+    def close(self):
+        return None
+
+
+class _FakeContext:
+    def __init__(self, page: _FakeDetailPage) -> None:
+        self.page = page
+
+    def new_page(self):
+        return self.page
+
+
+def test_collect_detail_reports_closed_marker_and_skips_apply_enrichment():
+    collector = LinkedInAuthCollector()
+    page = _FakeDetailPage(
+        "<html><body><h1>Principal Cloud Security Architect</h1>"
+        '<div class="artdeco-inline-feedback__message">No longer accepting applications</div>'
+        "</body></html>"
+    )
+
+    detail = collector._collect_detail(
+        _FakeContext(page), "https://www.linkedin.com/jobs/view/4300000001/"
+    )
+
+    assert detail["closed_marker"] == "no longer accepting applications"
+    assert detail["external_apply_url"] == ""
+    assert page.apply_lookups == 0
+
+
+def test_collect_detail_without_marker_stays_open():
+    collector = LinkedInAuthCollector()
+    page = _FakeDetailPage("<html><body><h1>Principal Cloud Security Architect</h1></body></html>")
+
+    detail = collector._collect_detail(
+        _FakeContext(page), "https://www.linkedin.com/jobs/view/4300000001/"
+    )
+
+    assert detail["closed_marker"] is None
+
+
+def _alignerr_card():
+    return {
+        "title": "Principal Cloud Security Architect",
+        "company": "Alignerr",
+        "location": "香港特别行政区",
+        "job_url": "https://www.linkedin.com/jobs/view/4300000001/",
+        "posted_at": None,
+    }
+
+
+def _alignerr_detail(closed_marker=None):
+    return {
+        "title": "Principal Cloud Security Architect",
+        "company": "Alignerr",
+        "location": "香港特别行政区",
+        "detail_location_source": "selector",
+        "description": "Design cloud security architecture.",
+        "external_apply_url": "",
+        "official": None,
+        "closed_marker": closed_marker,
+    }
+
+
+def test_posting_with_closed_marker_is_recorded_closed_even_in_allowed_market():
+    collector = LinkedInAuthCollector()
+    results = {}
+
+    collector._record_job(
+        results, _alignerr_card(), _alignerr_detail("已停止接受求职申请"), "Hong Kong"
+    )
+
+    (recorded,) = results.values()
+    assert recorded["status"] == "closed"
+    assert collector.normalize(recorded).status == "closed"
+
+
+def test_closed_marker_wins_over_an_active_sighting_in_the_same_run():
+    collector = LinkedInAuthCollector()
+    results = {}
+
+    collector._record_job(results, _alignerr_card(), _alignerr_detail(), "Hong Kong")
+    collector._record_job(
+        results, _alignerr_card(), _alignerr_detail("No longer accepting applications"), "Hong Kong"
+    )
+    collector._record_job(results, _alignerr_card(), _alignerr_detail(), "Hong Kong")
+
+    (recorded,) = results.values()
+    assert recorded["status"] == "closed"
+
+
+def test_open_posting_in_allowed_market_is_recorded_active():
+    collector = LinkedInAuthCollector()
+    results = {}
+
+    collector._record_job(results, _alignerr_card(), _alignerr_detail(), "Hong Kong")
+
+    (recorded,) = results.values()
+    assert recorded["status"] == "active"

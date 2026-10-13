@@ -8,6 +8,7 @@ from bs4 import BeautifulSoup
 
 from app.collectors.authenticated_playwright import AuthenticatedPlaywrightCollector
 from app.collectors.base import CollectorMeta
+from app.collectors.linkedin_status import find_linkedin_closed_marker
 from app.enrichment.external_job import (
     ExternalJobEnricher,
     EnrichedJobData,
@@ -237,24 +238,7 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
                     )
                     for card in cards[:25]:
                         detail = self._collect_detail(context, card["job_url"])
-                        merged = self._merge_job_data(card, detail, fallback_location=fallback_location)
-                        if not self._is_publishable_job(merged):
-                            continue
-                        source_job_id = merged["source_job_id"]
-                        if not self._passes_strict_location_filter(
-                            merged,
-                            self.settings.csv_items(
-                                self.settings.linkedin_allowed_locations
-                            ),
-                        ):
-                            # Keep a closed marker so previously mis-labeled active rows
-                            # can be corrected/closed on the next ingest cycle.
-                            merged["status"] = "closed"
-                            if source_job_id not in results or results[source_job_id].get("status") != "active":
-                                results[source_job_id] = merged
-                            continue
-                        merged["status"] = "active"
-                        results[source_job_id] = merged
+                        self._record_job(results, card, detail, fallback_location)
                 except Exception:
                     logger.exception("collector_linkedin_search_failed url=%s", search_url)
                     continue
@@ -263,6 +247,44 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
             browser.close()
 
         return list(results.values())
+
+    def _record_job(
+        self,
+        results: Dict[str, Dict[str, Any]],
+        card: Dict[str, str],
+        detail: Dict[str, Any],
+        fallback_location: str,
+    ) -> None:
+        merged = self._merge_job_data(card, detail, fallback_location=fallback_location)
+        if not self._is_publishable_job(merged):
+            return
+        source_job_id = merged["source_job_id"]
+        previous = results.get(source_job_id)
+        closed_marker = detail.get("closed_marker")
+        if closed_marker:
+            logger.info(
+                "collector_linkedin_closed_posting url=%s marker=%s",
+                merged["source_url"],
+                closed_marker,
+            )
+            merged["status"] = "closed"
+            merged["closed_marker"] = closed_marker
+            results[source_job_id] = merged
+            return
+        if previous and previous.get("closed_marker"):
+            return
+        if not self._passes_strict_location_filter(
+            merged,
+            self.settings.csv_items(self.settings.linkedin_allowed_locations),
+        ):
+            # Keep a closed marker so previously mis-labeled active rows
+            # can be corrected/closed on the next ingest cycle.
+            merged["status"] = "closed"
+            if previous is None or previous.get("status") != "active":
+                results[source_job_id] = merged
+            return
+        merged["status"] = "active"
+        results[source_job_id] = merged
 
     def _extract_linkedin_cards(self, page: Any) -> List[Dict[str, str]]:
         payload = page.evaluate(
@@ -388,7 +410,8 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
                 ld_location=ld_payload.get("location", ""),
             )
             description = (payload.get("description", "") or ld_payload.get("description", ""))[:8000]
-            external_apply_url = self._discover_external_apply_url(page)
+            closed_marker = find_linkedin_closed_marker(html)
+            external_apply_url = "" if closed_marker else self._discover_external_apply_url(page)
             official = self._collect_official_job(external_apply_url)
             return {
                 "title": title,
@@ -398,6 +421,7 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
                 "description": description,
                 "external_apply_url": external_apply_url,
                 "official": official,
+                "closed_marker": closed_marker,
             }
         except Exception:
             return {
@@ -408,6 +432,7 @@ class LinkedInAuthCollector(AuthenticatedPlaywrightCollector):
                 "description": "",
                 "external_apply_url": "",
                 "official": None,
+                "closed_marker": None,
             }
         finally:
             page.close()
