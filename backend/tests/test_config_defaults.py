@@ -19,6 +19,14 @@ def test_official_sources_enabled_by_default_for_v2(monkeypatch):
     assert "Hong Kong" in settings.llm_target_profile
     assert settings.linkedin_require_storage_state is True
     assert settings.linkedin_auth_stale_after_days == 14
+    assert settings.linkedin_email_stale_after_days == 14
+    assert settings.linkedin_verify_enabled is True
+    assert settings.linkedin_verify_interval_minutes == 60
+    assert settings.linkedin_verify_max_per_run == 20
+    assert settings.linkedin_verify_recheck_hours == 24
+    assert settings.linkedin_verify_delay_seconds == 4.0
+    assert settings.job_max_age_days == 60
+    assert settings.job_max_age_undated_days == 90
     assert settings.llm_request_max_retries == 2
     assert settings.llm_request_retry_backoff_seconds == 1.5
     assert settings.llm_abort_after_consecutive_failures == 8

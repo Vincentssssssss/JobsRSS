@@ -239,6 +239,60 @@ filled or withdrawn simply stops appearing. Rows not seen for
 results; a run that returns nothing (for example, an expired cookie) closes
 nothing. Cards that say 停止招聘 / 职位已关闭 are closed immediately.
 
+## Closing Dead and Outdated Postings
+
+Closed rows disappear from the dashboard, RSS and the digest. A posting is
+closed when any of these applies:
+
+- **LinkedIn says it is closed.** The logged-in collector checks each job
+  page for LinkedIn's closed badge ("No longer accepting applications",
+  已停止接受求职申请, 不再受理應徵 and variants) and stores the job as closed.
+- **LinkedIn re-verification.** Every `LINKEDIN_VERIFY_INTERVAL_MINUTES` the
+  worker re-checks up to `LINKEDIN_VERIFY_MAX_PER_RUN` active `linkedin_auth`
+  / `linkedin_email` rows on LinkedIn's public job page
+  (`/jobs-guest/jobs/api/jobPosting/{id}`), dashboard-visible rows
+  (strong/possible fit, LLM score >= 60) and never-checked rows first, each
+  row at most once per `LINKEDIN_VERIFY_RECHECK_HOURS`. Requests are
+  anonymous: no cookie or storage state is ever sent, so they cannot affect
+  your LinkedIn account. Requests are spaced `LINKEDIN_VERIFY_DELAY_SECONDS`
+  (plus jitter) apart. Only the closed badge or a 404/410 closes a row. A 404
+  for a posting the collector saw in the last 24 hours is ignored, a
+  429/999 (rate limit) stops the run, and redirects, other errors and pages
+  that don't parse never close anything.
+- **Not seen any more.** Rows a collector stops returning are closed after
+  `LINKEDIN_AUTH_STALE_AFTER_DAYS` (14), `LINKEDIN_EMAIL_STALE_AFTER_DAYS`
+  (14), `PLATFORM_STALE_AFTER_DAYS` (7, Liepin/51job) or
+  `OFFICIAL_SOURCE_STALE_AFTER_DAYS` (30). For a disabled collector the same
+  window is applied by an hourly sweep, because the collector itself never
+  runs.
+- **Too old.** The hourly sweep closes rows whose `posted_at` is older than
+  `JOB_MAX_AGE_DAYS` (60). Rows without a posting date are aged from when
+  JobsRSS first saw them, with the longer `JOB_MAX_AGE_UNDATED_DAYS` (90),
+  because that date only bounds their real age from below. The age rule
+  applies even if a collector still lists the posting, and ingestion enforces
+  it too, so a site that keeps an old listing up cannot reopen it. A repost
+  with a fresh date (LinkedIn reposts, ATS "last updated" dates) comes back
+  as active. Set either value to `0` to disable that rule.
+
+60 days leaves room for senior searches, which often run six to eight weeks,
+while dropping evergreen and forgotten listings. Most roles that are still
+hiring after two months get reposted, which refreshes the date.
+
+```env
+LINKEDIN_VERIFY_ENABLED=true
+LINKEDIN_VERIFY_INTERVAL_MINUTES=60
+LINKEDIN_VERIFY_MAX_PER_RUN=20
+LINKEDIN_VERIFY_RECHECK_HOURS=24
+LINKEDIN_VERIFY_DELAY_SECONDS=4
+LINKEDIN_EMAIL_STALE_AFTER_DAYS=14
+JOB_MAX_AGE_DAYS=60
+JOB_MAX_AGE_UNDATED_DAYS=90
+```
+
+The worker applies schema changes (for example the `last_verified_at`
+column) when it starts, so `docker compose up -d --force-recreate worker` is
+enough after pulling backend changes.
+
 ## LinkedIn Official-Source Enrichment
 
 V1.1 uses LinkedIn for discovery, then enriches eligible jobs from the external
