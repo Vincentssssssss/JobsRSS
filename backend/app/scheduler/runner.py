@@ -21,6 +21,7 @@ from app.official.collectors.catalog import (
     create_official_collector,
 )
 from app.pipeline import close_rows_from_removed_sources, ingest_collector
+from app.verification.linkedin import verify_linkedin_postings
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +129,31 @@ def run_llm_rerank_job() -> None:
         db.close()
 
 
+def run_linkedin_verification_job() -> None:
+    settings = get_settings()
+    if not settings.linkedin_verify_enabled:
+        logger.info("linkedin_verify_skipped reason=disabled")
+        return
+    db = SessionLocal()
+    try:
+        stats = verify_linkedin_postings(db, settings=settings)
+        logger.info(
+            "linkedin_verify_run checked=%d open=%d closed=%d inconclusive=%d "
+            "skipped=%d errors=%d throttled=%s",
+            stats.checked,
+            stats.open,
+            stats.closed,
+            stats.inconclusive,
+            stats.skipped,
+            stats.errors,
+            stats.throttled,
+        )
+    except Exception:
+        logger.exception("linkedin_verify_failed")
+    finally:
+        db.close()
+
+
 def current_source_names() -> Set[str]:
     platform_sources = {
         collector.meta.source_name
@@ -172,6 +198,12 @@ def build_scheduler(scheduler_class: Type[BaseScheduler] = BlockingScheduler) ->
         (run_llm_rerank_job, settings.llm_rerank_interval_minutes),
     ):
         scheduler.add_job(job, trigger="interval", minutes=minutes, next_run_time=now)
+    scheduler.add_job(
+        run_linkedin_verification_job,
+        trigger="interval",
+        minutes=settings.linkedin_verify_interval_minutes,
+        next_run_time=now + timedelta(minutes=2),
+    )
     scheduler.add_job(
         run_daily_digest_job,
         trigger="cron",

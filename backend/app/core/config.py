@@ -89,6 +89,11 @@ class Settings(BaseSettings):
     linkedin_external_enrichment_timeout_seconds: int = 20
     linkedin_strict_location_filter: bool = True
     linkedin_allowed_locations: str = "Singapore,Malaysia,Hong Kong,Shanghai,Jiangsu,Zhejiang"
+    linkedin_verify_enabled: bool = True
+    linkedin_verify_interval_minutes: int = 60
+    linkedin_verify_max_per_run: int = 20
+    linkedin_verify_recheck_hours: int = 24
+    linkedin_verify_delay_seconds: float = 4.0
 
     job51_auth_enabled: bool = False
     job51_auth_username: Optional[str] = None

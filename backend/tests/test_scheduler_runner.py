@@ -31,7 +31,7 @@ def test_every_interval_job_first_runs_at_boot():
         interval_jobs = [
             job for job in scheduler.get_jobs() if job.func is not run_daily_digest_job
         ]
-        assert len(interval_jobs) == 5 + len(OFFICIAL_COLLECTOR_FACTORIES)
+        assert len(interval_jobs) == 6 + len(OFFICIAL_COLLECTOR_FACTORIES)
         for job in interval_jobs:
             assert job.next_run_time <= latest_first_run, job.name
     finally:
