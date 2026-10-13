@@ -1,0 +1,93 @@
+version: 1
+
+default_filters:
+  locations:
+    high_priority: ["香港", "新加坡"]
+    medium_priority: ["上海"]
+  seniority_positive: ["高级", "专家", "负责人", "经理", "总监"]
+  negative_exclude: ["实习", "初级", "桌面支持", "运维支持", "纯SOC值守"]
+
+keyword_groups:
+  - "云安全 架构师"
+  - "云安全 工程师"
+  - "安全架构师"
+  - "应用安全"
+  - "DevSecOps"
+  - "产品安全"
+  - "AI 安全"
+  - "安全工程经理"
+
+sources:
+  microsoft:
+    enabled: true
+    source_type: company_site
+    polling_interval_minutes: 20
+    query_templates:
+      - keyword: "Cloud Security Architect"
+        locations: ["Hong Kong", "Singapore", "Shanghai"]
+      - keyword: "Cloud Security Engineer"
+        locations: ["Hong Kong", "Singapore", "Shanghai"]
+      - keyword: "Security Engineering Manager"
+        locations: ["Hong Kong", "Singapore", "Shanghai"]
+
+  alibaba:
+    enabled: true
+    source_type: company_site
+    polling_interval_minutes: 20
+    query_templates:
+      - keyword: "云安全 架构师"
+        locations: ["香港", "新加坡", "上海"]
+      - keyword: "安全架构师"
+        locations: ["香港", "新加坡", "上海"]
+
+  huawei:
+    enabled: true
+    source_type: company_site
+    polling_interval_minutes: 30
+    query_templates:
+      - keyword: "云安全"
+        locations: ["香港", "新加坡", "上海"]
+      - keyword: "安全架构师"
+        locations: ["香港", "新加坡", "上海"]
+
+  job51:
+    enabled: false
+    source_type: platform
+    polling_interval_minutes: 20
+    query_templates:
+      - keyword: "云安全 架构师"
+      - keyword: "云安全 工程师"
+      - keyword: "安全架构师"
+      - keyword: "应用安全"
+      - keyword: "DevSecOps"
+      - keyword: "产品安全"
+      - keyword: "AI 安全"
+      - keyword: "安全工程经理"
+
+  liepin:
+    enabled: true
+    source_type: platform
+    polling_interval_minutes: 20
+    query_templates:
+      - keyword: "云安全 架构师"
+      - keyword: "云安全 工程师"
+      - keyword: "安全架构师"
+      - keyword: "应用安全"
+      - keyword: "DevSecOps"
+      - keyword: "产品安全"
+      - keyword: "AI 安全"
+      - keyword: "安全工程经理"
+
+  linkedin_email:
+    enabled: false
+    source_type: email
+    polling_interval_minutes: 15
+    email_filters:
+      sender_contains: ["jobs-noreply@linkedin.com", "linkedin.com"]
+      subject_contains:
+        - "Cloud Security Architect"
+        - "Cloud Security Engineer"
+        - "Security Architect"
+        - "Application Security"
+        - "DevSecOps"
+        - "AI Security"

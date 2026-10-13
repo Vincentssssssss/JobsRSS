@@ -1,0 +1,55 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: jobsrss
+      POSTGRES_PASSWORD: jobsrss
+      POSTGRES_DB: jobsrss
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./backend
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    env_file:
+      - .env
+    volumes:
+      - ./secrets:/secrets:ro
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ./backend
+    command: python worker.py
+    env_file:
+      - .env
+    volumes:
+      - ./secrets:/secrets:ro
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    command: npm run start -- --hostname 0.0.0.0 --port 3000
+    environment:
+      BACKEND_API_BASE_URLS: http://api:8000,http://host.docker.internal:8000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

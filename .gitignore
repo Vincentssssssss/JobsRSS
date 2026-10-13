@@ -1,0 +1,11 @@
+.env
+.env.gke
+deploy/gke/.env.gke
+secrets/
+__pycache__/
+.pytest_cache/
+*.pyc
+backend/.venv/
+frontend/node_modules/
+frontend/.next/
+frontend/npm-debug.log*

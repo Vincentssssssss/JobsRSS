@@ -1,0 +1,125 @@
+version: 1
+max_score: 100
+
+thresholds:
+  high_match: 80
+  medium_match: 60
+
+weights:
+  role_category: 30
+  cloud_experience: 20
+  security_domain: 20
+  leadership_seniority: 15
+  location_fit: 10
+  quality_signal: 5
+
+positive_keywords:
+  role_category:
+    - cloud security architect
+    - cloud security engineer
+    - security architect
+    - cyber security architect
+    - cloud security lead
+    - security engineering manager
+    - cloud security manager
+    - application security
+    - product security
+    - infrastructure security
+    - security engineering
+    - devsecops
+    - ai security
+    - security automation
+    - 云安全架构师
+    - 云安全工程师
+    - 安全架构师
+    - 应用安全
+    - 产品安全
+    - 安全工程经理
+
+  cloud_experience:
+    - alibaba cloud
+    - azure
+    - aws
+    - multi-cloud
+    - vpc
+    - iam
+    - cloud security architecture
+    - cloud platform security
+
+  security_domain:
+    - cloud security
+    - security architecture
+    - application security
+    - api security
+    - network security
+    - vulnerability management
+    - penetration testing
+    - devsecops
+    - security operations
+    - security automation
+
+  leadership_seniority:
+    - senior
+    - lead
+    - principal
+    - architect
+    - manager
+    - director
+    - 高级
+    - 专家
+    - 负责人
+    - 经理
+    - 总监
+
+preferred_locations:
+  high:
+    - hong kong
+    - singapore
+    - 香港
+    - 新加坡
+  medium:
+    - shanghai
+    - china
+    - mainland china
+    - apac
+    - greater china
+    - remote
+    - 上海
+    - 中国
+    - 远程
+
+negative_filters:
+  hard_exclude:
+    - intern
+    - internship
+    - junior
+    - entry level
+    - helpdesk
+    - desktop support
+    - it support
+    - 实习
+    - 初级
+    - 桌面支持
+    - 运维支持
+    - 纯soc值守
+
+quality_signals:
+  positive:
+    - cloud provider
+    - cybersecurity
+    - financial institution
+    - global enterprise
+    - apac responsibility
+    - architecture responsibility
+    - technical leadership
+  negative:
+    - non-security
+    - support-only
+
+adjustment_rules:
+  - name: leadership-title-boost
+    if_title_contains_any: ["architect", "principal", "lead", "manager", "director", "架构师", "负责人", "经理", "总监"]
+    score_adjust: 12
+  - name: regional-responsibility-boost
+    if_description_contains_any: ["apac", "greater china", "regional", "大中华区", "亚太"]
+    score_adjust: 8
