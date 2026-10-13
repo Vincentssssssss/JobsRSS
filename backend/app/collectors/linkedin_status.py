@@ -7,8 +7,8 @@ from urllib.parse import parse_qs, urlparse
 from bs4 import BeautifulSoup
 
 # The first three are the exact strings LinkedIn's job page renders for a
-# closed posting with en-US, zh-CN and zh-TW locales; the rest are variants
-# seen in the logged-in UI and older layouts.
+# closed posting with en-US, zh-CN and zh-TW locales; the rest cover phrasings
+# the logged-in UI or older layouts may use.
 LINKEDIN_CLOSED_MARKERS = (
     "no longer accepting applications",
     "停止接受求职申请",

@@ -268,7 +268,8 @@ closed when any of these applies:
 - **Too old.** The hourly sweep closes rows whose `posted_at` is older than
   `JOB_MAX_AGE_DAYS` (60). Rows without a posting date are aged from when
   JobsRSS first saw them, with the longer `JOB_MAX_AGE_UNDATED_DAYS` (90),
-  because that date only bounds their real age from below. The age rule
+  because without a date a repost under the same job ID looks exactly like
+  an old listing. The age rule
   applies even if a collector still lists the posting, and ingestion enforces
   it too, so a site that keeps an old listing up cannot reopen it. A repost
   with a fresh date (LinkedIn reposts, ATS "last updated" dates) comes back

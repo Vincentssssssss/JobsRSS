@@ -238,8 +238,9 @@ def is_past_max_age(
     settings,
     now: datetime,
 ) -> bool:
-    """Dated rows age from posted_at. Undated rows age from first_seen_at, which
-    only bounds their age from below, so they get the longer threshold."""
+    """Dated rows age from posted_at. Undated rows age from first_seen_at with a
+    longer threshold, because without a date a repost under the same job ID
+    looks exactly like an old listing."""
     posted_at = _as_utc(posted_at)
     if posted_at is not None:
         return settings.job_max_age_days > 0 and posted_at < now - timedelta(
