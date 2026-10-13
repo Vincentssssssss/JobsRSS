@@ -1,6 +1,8 @@
 import logging
 from datetime import datetime, timedelta, timezone
+from typing import Set, Type
 
+from apscheduler.schedulers.base import BaseScheduler
 from apscheduler.schedulers.blocking import BlockingScheduler
 
 from app.collectors.base import BaseCollector
@@ -16,7 +18,7 @@ from app.official.collectors.catalog import (
     OFFICIAL_COLLECTOR_FACTORIES,
     create_official_collector,
 )
-from app.pipeline import ingest_collector
+from app.pipeline import close_rows_from_removed_sources, ingest_collector
 
 logger = logging.getLogger(__name__)
 
@@ -124,51 +126,55 @@ def run_llm_rerank_job() -> None:
         db.close()
 
 
-def start_scheduler() -> None:
+def current_source_names() -> Set[str]:
+    platform_sources = {
+        collector.meta.source_name
+        for collector in (
+            LinkedInEmailCollector,
+            LinkedInAuthCollector,
+            Job51AuthCollector,
+            LiepinAuthCollector,
+        )
+    }
+    return platform_sources | {
+        f"official_{source_id}" for source_id in OFFICIAL_COLLECTOR_FACTORIES
+    }
+
+
+def close_rows_from_removed_sources_job() -> None:
+    db = SessionLocal()
+    try:
+        closed = close_rows_from_removed_sources(db, current_source_names())
+        logger.info("removed_source_rows_closed count=%d", closed)
+    except Exception:
+        logger.exception("removed_source_rows_close_failed")
+    finally:
+        db.close()
+
+
+# A slow boot or a laptop waking from sleep starts jobs after their scheduled
+# time. APScheduler's default 1-second grace would skip those runs and wait a
+# full interval (6 hours for official sources); coalesce runs them once instead.
+SCHEDULER_JOB_DEFAULTS = {"misfire_grace_time": None, "coalesce": True, "max_instances": 1}
+
+
+def build_scheduler(scheduler_class: Type[BaseScheduler] = BlockingScheduler) -> BaseScheduler:
     settings = get_settings()
-    scheduler = BlockingScheduler(timezone="UTC")
-    scheduler.add_job(
-        run_linkedin_email_collector,
-        trigger="interval",
-        minutes=settings.scheduler_linkedin_email_interval_minutes,
-        max_instances=1,
-        coalesce=True,
-    )
-    scheduler.add_job(
-        run_linkedin_auth_collector,
-        trigger="interval",
-        minutes=settings.linkedin_polling_interval_minutes,
-        max_instances=1,
-        coalesce=True,
-    )
-    scheduler.add_job(
-        run_job51_auth_collector,
-        trigger="interval",
-        minutes=settings.job51_polling_interval_minutes,
-        max_instances=1,
-        coalesce=True,
-    )
-    scheduler.add_job(
-        run_liepin_auth_collector,
-        trigger="interval",
-        minutes=settings.liepin_polling_interval_minutes,
-        max_instances=1,
-        coalesce=True,
-    )
+    scheduler = scheduler_class(timezone="UTC", job_defaults=SCHEDULER_JOB_DEFAULTS)
+    now = datetime.now(timezone.utc)
+    for job, minutes in (
+        (run_linkedin_email_collector, settings.scheduler_linkedin_email_interval_minutes),
+        (run_linkedin_auth_collector, settings.linkedin_polling_interval_minutes),
+        (run_job51_auth_collector, settings.job51_polling_interval_minutes),
+        (run_liepin_auth_collector, settings.liepin_polling_interval_minutes),
+        (run_llm_rerank_job, settings.llm_rerank_interval_minutes),
+    ):
+        scheduler.add_job(job, trigger="interval", minutes=minutes, next_run_time=now)
     scheduler.add_job(
         run_daily_digest_job,
         trigger="cron",
         hour=settings.scheduler_digest_hour_utc,
         minute=settings.scheduler_digest_minute_utc,
-        max_instances=1,
-        coalesce=True,
-    )
-    scheduler.add_job(
-        run_llm_rerank_job,
-        trigger="interval",
-        minutes=settings.llm_rerank_interval_minutes,
-        max_instances=1,
-        coalesce=True,
     )
     for index, source_id in enumerate(OFFICIAL_COLLECTOR_FACTORIES):
         scheduler.add_job(
@@ -177,16 +183,11 @@ def start_scheduler() -> None:
             args=[source_id],
             id=f"official_{source_id}",
             minutes=settings.official_source_interval_minutes,
-            max_instances=1,
-            coalesce=True,
-            next_run_time=(
-                datetime.now(timezone.utc)
-                + timedelta(seconds=index * 30)
-            ),
+            next_run_time=now + timedelta(seconds=index * 30),
         )
-    run_linkedin_email_collector()
-    run_linkedin_auth_collector()
-    run_job51_auth_collector()
-    run_liepin_auth_collector()
-    run_llm_rerank_job()
-    scheduler.start()
+    return scheduler
+
+
+def start_scheduler() -> None:
+    close_rows_from_removed_sources_job()
+    build_scheduler().start()
