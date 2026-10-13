@@ -69,3 +69,9 @@ def init_db() -> None:
                     "ADD COLUMN IF NOT EXISTS llm_last_evaluated_at TIMESTAMPTZ"
                 )
             )
+            connection.execute(
+                text(
+                    "ALTER TABLE jobs "
+                    "ADD COLUMN IF NOT EXISTS last_verified_at TIMESTAMPTZ"
+                )
+            )

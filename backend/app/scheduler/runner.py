@@ -1,4 +1,5 @@
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Set, Type
 
@@ -11,6 +12,7 @@ from app.collectors.liepin_auth import LiepinAuthCollector
 from app.collectors.linkedin_auth import LinkedInAuthCollector
 from app.collectors.linkedin_email import LinkedInEmailCollector
 from app.core.config import get_settings
+from app.db.init_db import init_db
 from app.db.session import SessionLocal
 from app.matching.llm_reranker import run_llm_rerank
 from app.notifications.daily_digest import send_daily_digest
@@ -188,6 +190,21 @@ def build_scheduler(scheduler_class: Type[BaseScheduler] = BlockingScheduler) ->
     return scheduler
 
 
+def init_db_with_retry(attempts: int = 10, delay_seconds: float = 3.0) -> None:
+    for attempt in range(1, attempts + 1):
+        try:
+            init_db()
+            return
+        except Exception:
+            if attempt >= attempts:
+                raise
+            logger.warning("init_db_retry attempt=%d/%d", attempt, attempts, exc_info=True)
+            time.sleep(delay_seconds)
+
+
 def start_scheduler() -> None:
+    # The worker is usually recreated without the api, and every job selects
+    # columns that only init_db adds, so it must apply schema changes itself.
+    init_db_with_retry()
     close_rows_from_removed_sources_job()
     build_scheduler().start()
