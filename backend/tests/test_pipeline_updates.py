@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.collectors.base import BaseCollector, CollectorMeta
 from app.db.session import Base
 from app.models.job import Job
-from app.pipeline import ingest_collector
+from app.pipeline import close_rows_from_removed_sources, ingest_collector
 from app.schemas.job import UnifiedJob
 
 
@@ -520,6 +520,50 @@ def test_rows_from_retired_portal_are_closed_on_next_run():
             "campus": "closed",
             "social-old": "active",
             "social-new": "active",
+        }
+
+
+def test_rows_from_removed_sources_are_closed():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    now = datetime.now(timezone.utc)
+
+    def job(source: str, source_job_id: str) -> Job:
+        return Job(
+            source=source,
+            source_job_id=source_job_id,
+            company="Microsoft",
+            title="Cloud Security Architect",
+            location="Hong Kong",
+            country="Hong Kong",
+            description="Lead cloud security architecture.",
+            apply_url="https://careers.microsoft.com/",
+            source_url="https://careers.microsoft.com/",
+            posted_at=now,
+            updated_at=now,
+            first_seen_at=now,
+            last_seen_at=now,
+            content_hash=source_job_id,
+            match_score=90,
+            status="active",
+        )
+
+    with Session(engine) as db:
+        db.add(job("microsoft", "msft-demo-001"))
+        db.add(job("official_microsoft", "1970393557020991"))
+        db.add(job("linkedin_auth", "4451337319"))
+        db.commit()
+
+        closed = close_rows_from_removed_sources(
+            db, {"official_microsoft", "linkedin_auth"}
+        )
+
+        statuses = {row.source: row.status for row in db.query(Job).all()}
+        assert closed == 1
+        assert statuses == {
+            "microsoft": "closed",
+            "official_microsoft": "active",
+            "linkedin_auth": "active",
         }
 
 

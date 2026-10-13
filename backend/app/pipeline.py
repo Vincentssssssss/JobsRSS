@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
+from typing import Iterable
 from urllib.parse import urlparse
 
 from sqlalchemy import or_
@@ -196,6 +197,18 @@ def ingest_collector(db: Session, collector: BaseCollector) -> IngestStats:
         )
     db.commit()
     return stats
+
+
+def close_rows_from_removed_sources(db: Session, current_sources: Iterable[str]) -> int:
+    """Rows whose collector no longer exists never reach a stale check, so they
+    would otherwise stay active forever."""
+    closed = (
+        db.query(Job)
+        .filter(Job.status == "active", Job.source.notin_(list(current_sources)))
+        .update({"status": "closed"}, synchronize_session=False)
+    )
+    db.commit()
+    return closed
 
 
 def _is_placeholder(value: str, placeholders: set[str]) -> bool:
