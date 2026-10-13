@@ -20,7 +20,12 @@ from app.official.collectors.catalog import (
     OFFICIAL_COLLECTOR_FACTORIES,
     create_official_collector,
 )
-from app.pipeline import close_rows_from_removed_sources, ingest_collector
+from app.pipeline import (
+    close_outdated_rows,
+    close_rows_from_removed_sources,
+    close_stale_rows_from_disabled_sources,
+    ingest_collector,
+)
 from app.verification.linkedin import verify_linkedin_postings
 
 logger = logging.getLogger(__name__)
@@ -154,6 +159,23 @@ def run_linkedin_verification_job() -> None:
         db.close()
 
 
+def run_freshness_sweep_job() -> None:
+    settings = get_settings()
+    db = SessionLocal()
+    try:
+        outdated = close_outdated_rows(db, settings)
+        disabled_source_stale = close_stale_rows_from_disabled_sources(db, settings)
+        logger.info(
+            "freshness_sweep outdated_closed=%d disabled_source_stale_closed=%d",
+            outdated,
+            disabled_source_stale,
+        )
+    except Exception:
+        logger.exception("freshness_sweep_failed")
+    finally:
+        db.close()
+
+
 def current_source_names() -> Set[str]:
     platform_sources = {
         collector.meta.source_name
@@ -184,6 +206,7 @@ def close_rows_from_removed_sources_job() -> None:
 # time. APScheduler's default 1-second grace would skip those runs and wait a
 # full interval (6 hours for official sources); coalesce runs them once instead.
 SCHEDULER_JOB_DEFAULTS = {"misfire_grace_time": None, "coalesce": True, "max_instances": 1}
+FRESHNESS_SWEEP_INTERVAL_MINUTES = 60
 
 
 def build_scheduler(scheduler_class: Type[BaseScheduler] = BlockingScheduler) -> BaseScheduler:
@@ -196,6 +219,7 @@ def build_scheduler(scheduler_class: Type[BaseScheduler] = BlockingScheduler) ->
         (run_job51_auth_collector, settings.job51_polling_interval_minutes),
         (run_liepin_auth_collector, settings.liepin_polling_interval_minutes),
         (run_llm_rerank_job, settings.llm_rerank_interval_minutes),
+        (run_freshness_sweep_job, FRESHNESS_SWEEP_INTERVAL_MINUTES),
     ):
         scheduler.add_job(job, trigger="interval", minutes=minutes, next_run_time=now)
     scheduler.add_job(

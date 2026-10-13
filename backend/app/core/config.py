@@ -110,6 +110,8 @@ class Settings(BaseSettings):
     liepin_search_urls: str = ""
     liepin_polling_interval_minutes: int = 20
     platform_stale_after_days: int = 7
+    job_max_age_days: int = 60
+    job_max_age_undated_days: int = 90
 
     digest_email_enabled: bool = False
     digest_email_smtp_host: Optional[str] = None

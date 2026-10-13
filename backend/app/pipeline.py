@@ -28,6 +28,7 @@ class IngestStats:
 
 def ingest_collector(db: Session, collector: BaseCollector) -> IngestStats:
     settings = get_settings()
+    now = datetime.now(timezone.utc)
     stats = IngestStats()
     jobs = collector.collect()
     stats.found = len(jobs)
@@ -71,11 +72,16 @@ def ingest_collector(db: Session, collector: BaseCollector) -> IngestStats:
                 if incoming.posted_at is not None:
                     existing.posted_at = incoming.posted_at
                 existing.updated_at = incoming.updated_at
-                if existing.status != "active" and incoming.status == "active":
+                status = incoming.status
+                if status == "active" and is_past_max_age(
+                    existing.posted_at, existing.first_seen_at, settings, now
+                ):
+                    status = "closed"
+                if existing.status != "active" and status == "active":
                     # Re-verify a revived row on the next run instead of after the
                     # recheck interval, in case this sighting missed a closed badge.
                     existing.last_verified_at = None
-                existing.status = incoming.status
+                existing.status = status
                 existing.location_category = incoming.location_category
                 if incoming.enrichment_source:
                     existing.enrichment_source = incoming.enrichment_source
@@ -107,6 +113,11 @@ def ingest_collector(db: Session, collector: BaseCollector) -> IngestStats:
                 stats.duplicates += 1
                 continue
 
+            status = incoming.status
+            if status == "active" and is_past_max_age(
+                incoming.posted_at, incoming.first_seen_at or now, settings, now
+            ):
+                status = "closed"
             job = Job(
                 source=incoming.source,
                 source_job_id=incoming.source_job_id,
@@ -123,7 +134,7 @@ def ingest_collector(db: Session, collector: BaseCollector) -> IngestStats:
                 last_seen_at=incoming.last_seen_at,
                 content_hash=incoming.content_hash,
                 match_score=incoming.match_score,
-                status=incoming.status,
+                status=status,
                 enrichment_source=incoming.enrichment_source,
                 location_category=incoming.location_category,
             )
@@ -211,6 +222,95 @@ def close_rows_from_removed_sources(db: Session, current_sources: Iterable[str])
         .filter(Job.status == "active", Job.source.notin_(list(current_sources)))
         .update({"status": "closed"}, synchronize_session=False)
     )
+    db.commit()
+    return closed
+
+
+def _as_utc(value: Optional[datetime]) -> Optional[datetime]:
+    if value is None:
+        return None
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+def is_past_max_age(
+    posted_at: Optional[datetime],
+    first_seen_at: Optional[datetime],
+    settings,
+    now: datetime,
+) -> bool:
+    """Dated rows age from posted_at. Undated rows age from first_seen_at, which
+    only bounds their age from below, so they get the longer threshold."""
+    posted_at = _as_utc(posted_at)
+    if posted_at is not None:
+        return settings.job_max_age_days > 0 and posted_at < now - timedelta(
+            days=settings.job_max_age_days
+        )
+    first_seen_at = _as_utc(first_seen_at)
+    return (
+        settings.job_max_age_undated_days > 0
+        and first_seen_at is not None
+        and first_seen_at < now - timedelta(days=settings.job_max_age_undated_days)
+    )
+
+
+def close_outdated_rows(db: Session, settings=None, now: Optional[datetime] = None) -> int:
+    settings = settings or get_settings()
+    now = now or datetime.now(timezone.utc)
+    closed = 0
+    if settings.job_max_age_days > 0:
+        closed += (
+            db.query(Job)
+            .filter(
+                Job.status == "active",
+                Job.posted_at.is_not(None),
+                Job.posted_at < now - timedelta(days=settings.job_max_age_days),
+            )
+            .update({"status": "closed"}, synchronize_session=False)
+        )
+    if settings.job_max_age_undated_days > 0:
+        closed += (
+            db.query(Job)
+            .filter(
+                Job.status == "active",
+                Job.posted_at.is_(None),
+                Job.first_seen_at < now - timedelta(days=settings.job_max_age_undated_days),
+            )
+            .update({"status": "closed"}, synchronize_session=False)
+        )
+    db.commit()
+    return closed
+
+
+def close_stale_rows_from_disabled_sources(
+    db: Session, settings=None, now: Optional[datetime] = None
+) -> int:
+    """A disabled collector never runs its own stale check, so apply it here."""
+    settings = settings or get_settings()
+    now = now or datetime.now(timezone.utc)
+    windows = []
+    if not settings.linkedin_auth_enabled:
+        windows.append((Job.source == "linkedin_auth", settings.linkedin_auth_stale_after_days))
+    if not settings.linkedin_email_enabled:
+        windows.append((Job.source == "linkedin_email", settings.linkedin_email_stale_after_days))
+    if not settings.job51_auth_enabled:
+        windows.append((Job.source == "job51_auth", settings.platform_stale_after_days))
+    if not settings.liepin_auth_enabled:
+        windows.append((Job.source == "liepin_auth", settings.platform_stale_after_days))
+    if not settings.official_sources_enabled:
+        windows.append(
+            (Job.source.startswith("official_"), settings.official_source_stale_after_days)
+        )
+    closed = 0
+    for source_filter, stale_after_days in windows:
+        closed += (
+            db.query(Job)
+            .filter(
+                source_filter,
+                Job.status == "active",
+                Job.last_seen_at < now - timedelta(days=stale_after_days),
+            )
+            .update({"status": "closed"}, synchronize_session=False)
+        )
     db.commit()
     return closed
 
