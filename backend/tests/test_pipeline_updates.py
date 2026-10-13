@@ -273,6 +273,64 @@ def test_stale_linkedin_job_is_closed_after_successful_linkedin_run():
         assert stale.status == "closed"
 
 
+def test_llm_rescoring_does_not_reset_the_stale_clock():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    old_time = datetime.now(timezone.utc) - timedelta(days=30)
+    current_time = datetime.now(timezone.utc)
+
+    with Session(engine) as db:
+        db.add(
+            Job(
+                source="linkedin_auth",
+                source_job_id="rescored-li",
+                company="Old Co",
+                title="Security Architect",
+                location="Hong Kong",
+                country="Hong Kong",
+                description="Old role",
+                apply_url="https://www.linkedin.com/jobs/view/333/",
+                source_url="https://www.linkedin.com/jobs/view/333/",
+                posted_at=current_time,
+                updated_at=old_time,
+                first_seen_at=old_time,
+                last_seen_at=old_time,
+                content_hash="rescored-li",
+                match_score=70,
+                status="active",
+            )
+        )
+        db.commit()
+
+        stored = db.query(Job).filter(Job.source_job_id == "rescored-li").one()
+        stored.llm_fit_score = 93
+        stored.llm_verdict = "strong_fit"
+        db.commit()
+        db.refresh(stored)
+        assert stored.last_seen_at.replace(tzinfo=timezone.utc) == old_time
+
+        current = UnifiedJob(
+            source="linkedin_auth",
+            source_job_id="current-li",
+            company="Current Co",
+            title="Current role",
+            location="Hong Kong",
+            country="Hong Kong",
+            description="Current role",
+            apply_url="https://www.linkedin.com/jobs/view/444/",
+            source_url="https://www.linkedin.com/jobs/view/444/",
+            posted_at=current_time,
+            updated_at=current_time,
+            first_seen_at=current_time,
+            last_seen_at=current_time,
+            content_hash="current-li",
+        )
+        ingest_collector(db, StubCollector(current))
+
+        db.refresh(stored)
+        assert stored.status == "closed"
+
+
 def test_linkedin_jobs_are_closed_when_state_missing_flag_is_set():
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)

@@ -29,7 +29,7 @@ class Job(Base):
     posted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     content_hash: Mapped[str] = mapped_column(String(128), nullable=False)
     match_score: Mapped[float] = mapped_column(Float, default=0, nullable=False)
     status: Mapped[str] = mapped_column(String(64), default="active", nullable=False)
