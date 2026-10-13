@@ -1,8 +1,21 @@
 import json
+from datetime import datetime, timezone
 
 import httpx
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
-from app.official.collectors.alibaba import AlibabaOfficialCollector, parse_alibaba_position
+from app.db.session import Base
+from app.models.job import Job
+from app.official.collectors.alibaba import (
+    ALIBABA_COMPANY,
+    ALIYUN_COMPANY,
+    ALIYUN_ROOT,
+    AlibabaOfficialCollector,
+    AliyunOfficialCollector,
+    aliyun_position_url,
+    parse_alibaba_position,
+)
 from app.official.collectors.bcg import parse_bcg_job
 from app.official.collectors.feishu_jobs import parse_feishu_jobs
 from app.official.collectors.huawei import parse_huawei_jobs
@@ -10,6 +23,7 @@ from app.official.collectors.midea import parse_midea_position
 from app.official.collectors.moka import parse_moka_job
 from app.official.collectors.tencent import parse_tencent_jobs
 from app.official.location import LocationCategory
+from app.pipeline import ingest_collector
 
 
 def test_parses_tencent_shanghai_jobs():
@@ -112,6 +126,7 @@ def test_parses_alibaba_social_position():
     job = parse_alibaba_position(_alibaba_social_item())
 
     assert job["source_job_id"] == "100032880001"
+    assert job["company"] == ALIBABA_COMPANY
     assert job["location_category"] == LocationCategory.CONFIRMED_SHANGHAI.value
     assert job["country"] == "China"
     assert "DevSecOps" in job["description"]
@@ -143,36 +158,59 @@ def test_skips_alibaba_position_outside_target_locations():
     assert parse_alibaba_position(_alibaba_social_item(workLocations=["北京", "杭州"])) is None
 
 
-def test_alibaba_collector_searches_social_portal_with_xsrf(monkeypatch):
+def test_parses_aliyun_position_with_cloud_portal_url():
+    job = parse_alibaba_position(
+        _alibaba_social_item(
+            id=100047500002,
+            name="阿里云智能-技术服务工程师TAM-金融行业/AI智能体方向-北京/上海",
+            workLocations=["北京", "上海"],
+            experience={"from": 3, "to": None},
+        ),
+        root=ALIYUN_ROOT,
+        company=ALIYUN_COMPANY,
+    )
+
+    assert job["company"] == ALIYUN_COMPANY
+    assert job["location_category"] == LocationCategory.CONFIRMED_SHANGHAI.value
+    assert "Experience: 3+ years" in job["description"]
+    assert job["source_url"] == (
+        "https://careers.aliyun.com/off-campus/position-detail?positionId=100047500002"
+    )
+    assert job["apply_url"] == job["source_url"]
+
+
+def test_builds_aliyun_position_urls_per_language():
+    assert aliyun_position_url("100046940001", "zh") == (
+        "https://careers.aliyun.com/off-campus/position-detail?positionId=100046940001"
+    )
+    assert aliyun_position_url("100008423001", "en") == (
+        "https://careers.aliyun.com/en/off-campus/position-detail?positionId=100008423001"
+    )
+
+
+def _mock_alibaba_platform(monkeypatch, datas_for):
     searches = []
 
     def handler(request: httpx.Request) -> httpx.Response:
+        host = request.url.host
         if request.method == "GET":
-            assert request.url.host == "talent.alibaba.com"
+            assert request.url.path == "/off-campus/position-list"
             return httpx.Response(
                 302,
                 headers={
-                    "set-cookie": "XSRF-TOKEN=tok123; Path=/",
+                    "set-cookie": f"XSRF-TOKEN=tok-{host}; Path=/",
                     "location": "/off-campus/home",
                 },
             )
-        assert request.url == "https://talent.alibaba.com/position/search"
-        assert request.headers["x-xsrf-token"] == "tok123"
+        assert request.url.path == "/position/search"
+        assert request.headers["x-xsrf-token"] == f"tok-{host}"
         body = json.loads(request.content)
-        searches.append((body["channel"], body["key"]))
-        assert request.headers["referer"].endswith(f"lang={body['language']}")
-        if body["channel"] == "group_overseas_official_site":
-            datas = [
-                _alibaba_social_item(id=2, workLocations=["Kuala Lumpur"]),
-                _alibaba_social_item(id=3, workLocations=["Singapore"]),
-            ]
-        else:
-            datas = [
-                _alibaba_social_item(id=1),
-                _alibaba_social_item(id=4, workLocations=["北京"]),
-            ]
+        assert request.headers["referer"] == (
+            f"https://{host}/off-campus/position-list?lang={body['language']}"
+        )
+        searches.append((host, body))
         return httpx.Response(
-            200, json={"success": True, "content": {"totalCount": 2, "datas": datas}}
+            200, json={"success": True, "content": {"datas": datas_for(host, body)}}
         )
 
     real_client = httpx.Client
@@ -181,18 +219,160 @@ def test_alibaba_collector_searches_social_portal_with_xsrf(monkeypatch):
         "Client",
         lambda **kwargs: real_client(transport=httpx.MockTransport(handler), **kwargs),
     )
+    return searches
+
+
+def _search_signature(body):
+    return (
+        body["channel"],
+        body["key"],
+        body.get("subCategories"),
+        body.get("regions"),
+    )
+
+
+def test_aliyun_collector_searches_cloud_portal_keywords_before_sweeps(monkeypatch):
+    tam_shanghai = _alibaba_social_item(
+        id=11, name="阿里云智能-技术服务工程师TAM-上海", workLocations=["上海"]
+    )
+    tam_hangzhou = _alibaba_social_item(
+        id=100046940001,
+        name="阿里云智能-技术服务工程师TAM-出海KA客户-杭州",
+        workLocations=["杭州"],
+    )
+
+    def datas_for(host, body):
+        assert host == "careers.aliyun.com"
+        if body.get("regions") == "310100":
+            return [_alibaba_social_item(id=10, workLocations=["上海"]), tam_shanghai]
+        if body["key"] == "技术服务":
+            return [tam_shanghai, tam_hangzhou]
+        if body["language"] == "en" and body["key"] == "":
+            return [
+                _alibaba_social_item(id=20, workLocations=["Kuala Lumpur"]),
+                _alibaba_social_item(id=21, workLocations=["Hong Kong, China"]),
+            ]
+        return []
+
+    searches = _mock_alibaba_platform(monkeypatch, datas_for)
+
+    jobs = AliyunOfficialCollector().fetch_raw()
+
+    assert [_search_signature(body) for _, body in searches] == [
+        ("group_official_site", "安全", None, None),
+        ("group_official_site", "", "407", None),
+        ("group_official_site", "技术服务", None, None),
+        ("group_official_site", "解决方案", None, None),
+        ("group_official_site", "架构师", None, None),
+        ("group_overseas_official_site", "security", None, None),
+        ("group_overseas_official_site", "architect", None, None),
+        ("group_official_site", "", None, "310100"),
+        ("group_overseas_official_site", "", None, None),
+    ]
+    assert [job["source_job_id"] for job in jobs] == ["11", "10", "20"]
+    assert {job["company"] for job in jobs} == {ALIYUN_COMPANY}
+    assert jobs[0]["source_url"] == (
+        "https://careers.aliyun.com/off-campus/position-detail?positionId=11"
+    )
+    assert jobs[2]["source_url"] == (
+        "https://careers.aliyun.com/en/off-campus/position-detail?positionId=20"
+    )
+
+
+def _handoff_datas(host, body):
+    # Recent publish times keep these rows clear of the ingest max-age rule.
+    published = int(datetime.now(timezone.utc).timestamp() * 1000)
+
+    def item(**overrides):
+        return _alibaba_social_item(publishTime=published, **overrides)
+
+    cloud_shanghai = item(id=5, name="阿里云智能-云安全专家-上海", workLocations=["上海"])
+    cloud_malaysia = item(
+        id=2,
+        name="Alibaba Cloud-Data Center Security Manager-Malaysia",
+        workLocations=["Johor Bahru"],
+    )
+    if host == "careers.aliyun.com":
+        if body.get("regions") == "310100":
+            return [cloud_shanghai]
+        if body["language"] == "en" and body["key"] == "":
+            return [cloud_malaysia]
+        return []
+    assert host == "talent.alibaba.com"
+    if body["language"] == "en":
+        return [cloud_malaysia, item(id=3, workLocations=["Singapore"])]
+    return [item(id=1), cloud_shanghai, item(id=4, workLocations=["北京"])]
+
+
+def test_alibaba_collector_hands_alibaba_cloud_roles_to_aliyun(monkeypatch):
+    searches = _mock_alibaba_platform(monkeypatch, _handoff_datas)
 
     collector = AlibabaOfficialCollector()
     jobs = collector.fetch_raw()
 
-    assert searches == [
-        ("group_official_site", "安全"),
-        ("group_official_site", "security"),
-        ("group_overseas_official_site", "security"),
+    assert [
+        _search_signature(body) for host, body in searches if host == "talent.alibaba.com"
+    ] == [
+        ("group_official_site", "安全", None, None),
+        ("group_official_site", "security", None, None),
+        ("group_official_site", "", "407", None),
+        ("group_overseas_official_site", "security", None, None),
+        ("group_overseas_official_site", "", "407", None),
     ]
-    assert [job["source_job_id"] for job in jobs] == ["1", "2"]
-    assert all(job["source_url"].startswith("https://talent.alibaba.com/") for job in jobs)
-    assert collector.retired_source_url_prefixes == ("https://campus-talent.alibaba.com",)
+    assert [job["source_job_id"] for job in jobs] == ["1"]
+    assert jobs[0]["company"] == ALIBABA_COMPANY
+    assert jobs[0]["source_url"].startswith("https://talent.alibaba.com/")
+    assert collector.retired_source_url_prefixes == (
+        "https://campus-talent.alibaba.com",
+        "https://talent.alibaba.com/en/off-campus/position-detail?positionId=2",
+        "https://talent.alibaba.com/off-campus/position-detail?positionId=5",
+    )
+
+
+def test_ingest_moves_alibaba_cloud_rows_from_alibaba_to_aliyun_source(monkeypatch):
+    _mock_alibaba_platform(monkeypatch, _handoff_datas)
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    now = datetime.now(timezone.utc)
+    stored_cloud_url = "https://talent.alibaba.com/off-campus/position-detail?positionId=5"
+
+    with Session(engine) as db:
+        db.add(
+            Job(
+                source="official_alibaba",
+                source_job_id="5",
+                company="Alibaba / Alibaba Cloud",
+                title="阿里云智能-云安全专家-上海",
+                location="上海",
+                country="China",
+                description="负责云安全。",
+                apply_url=stored_cloud_url,
+                source_url=stored_cloud_url,
+                posted_at=now,
+                updated_at=now,
+                first_seen_at=now,
+                last_seen_at=now,
+                content_hash="old",
+                match_score=0,
+                status="active",
+                location_category="confirmed_shanghai",
+            )
+        )
+        db.commit()
+
+        ingest_collector(db, AlibabaOfficialCollector())
+        ingest_collector(db, AliyunOfficialCollector())
+
+        rows = {(job.source, job.source_job_id): job for job in db.query(Job).all()}
+
+        assert rows[("official_alibaba", "5")].status == "closed"
+        assert rows[("official_alibaba", "1")].status == "active"
+        assert rows[("official_aliyun", "5")].status == "active"
+        assert rows[("official_aliyun", "5")].source_url == (
+            "https://careers.aliyun.com/off-campus/position-detail?positionId=5"
+        )
+        assert rows[("official_aliyun", "2")].country == "Malaysia"
+        assert ("official_alibaba", "2") not in rows
 
 
 def test_parses_midea_position_detail():

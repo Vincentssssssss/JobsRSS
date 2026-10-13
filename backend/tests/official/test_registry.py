@@ -2,11 +2,11 @@ from app.official.collectors.catalog import OFFICIAL_COLLECTOR_FACTORIES
 from app.official.registry import FIRST_WAVE_SOURCE_IDS, OFFICIAL_SOURCE_REGISTRY
 
 
-def test_registry_contains_58_unique_company_sources():
+def test_registry_contains_59_unique_company_sources():
     source_ids = [source.source_id for source in OFFICIAL_SOURCE_REGISTRY]
 
-    assert len(source_ids) == 58
-    assert len(set(source_ids)) == 58
+    assert len(source_ids) == 59
+    assert len(set(source_ids)) == 59
 
 
 def test_first_wave_contains_approved_16_sources():
@@ -124,6 +124,20 @@ def test_midea_and_anta_are_operational_with_factories():
     assert anta.collection_method == "encrypted_json"
     assert anta.operational
     assert "anta" in OFFICIAL_COLLECTOR_FACTORIES
+
+
+def test_alibaba_cloud_is_its_own_operational_source():
+    source_by_id = {
+        source.source_id: source for source in OFFICIAL_SOURCE_REGISTRY
+    }
+    aliyun = source_by_id["aliyun"]
+
+    assert aliyun.company == "Alibaba Cloud / 阿里云"
+    assert aliyun.career_url == "https://careers.aliyun.com/off-campus/position-list?lang=zh"
+    assert aliyun.collection_method == "json_xsrf"
+    assert aliyun.operational
+    assert "aliyun" in OFFICIAL_COLLECTOR_FACTORIES
+    assert source_by_id["alibaba"].company == "Alibaba Group / 阿里巴巴集团"
 
 
 def test_consulting_mbb_and_big4_are_registered():

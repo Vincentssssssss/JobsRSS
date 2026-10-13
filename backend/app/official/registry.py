@@ -78,9 +78,16 @@ OFFICIAL_SOURCE_REGISTRY = [
     ),
     _source(
         "alibaba",
-        "Alibaba / Alibaba Cloud",
+        "Alibaba Group / 阿里巴巴集团",
         "technology",
         "https://talent.alibaba.com/off-campus/position-list?lang=zh",
+        "json_xsrf",
+    ),
+    _source(
+        "aliyun",
+        "Alibaba Cloud / 阿里云",
+        "technology",
+        "https://careers.aliyun.com/off-campus/position-list?lang=zh",
         "json_xsrf",
     ),
     _source(

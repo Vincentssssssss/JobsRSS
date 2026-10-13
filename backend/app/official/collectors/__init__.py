@@ -1,6 +1,6 @@
 """Official company career collectors."""
 
-from app.official.collectors.alibaba import AlibabaOfficialCollector
+from app.official.collectors.alibaba import AlibabaOfficialCollector, AliyunOfficialCollector
 from app.official.collectors.amazon import AmazonOfficialCollector
 from app.official.collectors.beisen import (
     ChiaTaiTianqingOfficialCollector,
@@ -25,6 +25,7 @@ from app.official.collectors.tencent import TencentOfficialCollector
 __all__ = [
     "AmazonOfficialCollector",
     "AlibabaOfficialCollector",
+    "AliyunOfficialCollector",
     "ByteDanceOfficialCollector",
     "ChiaTaiTianqingOfficialCollector",
     "FosunPharmaOfficialCollector",

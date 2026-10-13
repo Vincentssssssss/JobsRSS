@@ -1,7 +1,7 @@
 from typing import Callable, Dict
 
 from app.collectors.base import BaseCollector
-from app.official.collectors.alibaba import AlibabaOfficialCollector
+from app.official.collectors.alibaba import AlibabaOfficialCollector, AliyunOfficialCollector
 from app.official.collectors.amazon import AmazonOfficialCollector
 from app.official.collectors.bcg import BcgOfficialCollector
 from app.official.collectors.beisen import (
@@ -37,6 +37,7 @@ OFFICIAL_COLLECTOR_FACTORIES: Dict[str, Callable[[], BaseCollector]] = {
     "google": GoogleOfficialCollector,
     "microsoft": MicrosoftOfficialCollector,
     "alibaba": AlibabaOfficialCollector,
+    "aliyun": AliyunOfficialCollector,
     "tencent": TencentOfficialCollector,
     "huawei": HuaweiOfficialCollector,
     "xiaomi": XiaomiOfficialCollector,
