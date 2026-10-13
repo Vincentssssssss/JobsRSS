@@ -76,6 +76,7 @@ class Settings(BaseSettings):
     linkedin_email_password: Optional[str] = None
     linkedin_email_folder: str = "INBOX"
     linkedin_email_sender_filter: str = "jobs-noreply@linkedin.com"
+    linkedin_email_stale_after_days: int = 14
 
     linkedin_auth_enabled: bool = False
     linkedin_auth_username: Optional[str] = None

@@ -726,3 +726,120 @@ def test_card_with_closed_marker_is_ingested_as_closed():
     )
 
     assert job.status == "closed"
+
+
+class StubLinkedInEmailCollector(StubCollector):
+    meta = CollectorMeta(
+        source_name="linkedin_email",
+        source_type="email",
+        collection_method="test",
+        polling_interval_minutes=15,
+    )
+
+
+class EmptyLinkedInEmailCollector(StubLinkedInEmailCollector):
+    def __init__(self) -> None:
+        pass
+
+    def collect(self):
+        return []
+
+
+def _linkedin_email_job(source_job_id: str, days_since_seen: int) -> Job:
+    seen = datetime.now(timezone.utc) - timedelta(days=days_since_seen)
+    return Job(
+        source="linkedin_email",
+        source_job_id=source_job_id,
+        company="Acme",
+        title="Security Manager",
+        location="Singapore",
+        country="Singapore",
+        description="Security Manager",
+        apply_url=f"https://www.linkedin.com/comm/jobs/view/{source_job_id}/",
+        source_url=f"https://www.linkedin.com/comm/jobs/view/{source_job_id}/",
+        posted_at=seen,
+        updated_at=seen,
+        first_seen_at=seen,
+        last_seen_at=seen,
+        content_hash=source_job_id,
+        match_score=70,
+        status="active",
+    )
+
+
+def _linkedin_email_incoming(source_job_id: str) -> UnifiedJob:
+    now = datetime.now(timezone.utc)
+    return UnifiedJob(
+        source="linkedin_email",
+        source_job_id=source_job_id,
+        company="Acme",
+        title="Security Manager",
+        location="Singapore",
+        country="Singapore",
+        description="Security Manager",
+        apply_url=f"https://www.linkedin.com/comm/jobs/view/{source_job_id}/",
+        source_url=f"https://www.linkedin.com/comm/jobs/view/{source_job_id}/",
+        posted_at=now,
+        updated_at=now,
+        first_seen_at=now,
+        last_seen_at=now,
+        content_hash=source_job_id,
+    )
+
+
+def test_stale_linkedin_email_job_is_closed_after_run_that_found_jobs():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        db.add(_linkedin_email_job("4500000001", days_since_seen=20))
+        db.add(_linkedin_email_job("4500000002", days_since_seen=3))
+        db.commit()
+
+        incoming = _linkedin_email_incoming("4500000003")
+        incoming.company = "Beta Bank"
+        incoming.title = "Head of Cloud Security"
+        ingest_collector(db, StubLinkedInEmailCollector(incoming))
+
+        statuses = {job.source_job_id: job.status for job in db.query(Job).all()}
+        assert statuses == {
+            "4500000001": "closed",
+            "4500000002": "active",
+            "4500000003": "active",
+        }
+
+
+def test_linkedin_email_jobs_stay_active_when_run_finds_nothing():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        db.add(_linkedin_email_job("4500000001", days_since_seen=20))
+        db.commit()
+
+        ingest_collector(db, EmptyLinkedInEmailCollector())
+
+        assert db.query(Job).one().status == "active"
+
+
+def test_reopened_row_is_queued_for_immediate_reverification():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        closed = _linkedin_email_job("4500000001", days_since_seen=1)
+        closed.status = "closed"
+        closed.last_verified_at = datetime.now(timezone.utc)
+        verified_open = _linkedin_email_job("4500000002", days_since_seen=1)
+        verified_open.last_verified_at = datetime.now(timezone.utc)
+        db.add_all([closed, verified_open])
+        db.commit()
+
+        ingest_collector(db, StubLinkedInEmailCollector(_linkedin_email_incoming("4500000001")))
+        ingest_collector(db, StubLinkedInEmailCollector(_linkedin_email_incoming("4500000002")))
+
+        reopened = db.query(Job).filter(Job.source_job_id == "4500000001").one()
+        still_open = db.query(Job).filter(Job.source_job_id == "4500000002").one()
+        assert reopened.status == "active"
+        assert reopened.last_verified_at is None
+        assert still_open.last_verified_at is not None

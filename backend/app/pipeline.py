@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
-from typing import Iterable
+from typing import Iterable, Optional
 from urllib.parse import urlparse
 
 from sqlalchemy import or_
@@ -71,6 +71,10 @@ def ingest_collector(db: Session, collector: BaseCollector) -> IngestStats:
                 if incoming.posted_at is not None:
                     existing.posted_at = incoming.posted_at
                 existing.updated_at = incoming.updated_at
+                if existing.status != "active" and incoming.status == "active":
+                    # Re-verify a revived row on the next run instead of after the
+                    # recheck interval, in case this sighting missed a closed badge.
+                    existing.last_verified_at = None
                 existing.status = incoming.status
                 existing.location_category = incoming.location_category
                 if incoming.enrichment_source:
@@ -180,12 +184,12 @@ def ingest_collector(db: Session, collector: BaseCollector) -> IngestStats:
             )
             .update({"status": "closed"}, synchronize_session=False)
         )
-    # An empty run usually means the login cookie expired rather than every
-    # posting closing, so only age out rows when this run actually saw jobs.
-    if collector.meta.source_name in _SEARCH_PAGE_SOURCES and stats.found > 0:
-        cutoff = datetime.now(timezone.utc) - timedelta(
-            days=settings.platform_stale_after_days
-        )
+    # An empty run usually means the login cookie expired or the mailbox was
+    # empty rather than every posting closing, so only age out rows when this
+    # run actually saw jobs.
+    stale_after_days = _found_run_stale_after_days(collector.meta.source_name, settings)
+    if stale_after_days is not None and stats.found > 0:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=stale_after_days)
         (
             db.query(Job)
             .filter(
@@ -209,6 +213,14 @@ def close_rows_from_removed_sources(db: Session, current_sources: Iterable[str])
     )
     db.commit()
     return closed
+
+
+def _found_run_stale_after_days(source: str, settings) -> Optional[int]:
+    if source in _SEARCH_PAGE_SOURCES:
+        return settings.platform_stale_after_days
+    if source == "linkedin_email":
+        return settings.linkedin_email_stale_after_days
+    return None
 
 
 def _is_placeholder(value: str, placeholders: set[str]) -> bool:
