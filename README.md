@@ -58,11 +58,14 @@ Google, BCG and Roche search Shanghai and Malaysia separately; when the two
 together exceed the cap, results are taken alternately from each location
 (newest first) so neither crowds out the other.
 
-Alibaba is collected from the social-recruitment portal
-(`talent.alibaba.com`), not the campus portal. Because that portal has
-~4,000 roles and no function filter, the collector keyword-searches
-"安全" / "security" on the China and overseas channels and keeps Shanghai and
-Malaysia roles. Any remaining campus-portal rows are closed on the next run.
+Alibaba is collected from the social-recruitment portals as two sources.
+`official_aliyun` (`careers.aliyun.com`) takes every Alibaba Cloud role in
+Shanghai and Malaysia, searching security, technical-service (TAM) and
+solution-architect titles first so they survive the cap. `official_alibaba`
+(`talent.alibaba.com`, ~4,000 roles, no function filter) keyword-searches
+"安全" / "security" plus the security category for the rest of the group and
+skips Alibaba Cloud roles, which both portals list under the same id. Any
+remaining campus-portal rows are closed on the next run.
 
 Official jobs are classified before publication:
 
