@@ -1,6 +1,6 @@
 from typing import Iterable
 
-from app.official.location import MALAYSIA_MARKERS
+from app.official.location import MALAYSIA_MARKERS, SOUTHEAST_ASIA_MARKERS
 
 POSITIVE_KEYWORDS = {
     "cloud security architect",
@@ -19,7 +19,14 @@ POSITIVE_KEYWORDS = {
 }
 SENIORITY_KEYWORDS = {"senior", "lead", "principal", "manager", "director", "高级", "专家", "负责人", "经理", "总监"}
 NEGATIVE_KEYWORDS = {"intern", "junior", "entry level", "helpdesk", "desktop support", "实习", "初级", "桌面支持", "运维支持"}
-TARGET_LOCATION_MARKERS = {"hong kong", "singapore", "shanghai", "香港", "新加坡", "上海", *MALAYSIA_MARKERS}
+TARGET_LOCATION_MARKERS = {
+    "hong kong",
+    "shanghai",
+    "香港",
+    "上海",
+    *MALAYSIA_MARKERS,
+    *(marker for markers in SOUTHEAST_ASIA_MARKERS.values() for marker in markers),
+}
 
 
 def _contains_any(text: str, keywords: Iterable[str]) -> bool:

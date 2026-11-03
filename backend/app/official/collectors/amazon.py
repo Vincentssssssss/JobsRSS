@@ -20,6 +20,9 @@ AMAZON_LOCATION_QUERIES = (
     {"country": "CHN", "city": "Shanghai"},
     {"country": "MYS"},
 )
+AMAZON_SEA_LOCATION_QUERIES = tuple(
+    {"country": code} for code in ("SGP", "IDN", "THA", "VNM", "PHL")
+)
 
 
 class AmazonOfficialCollector(OfficialCollectorBase):
@@ -32,17 +35,24 @@ class AmazonOfficialCollector(OfficialCollectorBase):
 
     def fetch_raw(self) -> List[Dict[str, Any]]:
         settings = get_settings()
-        limit = settings.official_source_max_jobs_per_source
+        max_pages = settings.official_source_max_pages_per_source
         with httpx.Client(
             timeout=settings.official_source_timeout_seconds,
             verify=settings.official_source_verify_tls,
             headers={"User-Agent": "JobsRSS/2.0 (+personal job monitor)"},
         ) as client:
-            groups = [
-                self._search(client, query, limit, settings.official_source_max_pages_per_source)
-                for query in AMAZON_LOCATION_QUERIES
-            ]
-        return interleave_capped(groups, limit, key=lambda job: job["source_job_id"])
+            jobs: List[Dict[str, Any]] = []
+            for queries, limit in (
+                (AMAZON_LOCATION_QUERIES, settings.official_source_max_jobs_per_source),
+                (AMAZON_SEA_LOCATION_QUERIES, settings.official_source_sea_max_jobs_per_source),
+            ):
+                if limit <= 0:
+                    continue
+                groups = [self._search(client, query, limit, max_pages) for query in queries]
+                jobs += interleave_capped(
+                    groups, limit, key=_job_key, exclude={_job_key(job) for job in jobs}
+                )
+        return jobs
 
     @staticmethod
     def _search(
@@ -72,6 +82,10 @@ class AmazonOfficialCollector(OfficialCollectorBase):
         return jobs
 
 
+def _job_key(job: Dict[str, Any]) -> str:
+    return job["source_job_id"]
+
+
 def parse_amazon_jobs(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     parsed: List[Dict[str, Any]] = []
     for item in payload.get("jobs", []):
@@ -80,7 +94,7 @@ def parse_amazon_jobs(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
         if not source_job_id or not title:
             continue
         location = _amazon_location(item)
-        location_category = classify_official_location(location)
+        location_category = classify_official_location(location, southeast_asia=True)
         if location_category == LocationCategory.EXCLUDED:
             continue
         description_parts = [
@@ -105,7 +119,7 @@ def parse_amazon_jobs(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "company": company,
                 "title": title,
                 "location": location,
-                "country": country_for_category(location_category),
+                "country": country_for_category(location_category, location=location),
                 "description": description,
                 "apply_url": str(item.get("apply_url") or source_url),
                 "source_url": source_url,

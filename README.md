@@ -71,6 +71,7 @@ Enable official collection:
 OFFICIAL_SOURCES_ENABLED=true
 OFFICIAL_SOURCE_INTERVAL_MINUTES=360
 OFFICIAL_SOURCE_MAX_JOBS_PER_SOURCE=150
+OFFICIAL_SOURCE_SEA_MAX_JOBS_PER_SOURCE=150
 OFFICIAL_SOURCE_MAX_PAGES_PER_SOURCE=20
 OFFICIAL_SOURCE_STALE_AFTER_DAYS=30
 ```
@@ -79,6 +80,13 @@ OFFICIAL_SOURCE_STALE_AFTER_DAYS=30
 Google, BCG and Roche search Shanghai and Malaysia separately; when the two
 together exceed the cap, results are taken alternately from each location
 (newest first) so neither crowds out the other.
+
+Amazon, Microsoft and Google also search Singapore, Indonesia, Thailand,
+Vietnam and the Philippines, with their own cap
+(`OFFICIAL_SOURCE_SEA_MAX_JOBS_PER_SOURCE`, alternating between countries), so
+these markets add to the Shanghai/Malaysia jobs instead of replacing them. A
+job already taken for Shanghai or Malaysia does not use a Southeast Asia slot.
+Set it to `0` to turn the Southeast Asia searches off.
 
 Alibaba is collected from the social-recruitment portals as two sources.
 `official_aliyun` (`careers.aliyun.com`) takes every Alibaba Cloud role in
@@ -94,10 +102,15 @@ Official jobs are classified before publication:
 - `confirmed_shanghai`: explicitly includes Shanghai/上海.
 - `confirmed_malaysia`: explicitly includes Malaysia or a Malaysian city
   (Kuala Lumpur, Selangor, Johor, Penang, ...).
+- `confirmed_southeast_asia`: Singapore, Indonesia, Thailand, Vietnam or the
+  Philippines (country names, major cities, or ISO codes such as `SGP` / `VN`).
+  Only Amazon, Microsoft and Google use this category; the job's `country`
+  is set to the matched country.
 - `unclassified`: broad China/APAC/Greater China/Remote or missing location.
 - `excluded`: any other explicit location.
 
-Only confirmed Shanghai, confirmed Malaysia and unclassified jobs are ingested.
+Only confirmed Shanghai, confirmed Malaysia, confirmed Southeast Asia and
+unclassified jobs are ingested.
 
 ## LLM Targeted Matching (V2.1)
 
@@ -133,7 +146,7 @@ LLM_COMMIT_EVERY_JOBS=20
 LLM_MIN_RULE_SCORE=20
 LLM_ONLY_UNSCORED=true
 LLM_REJECT_EARLY_CAREER=true
-LLM_TARGET_PROFILE=Manager-level or above cybersecurity roles ... across Shanghai/Jiangsu/Zhejiang, Hong Kong, Singapore, and Malaysia...
+LLM_TARGET_PROFILE=Manager-level or above cybersecurity roles ... across Shanghai/Jiangsu/Zhejiang, Hong Kong, Singapore, Malaysia, and the rest of Southeast Asia...
 ```
 
 Qwen example:

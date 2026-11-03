@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     official_source_interval_minutes: int = 360
     official_source_timeout_seconds: int = 30
     official_source_max_jobs_per_source: int = 150
+    official_source_sea_max_jobs_per_source: int = 150
     official_source_max_pages_per_source: int = 20
     official_source_stale_after_days: int = 30
     official_source_verify_tls: bool = True
@@ -57,7 +58,8 @@ class Settings(BaseSettings):
         "Head of Security, Security Engineering Manager, Lead/Principal Security Architect) "
         "focused on cloud security, application security, IAM/PAM, SOC/SIEM, threat "
         "detection, vulnerability management, and security architecture leadership across "
-        "Shanghai/Jiangsu/Zhejiang (Yangtze River Delta), Hong Kong, Singapore, and Malaysia. "
+        "Shanghai/Jiangsu/Zhejiang (Yangtze River Delta), Hong Kong, Singapore, Malaysia, and the "
+        "rest of Southeast Asia (Indonesia, Thailand, Vietnam, Philippines). "
         "Individual-contributor engineer or analyst roles below lead level are not a fit."
     )
 

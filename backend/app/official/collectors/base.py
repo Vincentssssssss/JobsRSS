@@ -74,11 +74,13 @@ def interleave_capped(
     groups: Iterable[Iterable[T]],
     limit: int,
     key: Callable[[T], Hashable],
+    exclude: Iterable[Hashable] = (),
 ) -> List[T]:
-    """Round-robin across per-location result lists, dropping repeats, until
-    ``limit`` items are taken, so one busy location cannot crowd out another."""
+    """Round-robin across per-location result lists, dropping repeats and
+    ``exclude`` keys, until ``limit`` items are taken, so one busy location
+    cannot crowd out another."""
     iterators = [iter(group) for group in groups]
-    seen: set = set()
+    seen: set = set(exclude)
     merged: List[T] = []
     while iterators and len(merged) < limit:
         still_open = []
@@ -95,7 +97,6 @@ def interleave_capped(
                 break
         iterators = still_open
     return merged
-
 
 def parse_source_datetime(value: Any) -> Optional[datetime]:
     if value is None or value == "":

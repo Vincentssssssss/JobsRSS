@@ -11,6 +11,7 @@ from app.official.collectors.microsoft import (
     is_microsoft_career_homepage,
     parse_microsoft_position,
 )
+from app.core.config import Settings
 from app.official.location import LocationCategory
 
 
@@ -76,7 +77,13 @@ def test_amazon_renders_json_encoded_locations_and_tags_malaysia():
     assert jobs[0]["country"] == "Malaysia"
 
 
+def _use_settings(monkeypatch, module: str, **overrides) -> None:
+    settings = Settings().model_copy(update=overrides)
+    monkeypatch.setattr(f"app.official.collectors.{module}.get_settings", lambda: settings)
+
+
 def test_amazon_fetch_queries_shanghai_and_malaysia_within_cap(monkeypatch):
+    _use_settings(monkeypatch, "amazon", official_source_sea_max_jobs_per_source=0)
     requests = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -120,6 +127,52 @@ def test_amazon_fetch_queries_shanghai_and_malaysia_within_cap(monkeypatch):
         ("CHN", "100"),
         ("MYS", "0"),
     ]
+
+
+def test_amazon_southeast_asia_has_its_own_cap(monkeypatch):
+    _use_settings(
+        monkeypatch,
+        "amazon",
+        official_source_max_jobs_per_source=4,
+        official_source_sea_max_jobs_per_source=3,
+    )
+    inventory = {
+        "CHN": [("sh1", "Shanghai, CHN"), ("sh2", "Shanghai, CHN"), ("sh3", "Shanghai, CHN")],
+        "MYS": [("my1", "Kuala Lumpur, MYS"), ("my2", "Kuala Lumpur, MYS")],
+        "SGP": [("sh1", "Shanghai, CHN / SGP"), ("sg1", "SGP"), ("sg2", "SGP")],
+        "VNM": [("vn1", "Hanoi, VNM")],
+        "IDN": [("id1", "Tokyo, JPN")],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        rows = inventory.get(request.url.params["country"], [])
+        return httpx.Response(
+            200,
+            json={
+                "jobs": [
+                    {"id_icims": job_id, "title": "Security Manager",
+                     "normalized_location": location, "job_path": f"/en/jobs/{job_id}"}
+                    for job_id, location in rows
+                ]
+            },
+        )
+
+    real_client = httpx.Client
+    monkeypatch.setattr(
+        httpx,
+        "Client",
+        lambda **kwargs: real_client(transport=httpx.MockTransport(handler), **kwargs),
+    )
+
+    jobs = AmazonOfficialCollector().fetch_raw()
+
+    assert [job["source_job_id"] for job in jobs] == [
+        "sh1", "my1", "sh2", "my2", "sg1", "vn1", "sg2",
+    ]
+    by_id = {job["source_job_id"]: job for job in jobs}
+    assert by_id["sg1"]["location_category"] == LocationCategory.CONFIRMED_SOUTHEAST_ASIA.value
+    assert by_id["sg1"]["country"] == "Singapore"
+    assert by_id["vn1"]["country"] == "Vietnam"
 
 
 def test_parses_microsoft_search_and_detail_payload():
@@ -348,7 +401,7 @@ def test_microsoft_fetch_searches_malaysia_and_skips_out_of_scope_listings(monke
                 "data": {
                     "positions": [
                         {"id": 11, "standardizedLocations": ["Johor Bahru, Johor, MY"]},
-                        {"id": 12, "standardizedLocations": ["Singapore, SG"]},
+                        {"id": 12, "standardizedLocations": ["Tokyo, Tokyo, JP"]},
                     ]
                 }
             }
@@ -361,7 +414,9 @@ def test_microsoft_fetch_searches_malaysia_and_skips_out_of_scope_listings(monke
 
     jobs = MicrosoftOfficialCollector().fetch_raw()
 
-    assert searched_locations == ["Shanghai", "Malaysia"]
+    assert searched_locations == [
+        "Shanghai", "Malaysia", "Singapore", "Indonesia", "Thailand", "Vietnam", "Philippines",
+    ]
     assert detail_ids == ["11"]
     assert jobs[0]["location_category"] == LocationCategory.CONFIRMED_MALAYSIA.value
     assert jobs[0]["country"] == "Malaysia"
@@ -397,3 +452,72 @@ def test_google_discovery_rejects_external_job_shaped_url():
     )
 
     assert discover_google_job_links(html) == []
+
+
+def test_microsoft_southeast_asia_listing_is_kept_with_its_country(monkeypatch):
+    def fake_get(_client, url, params, retries):
+        if "position_details" in url:
+            return {
+                "data": {
+                    "id": params["position_id"],
+                    "name": "Cloud Security Architect",
+                    "jobDescription": "Own Azure security architecture.",
+                    "standardizedLocations": ["Indonesia, Jakarta, Jakarta"],
+                }
+            }
+        if params["location"] == "Indonesia":
+            return {
+                "data": {
+                    "positions": [
+                        {"id": 21, "standardizedLocations": ["Indonesia, Jakarta, Jakarta"]}
+                    ]
+                }
+            }
+        return {"data": {"positions": []}}
+
+    monkeypatch.setattr(
+        "app.official.collectors.microsoft._get_json_with_backoff",
+        fake_get,
+    )
+
+    jobs = MicrosoftOfficialCollector().fetch_raw()
+
+    assert [job["source_job_id"] for job in jobs] == ["21"]
+    assert jobs[0]["location_category"] == LocationCategory.CONFIRMED_SOUTHEAST_ASIA.value
+    assert jobs[0]["country"] == "Indonesia"
+
+
+def test_microsoft_skips_southeast_asia_search_when_its_cap_is_zero(monkeypatch):
+    _use_settings(monkeypatch, "microsoft", official_source_sea_max_jobs_per_source=0)
+    searched_locations = []
+
+    def fake_get(_client, url, params, retries):
+        searched_locations.append(params.get("location"))
+        return {"data": {"positions": []}}
+
+    monkeypatch.setattr(
+        "app.official.collectors.microsoft._get_json_with_backoff",
+        fake_get,
+    )
+
+    assert MicrosoftOfficialCollector().fetch_raw() == []
+    assert searched_locations == ["Shanghai", "Malaysia"]
+
+
+def test_google_detail_from_southeast_asia_search_is_tagged_by_country():
+    detail = """
+    <html>
+      <head><meta property="og:title" content="Security Engineer — Google Careers"></head>
+      <body><h1>Security Engineer</h1><div class="job-description">Run sites.</div></body>
+    </html>
+    """
+
+    job = parse_google_job_detail(
+        detail,
+        "https://www.google.com/about/careers/applications/jobs/results/"
+        "1234567890-security-engineer",
+        default_location="Singapore",
+    )
+
+    assert job["location_category"] == LocationCategory.CONFIRMED_SOUTHEAST_ASIA.value
+    assert job["country"] == "Singapore"

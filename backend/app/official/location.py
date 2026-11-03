@@ -5,6 +5,7 @@ from enum import Enum
 class LocationCategory(str, Enum):
     CONFIRMED_SHANGHAI = "confirmed_shanghai"
     CONFIRMED_MALAYSIA = "confirmed_malaysia"
+    CONFIRMED_SOUTHEAST_ASIA = "confirmed_southeast_asia"
     UNCLASSIFIED = "unclassified"
     EXCLUDED = "excluded"
 
@@ -12,7 +13,11 @@ class LocationCategory(str, Enum):
 _CATEGORY_COUNTRY = {LocationCategory.CONFIRMED_MALAYSIA: "Malaysia"}
 
 
-def country_for_category(category: LocationCategory, default: str = "China") -> str:
+def country_for_category(
+    category: LocationCategory, default: str = "China", location: str = ""
+) -> str:
+    if category == LocationCategory.CONFIRMED_SOUTHEAST_ASIA:
+        return southeast_asia_country(location) or "Southeast Asia"
     return _CATEGORY_COUNTRY.get(category, default)
 
 
@@ -84,6 +89,26 @@ MALAYSIA_MARKERS = {
 }
 # ISO codes: Amazon uses "MYS"; Microsoft ends segments with ", MY" or lists a bare "MY".
 _MALAYSIA_COUNTRY_CODE = re.compile(r"\bmys\b|(?:^|[/,])\s*my\s*(?:/|$)")
+# Malaysia keeps its own category; these are the other markets queried by the
+# collectors that opt in with southeast_asia=True.
+SOUTHEAST_ASIA_MARKERS = {
+    "Singapore": ("singapore", "新加坡"),
+    "Indonesia": ("indonesia", "jakarta", "jabodetabek", "surabaya", "bandung", "batam",
+                  "印度尼西亚", "印尼", "雅加达"),
+    "Thailand": ("thailand", "bangkok", "泰国", "曼谷"),
+    "Vietnam": ("vietnam", "viet nam", "hanoi", "ha noi", "ho chi minh", "haiphong",
+                "hai phong", "da nang", "越南", "河内", "胡志明"),
+    "Philippines": ("philippines", "manila", "makati", "taguig", "quezon city", "pasig",
+                    "cebu", "菲律宾", "马尼拉"),
+}
+# Amazon lists bare ISO-3 codes ("SGP", "VNM"); Microsoft may end a segment with ISO-2.
+_SOUTHEAST_ASIA_COUNTRY_CODES = {
+    "Singapore": re.compile(r"\bsgp\b|(?:^|[/,])\s*sg\s*(?:/|$)"),
+    "Indonesia": re.compile(r"\bidn\b|(?:^|[/,])\s*id\s*(?:/|$)"),
+    "Thailand": re.compile(r"\btha\b|(?:^|[/,])\s*th\s*(?:/|$)"),
+    "Vietnam": re.compile(r"\bvnm\b|(?:^|[/,])\s*vn\s*(?:/|$)"),
+    "Philippines": re.compile(r"\bphl\b|(?:^|[/,])\s*ph\s*(?:/|$)"),
+}
 EXPLICIT_NON_TARGET_MARKERS = {
     "beijing",
     "shenzhen",
@@ -116,7 +141,20 @@ EXPLICIT_NON_TARGET_MARKERS = {
 }
 
 
-def classify_official_location(location: str) -> LocationCategory:
+def southeast_asia_country(location: str) -> str | None:
+    normalized = " ".join((location or "").lower().split())
+    for country, markers in SOUTHEAST_ASIA_MARKERS.items():
+        if any(marker in normalized for marker in markers):
+            return country
+    for country, pattern in _SOUTHEAST_ASIA_COUNTRY_CODES.items():
+        if pattern.search(normalized):
+            return country
+    return None
+
+
+def classify_official_location(
+    location: str, *, southeast_asia: bool = False
+) -> LocationCategory:
     normalized = " ".join((location or "").lower().split())
     if any(marker in normalized for marker in SHANGHAI_DIRECT_MARKERS):
         return LocationCategory.CONFIRMED_SHANGHAI
@@ -126,6 +164,8 @@ def classify_official_location(location: str) -> LocationCategory:
         normalized
     ):
         return LocationCategory.CONFIRMED_MALAYSIA
+    if southeast_asia and southeast_asia_country(normalized):
+        return LocationCategory.CONFIRMED_SOUTHEAST_ASIA
     if not normalized or normalized == "unknown":
         return LocationCategory.UNCLASSIFIED
     if any(marker in normalized for marker in EXPLICIT_NON_TARGET_MARKERS):

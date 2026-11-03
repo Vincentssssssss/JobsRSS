@@ -16,6 +16,7 @@ from app.official.location import (
 from app.official.registry import get_official_source
 
 MICROSOFT_SEARCH_LOCATIONS = ("Shanghai", "Malaysia")
+MICROSOFT_SEA_SEARCH_LOCATIONS = ("Singapore", "Indonesia", "Thailand", "Vietnam", "Philippines")
 # The pcsx search API returns at most 10 positions per request.
 MICROSOFT_PAGE_SIZE = 10
 MICROSOFT_SEARCH_URL = "https://apply.careers.microsoft.com/api/pcsx/search"
@@ -42,7 +43,6 @@ class MicrosoftOfficialCollector(OfficialCollectorBase):
 
     def fetch_raw(self) -> List[Dict[str, Any]]:
         settings = get_settings()
-        limit = settings.official_source_max_jobs_per_source
         jobs: List[Dict[str, Any]] = []
         with httpx.Client(
             timeout=settings.official_source_timeout_seconds,
@@ -54,17 +54,30 @@ class MicrosoftOfficialCollector(OfficialCollectorBase):
                 )
             },
         ) as client:
-            groups = [
-                _search_positions(
-                    client,
-                    location,
-                    limit=limit,
-                    max_pages=settings.official_source_max_pages_per_source,
-                    retries=settings.collector_default_retries,
+            positions: List[Dict[str, Any]] = []
+            for locations, limit in (
+                (MICROSOFT_SEARCH_LOCATIONS, settings.official_source_max_jobs_per_source),
+                (MICROSOFT_SEA_SEARCH_LOCATIONS, settings.official_source_sea_max_jobs_per_source),
+            ):
+                if limit <= 0:
+                    continue
+                groups = [
+                    _search_positions(
+                        client,
+                        location,
+                        limit=limit,
+                        max_pages=settings.official_source_max_pages_per_source,
+                        retries=settings.collector_default_retries,
+                    )
+                    for location in locations
+                ]
+                positions += interleave_capped(
+                    groups,
+                    limit,
+                    key=_position_id,
+                    exclude={_position_id(item) for item in positions},
                 )
-                for location in MICROSOFT_SEARCH_LOCATIONS
-            ]
-            for item in interleave_capped(groups, limit, key=_position_id):
+            for item in positions:
                 detail_payload = _get_json_with_backoff(
                     client,
                     MICROSOFT_DETAIL_URL,
@@ -129,7 +142,9 @@ def _listing_is_excluded(item: Dict[str, Any]) -> bool:
             item.get("location"),
         )
     )
-    return classify_official_location(location) == LocationCategory.EXCLUDED
+    return (
+        classify_official_location(location, southeast_asia=True) == LocationCategory.EXCLUDED
+    )
 
 
 def extract_microsoft_positions(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -173,7 +188,7 @@ def parse_microsoft_position(
             detail.get("location"),
         )
     )
-    location_category = classify_official_location(location)
+    location_category = classify_official_location(location, southeast_asia=True)
     if location_category == LocationCategory.EXCLUDED:
         return None
     description = "\n\n".join(
@@ -226,7 +241,7 @@ def parse_microsoft_position(
         "company": "Microsoft",
         "title": title,
         "location": location,
-        "country": country_for_category(location_category),
+        "country": country_for_category(location_category, location=location),
         "description": description,
         "apply_url": apply_url,
         "source_url": source_url,

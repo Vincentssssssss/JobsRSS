@@ -20,6 +20,7 @@ GOOGLE_RESULTS_URL = (
     "https://www.google.com/about/careers/applications/jobs/results/"
 )
 GOOGLE_SEARCH_LOCATIONS = ("Shanghai, China", "Malaysia")
+GOOGLE_SEA_SEARCH_LOCATIONS = ("Singapore", "Indonesia", "Thailand", "Vietnam", "Philippines")
 GOOGLE_PAGE_SIZE = 20
 GOOGLE_ROOT = "https://www.google.com"
 GOOGLE_CAREERS_ROOT = (
@@ -40,29 +41,39 @@ class GoogleOfficialCollector(OfficialCollectorBase):
 
     def fetch_raw(self) -> List[Dict[str, Any]]:
         settings = get_settings()
-        limit = settings.official_source_max_jobs_per_source
         with httpx.Client(
             timeout=settings.official_source_timeout_seconds,
             verify=settings.official_source_verify_tls,
             headers={"User-Agent": "JobsRSS/2.0 (+personal job monitor)"},
             follow_redirects=False,
         ) as client:
-            groups = [
-                [
-                    (link, location)
-                    for link in _discover_location_links(
-                        client,
-                        location,
-                        limit=limit,
-                        max_pages=settings.official_source_max_pages_per_source,
-                    )
-                ]
-                for location in GOOGLE_SEARCH_LOCATIONS
-            ]
-            jobs = []
-            for link, location in interleave_capped(
-                groups, limit, key=lambda pair: pair[0]
+            pairs: List[tuple[str, str]] = []
+            for locations, limit in (
+                (GOOGLE_SEARCH_LOCATIONS, settings.official_source_max_jobs_per_source),
+                (GOOGLE_SEA_SEARCH_LOCATIONS, settings.official_source_sea_max_jobs_per_source),
             ):
+                if limit <= 0:
+                    continue
+                groups = [
+                    [
+                        (link, location)
+                        for link in _discover_location_links(
+                            client,
+                            location,
+                            limit=limit,
+                            max_pages=settings.official_source_max_pages_per_source,
+                        )
+                    ]
+                    for location in locations
+                ]
+                pairs += interleave_capped(
+                    groups,
+                    limit,
+                    key=lambda pair: pair[0],
+                    exclude={link for link, _ in pairs},
+                )
+            jobs = []
+            for link, location in pairs:
                 response = client.get(link)
                 response.raise_for_status()
                 job = parse_google_job_detail(
@@ -159,7 +170,7 @@ def parse_google_job_detail(
         ],
     )
     location = location or default_location
-    location_category = classify_official_location(location)
+    location_category = classify_official_location(location, southeast_asia=True)
     if location_category == LocationCategory.EXCLUDED:
         return None
     description = structured.description or _first_text(
@@ -181,7 +192,7 @@ def parse_google_job_detail(
         "company": "Google",
         "title": title,
         "location": location,
-        "country": country_for_category(location_category),
+        "country": country_for_category(location_category, location=location),
         "description": description,
         "apply_url": source_url,
         "source_url": source_url,

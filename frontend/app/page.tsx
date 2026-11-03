@@ -64,6 +64,7 @@ type SourceCountsResponse = {
 const LOCATION_BADGES: Record<string, string> = {
   confirmed_shanghai: "Shanghai",
   confirmed_malaysia: "Malaysia",
+  confirmed_southeast_asia: "Southeast Asia",
 };
 
 function buildDirectBackendBase(): string {
@@ -491,6 +492,7 @@ export default function HomePage() {
             <option value="">All</option>
             <option value="confirmed_shanghai">Confirmed Shanghai</option>
             <option value="confirmed_malaysia">Confirmed Malaysia</option>
+            <option value="confirmed_southeast_asia">Confirmed Southeast Asia</option>
             <option value="unclassified">Unclassified</option>
           </select>
         </div>

@@ -90,3 +90,38 @@ def test_country_follows_location_category():
     assert country_for_category(LocationCategory.CONFIRMED_MALAYSIA) == "Malaysia"
     assert country_for_category(LocationCategory.CONFIRMED_SHANGHAI) == "China"
     assert country_for_category(LocationCategory.UNCLASSIFIED) == "China"
+
+
+def test_southeast_asia_is_only_confirmed_for_opted_in_collectors():
+    for location, country in [
+        ("Singapore", "Singapore"),
+        ("SGP", "Singapore"),
+        ("Jakarta, JABODETABEK, IDN", "Indonesia"),
+        ("Indonesia, Jakarta, Jakarta", "Indonesia"),
+        ("Bangkok, THA", "Thailand"),
+        ("Hanoi, VNM", "Vietnam"),
+        ("Vietnam, Multiple Locations, Multiple Locations", "Vietnam"),
+        ("Taguig City, National Capital Region, PHL", "Philippines"),
+        ("Makati City, Metro Manila, PH", "Philippines"),
+        ("新加坡", "Singapore"),
+    ]:
+        assert classify_official_location(location) == LocationCategory.EXCLUDED, location
+        category = classify_official_location(location, southeast_asia=True)
+        assert category == LocationCategory.CONFIRMED_SOUTHEAST_ASIA, location
+        assert country_for_category(category, location=location) == country, location
+
+
+def test_southeast_asia_opt_in_keeps_other_rules():
+    assert (
+        classify_official_location("Singapore / Kuala Lumpur, Malaysia", southeast_asia=True)
+        == LocationCategory.CONFIRMED_MALAYSIA
+    )
+    assert (
+        classify_official_location("Shanghai, China / Singapore", southeast_asia=True)
+        == LocationCategory.CONFIRMED_SHANGHAI
+    )
+    for location in ("Hong Kong", "Tokyo, JP", "Beijing, China", "Sydney, AUS"):
+        assert (
+            classify_official_location(location, southeast_asia=True)
+            == LocationCategory.EXCLUDED
+        ), location

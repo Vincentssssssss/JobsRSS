@@ -25,6 +25,14 @@ def test_interleave_returns_everything_under_cap():
     assert interleave_capped([[1, 2], [], [3]], 150, key=lambda item: item) == [1, 3, 2]
 
 
+def test_interleave_skips_excluded_keys_without_spending_the_cap():
+    merged = interleave_capped(
+        [["sh1", "sg1", "sg2"], ["vn1"]], 2, key=lambda item: item, exclude={"sh1"}
+    )
+
+    assert merged == ["sg1", "vn1"]
+
+
 def test_phenom_listing_pages_with_from_offset_until_total_hits():
     offsets = []
 
