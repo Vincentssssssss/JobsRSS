@@ -219,8 +219,12 @@ When the log prints `refresh_rescore_done`, clean up and resume the scheduler:
 
 ```bash
 docker rm jobsrss-refresh
-docker compose start worker
+docker compose up -d --force-recreate worker
 ```
+
+`docker compose start worker` would restart the existing container with the
+environment and mounts it was created with, ignoring later `.env` or compose
+changes; recreating picks them up.
 
 - `--reset-scores` clears stored LLM verdicts first so historical jobs become
   candidates again. Deterministic early-career rejections are kept (they cost no
