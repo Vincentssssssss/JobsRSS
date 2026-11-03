@@ -583,3 +583,12 @@ def test_prompt_makes_seniority_a_hard_gate():
     assert "Seniority is a hard gate" in task
     assert "fit_score at most 40" in task
     assert "'Seniority:'" in task
+
+
+def test_prompt_defers_role_scope_to_target_profile():
+    job = _make_job(source_job_id="prompt-scope", match_score=80)
+    messages = _build_messages(job, "Senior cloud security or solutions architect roles")
+
+    assert "Judge fit only against target_profile" in messages[0]["content"]
+    assert "cybersecurity roles" not in messages[0]["content"]
+    assert "target_profile is the only definition of fit" in messages[-1]["content"]

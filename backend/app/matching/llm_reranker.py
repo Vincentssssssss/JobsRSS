@@ -362,7 +362,11 @@ def _build_messages(job: Job, target_profile: str) -> list[Dict[str, str]]:
             "description": job.description[:6000],
         },
         "task": (
-            "Evaluate fit against target_profile on two axes: cybersecurity domain and seniority. "
+            "Evaluate fit against target_profile on two axes: role domain and seniority. "
+            "target_profile is the only definition of fit: an adjacent role type it accepts "
+            "(for example solutions architect, technical account manager or presales) fits only "
+            "when the role's core requirements overlap the domain and experience it describes, "
+            "and any employer requirement it states must be applied. "
             "Infer the role's seniority from its title, required years of experience, and scope "
             "(people management, budget, regional or programme ownership). "
             "Seniority is a hard gate: if the role is clearly below the level described in "
@@ -379,8 +383,8 @@ def _build_messages(job: Job, target_profile: str) -> list[Dict[str, str]]:
         {
             "role": "system",
             "content": (
-                "You are a strict technical recruiter for cybersecurity roles. "
-                "Do not infer unrelated fit from generic cloud or AI keywords."
+                "You are a strict technical recruiter. Judge fit only against target_profile, "
+                "and do not infer fit from generic cloud or AI keywords."
             ),
         },
         {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)},

@@ -54,13 +54,20 @@ class Settings(BaseSettings):
     llm_only_unscored: bool = True
     llm_reject_early_career: bool = True
     llm_target_profile: str = (
-        "Manager-level or above cybersecurity roles (Security Manager, Senior Manager, "
-        "Head of Security, Security Engineering Manager, Lead/Principal Security Architect) "
-        "focused on cloud security, application security, IAM/PAM, SOC/SIEM, threat "
-        "detection, vulnerability management, and security architecture leadership across "
-        "Shanghai/Jiangsu/Zhejiang (Yangtze River Delta), Hong Kong, Singapore, Malaysia, and the "
-        "rest of Southeast Asia (Indonesia, Thailand, Vietnam, Philippines). "
-        "Individual-contributor engineer or analyst roles below lead level are not a fit."
+        "Senior individual-contributor (Senior, Staff, Principal, Lead) or "
+        "manager-and-above roles in cybersecurity: cloud security, application security, "
+        "IAM/PAM, SOC/SIEM, threat detection, vulnerability management, and security "
+        "architecture. Customer-facing cloud roles (Solutions Architect, Cloud Architect, "
+        "Technical Account Manager, presales, Sales or Customer Engineer) also fit when "
+        "they centre on cloud infrastructure or security and a senior cloud-security "
+        "practitioner would be a strong candidate. The employer should be a large, "
+        "well-known company (Fortune Global 500, major cloud or technology vendor, Big Four "
+        "or global consultancy, multinational); small, unknown or staffing-agency employers "
+        "are at most possible_fit. Locations: Shanghai, Jiangsu/Zhejiang (including "
+        "Hangzhou, Suzhou, Nanjing), Hong Kong, Singapore, Malaysia, and the rest of "
+        "Southeast Asia (Indonesia, Thailand, Vietnam, Philippines). Chinese- and "
+        "English-language roles both fit. Junior, graduate, intern and mid-level roles "
+        "below senior level are not a fit."
     )
 
     high_match_threshold: int = 80
