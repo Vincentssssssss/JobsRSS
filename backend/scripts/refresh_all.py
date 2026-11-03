@@ -23,12 +23,16 @@ from app.matching.llm_reranker import create_llm_client, run_llm_rerank
 from app.models.job import Job
 from app.official.collectors.catalog import OFFICIAL_COLLECTOR_FACTORIES
 from app.scheduler.runner import (
+    close_rows_from_removed_sources_job,
+    init_db_with_retry,
+    run_freshness_sweep_job,
     run_job51_auth_collector,
     run_liepin_auth_collector,
     run_linkedin_auth_collector,
     run_linkedin_email_collector,
     run_registered_official_collector,
 )
+from app.verification.linkedin import verify_linkedin_postings
 
 logger = logging.getLogger("refresh_all")
 
@@ -64,6 +68,32 @@ def collect_everything() -> None:
         return
     for source_id in OFFICIAL_COLLECTOR_FACTORIES:
         run_registered_official_collector(source_id)
+
+
+def close_dead_postings(linkedin_verify_max: int | None) -> None:
+    """Close removed-source, stale, outdated and LinkedIn-closed rows before the
+    rerank so no tokens are spent on postings that are about to disappear."""
+    close_rows_from_removed_sources_job()
+    run_freshness_sweep_job()
+    settings = get_settings()
+    if linkedin_verify_max is not None:
+        settings = settings.model_copy(update={"linkedin_verify_max_per_run": linkedin_verify_max})
+    if settings.linkedin_verify_max_per_run <= 0:
+        logger.info("refresh_linkedin_verify_skipped reason=max_zero")
+        return
+    db = SessionLocal()
+    try:
+        stats = verify_linkedin_postings(db, settings=settings)
+    finally:
+        db.close()
+    logger.info(
+        "refresh_linkedin_verify checked=%d open=%d closed=%d inconclusive=%d throttled=%s",
+        stats.checked,
+        stats.open,
+        stats.closed,
+        stats.inconclusive,
+        stats.throttled,
+    )
 
 
 def reset_llm_scores(db: Session, *, active_only: bool, include_guard: bool) -> int:
@@ -157,6 +187,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Also clear heuristic early-career rejections (costs extra tokens).",
     )
     parser.add_argument(
+        "--linkedin-verify-max",
+        type=int,
+        default=None,
+        help="LinkedIn rows to re-check before the rerank; defaults to LINKEDIN_VERIFY_MAX_PER_RUN, 0 skips.",
+    )
+    parser.add_argument(
         "--batch-size",
         type=int,
         default=None,
@@ -177,6 +213,7 @@ def main(argv: list[str] | None = None) -> int:
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
     args = parse_args(argv)
+    init_db_with_retry()
 
     if args.reset_scores:
         db = SessionLocal()
@@ -194,6 +231,7 @@ def main(argv: list[str] | None = None) -> int:
         logger.info("refresh_collect_skipped reason=flag")
     else:
         collect_everything()
+    close_dead_postings(args.linkedin_verify_max)
 
     if args.skip_rescore:
         logger.info("refresh_rescore_skipped reason=flag")

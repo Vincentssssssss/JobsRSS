@@ -211,7 +211,7 @@ token spend):
 
 ```bash
 docker compose stop worker
-docker compose run -d --name jobsrss-refresh worker python scripts/refresh_all.py --reset-scores
+docker compose run -d --name jobsrss-refresh worker python scripts/refresh_all.py --reset-scores --linkedin-verify-max 200
 docker logs -f jobsrss-refresh
 ```
 
@@ -225,6 +225,13 @@ docker compose start worker
 - `--reset-scores` clears stored LLM verdicts first so historical jobs become
   candidates again. Deterministic early-career rejections are kept (they cost no
   tokens); add `--reset-early-career-guard` to revisit them too.
+- After collecting and before the rerank, the script closes dead postings so
+  no tokens are spent on them: rows from removed sources, stale and outdated
+  rows (see [Closing Dead and Outdated Postings](#closing-dead-and-outdated-postings)),
+  and LinkedIn rows the public job page reports as closed.
+  `--linkedin-verify-max N` sets how many LinkedIn rows to re-check (default
+  `LINKEDIN_VERIFY_MAX_PER_RUN`; `0` skips). It also applies schema changes
+  first, so it works even if the worker has not started on the new code.
 - The rerank then runs repeated passes until no job is left unscored, printing
   `refresh_rescore_pass ... remaining=N` after each pass.
 - `--skip-collect` re-scores without touching the collectors;

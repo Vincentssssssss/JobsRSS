@@ -5,6 +5,8 @@ from sqlalchemy.orm import Session
 
 from app.db.session import Base
 from app.models.job import Job
+from app.verification.linkedin import LinkedInVerificationStats
+import scripts.refresh_all as refresh_all
 from scripts.refresh_all import (
     EARLY_CAREER_GUARD_MODEL,
     count_unscored,
@@ -123,3 +125,41 @@ def test_count_unscored_respects_rule_score_floor_and_status():
 
     assert count_unscored(db, _Settings()) == 2
     db.close()
+
+
+def test_main_closes_dead_postings_after_collecting_and_before_rescoring(monkeypatch):
+    calls = []
+    monkeypatch.setattr(refresh_all, "init_db_with_retry", lambda: calls.append("init_db"))
+    monkeypatch.setattr(refresh_all, "collect_everything", lambda: calls.append("collect"))
+    monkeypatch.setattr(
+        refresh_all, "close_dead_postings", lambda verify_max: calls.append(f"cleanup:{verify_max}")
+    )
+    monkeypatch.setattr(refresh_all, "create_llm_client", lambda settings: object())
+    monkeypatch.setattr(
+        refresh_all,
+        "rescore_everything",
+        lambda settings, max_passes: calls.append("rescore") or refresh_all.RescoreTotals(),
+    )
+
+    assert refresh_all.main(["--linkedin-verify-max", "200"]) == 0
+    assert calls == ["init_db", "collect", "cleanup:200", "rescore"]
+
+
+def test_close_dead_postings_overrides_the_linkedin_batch_size(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(refresh_all, "close_rows_from_removed_sources_job", lambda: None)
+    monkeypatch.setattr(refresh_all, "run_freshness_sweep_job", lambda: seen.setdefault("sweep", True))
+    monkeypatch.setattr(refresh_all, "SessionLocal", _session)
+
+    def fake_verify(db, *, settings):
+        seen["max"] = settings.linkedin_verify_max_per_run
+        return LinkedInVerificationStats()
+
+    monkeypatch.setattr(refresh_all, "verify_linkedin_postings", fake_verify)
+
+    refresh_all.close_dead_postings(150)
+    assert seen == {"sweep": True, "max": 150}
+
+    seen.clear()
+    refresh_all.close_dead_postings(0)
+    assert seen == {"sweep": True}
