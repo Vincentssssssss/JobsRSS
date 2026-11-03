@@ -23,7 +23,9 @@ RUN python -m pip install --upgrade --retries 5 --timeout 120 \
     --trusted-host pypi.python.org \
     -r /app/requirements.txt
 
-COPY . /app
+# Before COPY so code-only rebuilds reuse this layer; --with-deps needs apt.
 RUN python -m playwright install --with-deps chromium
+
+COPY . /app
 
 EXPOSE 8000

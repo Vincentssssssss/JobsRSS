@@ -26,6 +26,28 @@ Open:
 - Dashboard: `http://localhost:3000`
 - Official source registry: `http://localhost:8000/sources/official`
 
+## Updating a Local Install
+
+`docker-compose.yml` mounts `./backend` over `/app` in the `api` and `worker`
+containers, so they run the checked-out backend code rather than the copy baked
+into the image. Backend changes apply without a rebuild:
+
+```bash
+git pull
+docker compose up -d --force-recreate api worker
+docker compose exec -T worker cat app/scheduler/runner.py | diff -q - backend/app/scheduler/runner.py && echo "worker runs current code"
+```
+
+Recreating the worker starts a full cycle: platform collectors, the LLM rerank
+and the freshness sweep run at once, and the official sources follow at
+30-second intervals (about 12 minutes for all of them).
+
+A rebuild (`docker compose build api worker`) is needed only when
+`backend/requirements.txt` or `backend/Dockerfile` changes; it needs apt and
+PyPI access. Dashboard changes under `frontend/` need
+`docker compose build frontend && docker compose up -d frontend`, which only
+needs npm registry access.
+
 ## DevOps Pipeline (Near Production)
 
 GCP GKE is the supported cloud runtime. Use Cloud Shell plus Cloud Build
@@ -175,7 +197,6 @@ stopped (otherwise the scheduler scores the same jobs concurrently and doubles
 token spend):
 
 ```bash
-docker compose build worker
 docker compose stop worker
 docker compose run -d --name jobsrss-refresh worker python scripts/refresh_all.py --reset-scores
 docker logs -f jobsrss-refresh
@@ -294,8 +315,8 @@ JOB_MAX_AGE_UNDATED_DAYS=90
 ```
 
 The worker applies schema changes (for example the `last_verified_at`
-column) when it starts, so `docker compose up -d --force-recreate worker` is
-enough after pulling backend changes.
+column) when it starts, so no manual migration is needed after pulling (see
+[Updating a Local Install](#updating-a-local-install)).
 
 ## LinkedIn Official-Source Enrichment
 

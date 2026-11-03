@@ -11,6 +11,10 @@ services:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
 
+  # api and worker run the checked-out backend code instead of the copy baked
+  # into the image, so `git pull` + recreate applies backend changes without a
+  # rebuild (rebuilds need apt/PyPI access). Rebuild only when
+  # backend/requirements.txt or the Dockerfile changes.
   api:
     build:
       context: ./backend
@@ -18,6 +22,7 @@ services:
     env_file:
       - .env
     volumes:
+      - ./backend:/app
       - ./secrets:/secrets:ro
     ports:
       - "8000:8000"
@@ -32,6 +37,7 @@ services:
     env_file:
       - .env
     volumes:
+      - ./backend:/app
       - ./secrets:/secrets:ro
     depends_on:
       - postgres
