@@ -18,6 +18,9 @@ AMAZON_SEARCH_URL = "https://www.amazon.jobs/en/search.json"
 AMAZON_PAGE_SIZE = 100
 AMAZON_LOCATION_QUERIES = (
     {"country": "CHN", "city": "Shanghai"},
+    {"country": "CHN", "city": "Hangzhou"},
+    {"country": "CHN", "city": "Nanjing"},
+    {"country": "HKG"},
     {"country": "MYS"},
 )
 AMAZON_SEA_LOCATION_QUERIES = tuple(
@@ -94,7 +97,7 @@ def parse_amazon_jobs(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
         if not source_job_id or not title:
             continue
         location = _amazon_location(item)
-        location_category = classify_official_location(location, southeast_asia=True)
+        location_category = classify_official_location(location)
         if location_category == LocationCategory.EXCLUDED:
             continue
         description_parts = [

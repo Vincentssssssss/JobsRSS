@@ -155,7 +155,7 @@ def test_parses_alibaba_overseas_malaysia_position():
 
 
 def test_skips_alibaba_position_outside_target_locations():
-    assert parse_alibaba_position(_alibaba_social_item(workLocations=["北京", "杭州"])) is None
+    assert parse_alibaba_position(_alibaba_social_item(workLocations=["北京", "深圳"])) is None
 
 
 def test_parses_aliyun_position_with_cloud_portal_url():
@@ -269,7 +269,7 @@ def test_aliyun_collector_searches_cloud_portal_keywords_before_sweeps(monkeypat
         ("group_official_site", "", None, "310100"),
         ("group_overseas_official_site", "", None, None),
     ]
-    assert [job["source_job_id"] for job in jobs] == ["11", "10", "20"]
+    assert [job["source_job_id"] for job in jobs] == ["11", "10", "20", "100046940001", "21"]
     assert {job["company"] for job in jobs} == {ALIYUN_COMPANY}
     assert jobs[0]["source_url"] == (
         "https://careers.aliyun.com/off-campus/position-detail?positionId=11"
@@ -319,7 +319,7 @@ def test_alibaba_collector_hands_alibaba_cloud_roles_to_aliyun(monkeypatch):
         ("group_overseas_official_site", "security", None, None),
         ("group_overseas_official_site", "", "407", None),
     ]
-    assert [job["source_job_id"] for job in jobs] == ["1"]
+    assert [job["source_job_id"] for job in jobs] == ["1", "3"]
     assert jobs[0]["company"] == ALIBABA_COMPANY
     assert jobs[0]["source_url"].startswith("https://talent.alibaba.com/")
     assert collector.retired_source_url_prefixes == (

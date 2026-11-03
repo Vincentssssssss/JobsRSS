@@ -4,13 +4,18 @@ from enum import Enum
 
 class LocationCategory(str, Enum):
     CONFIRMED_SHANGHAI = "confirmed_shanghai"
+    CONFIRMED_YANGTZE_DELTA = "confirmed_yangtze_delta"
+    CONFIRMED_HONG_KONG = "confirmed_hong_kong"
     CONFIRMED_MALAYSIA = "confirmed_malaysia"
     CONFIRMED_SOUTHEAST_ASIA = "confirmed_southeast_asia"
     UNCLASSIFIED = "unclassified"
     EXCLUDED = "excluded"
 
 
-_CATEGORY_COUNTRY = {LocationCategory.CONFIRMED_MALAYSIA: "Malaysia"}
+_CATEGORY_COUNTRY = {
+    LocationCategory.CONFIRMED_HONG_KONG: "Hong Kong",
+    LocationCategory.CONFIRMED_MALAYSIA: "Malaysia",
+}
 
 
 def country_for_category(
@@ -60,6 +65,48 @@ SHANGHAI_DISTRICT_MARKERS = {
     "chongming",
     "崇明",
 }
+# Jiangsu and Zhejiang outside Shanghai.
+YANGTZE_DELTA_MARKERS = {
+    "jiangsu",
+    "江苏",
+    "suzhou",
+    "苏州",
+    "kunshan",
+    "昆山",
+    "nanjing",
+    "南京",
+    "wuxi",
+    "无锡",
+    "changzhou",
+    "常州",
+    "nantong",
+    "南通",
+    "zhejiang",
+    "浙江",
+    "hangzhou",
+    "杭州",
+    "ningbo",
+    "宁波",
+    "jiaxing",
+    "嘉兴",
+    "shaoxing",
+    "绍兴",
+    "huzhou",
+    "湖州",
+    "wenzhou",
+    "温州",
+    "zhoushan",
+    "舟山",
+}
+HONG_KONG_MARKERS = {
+    "hong kong",
+    "hongkong",
+    "kowloon",
+    "香港",
+    "九龙",
+}
+# Amazon lists the bare ISO-3 code "HKG".
+_HONG_KONG_COUNTRY_CODE = re.compile(r"\bhkg\b")
 MALAYSIA_MARKERS = {
     "malaysia",
     "kuala lumpur",
@@ -89,8 +136,7 @@ MALAYSIA_MARKERS = {
 }
 # ISO codes: Amazon uses "MYS"; Microsoft ends segments with ", MY" or lists a bare "MY".
 _MALAYSIA_COUNTRY_CODE = re.compile(r"\bmys\b|(?:^|[/,])\s*my\s*(?:/|$)")
-# Malaysia keeps its own category; these are the other markets queried by the
-# collectors that opt in with southeast_asia=True.
+# Malaysia keeps its own category; these are the other Southeast Asian markets.
 SOUTHEAST_ASIA_MARKERS = {
     "Singapore": ("singapore", "新加坡"),
     "Indonesia": ("indonesia", "jakarta", "jabodetabek", "surabaya", "bandung", "batam",
@@ -112,28 +158,14 @@ _SOUTHEAST_ASIA_COUNTRY_CODES = {
 EXPLICIT_NON_TARGET_MARKERS = {
     "beijing",
     "shenzhen",
-    "hangzhou",
     "guangzhou",
     "chengdu",
-    "nanjing",
-    "suzhou",
-    "hong kong",
-    "singapore",
     "北京",
     "深圳",
-    "杭州",
     "广州",
     "成都",
-    "南京",
-    "苏州",
-    "香港",
-    "新加坡",
     "yunnan",
     "云南",
-    "zhoushan",
-    "舟山",
-    "zhejiang",
-    "浙江",
     "united states",
     "usa",
     "japan",
@@ -152,19 +184,23 @@ def southeast_asia_country(location: str) -> str | None:
     return None
 
 
-def classify_official_location(
-    location: str, *, southeast_asia: bool = False
-) -> LocationCategory:
+def classify_official_location(location: str) -> LocationCategory:
     normalized = " ".join((location or "").lower().split())
     if any(marker in normalized for marker in SHANGHAI_DIRECT_MARKERS):
         return LocationCategory.CONFIRMED_SHANGHAI
-    # Checked before the exclusion list so multi-country listings such as
-    # "Singapore / Kuala Lumpur" stay eligible.
+    # Targets are checked before the exclusion list so multi-city listings such
+    # as "Beijing / Hangzhou" or "Singapore / Kuala Lumpur" stay eligible.
+    if any(marker in normalized for marker in YANGTZE_DELTA_MARKERS):
+        return LocationCategory.CONFIRMED_YANGTZE_DELTA
+    if any(marker in normalized for marker in HONG_KONG_MARKERS) or _HONG_KONG_COUNTRY_CODE.search(
+        normalized
+    ):
+        return LocationCategory.CONFIRMED_HONG_KONG
     if any(marker in normalized for marker in MALAYSIA_MARKERS) or _MALAYSIA_COUNTRY_CODE.search(
         normalized
     ):
         return LocationCategory.CONFIRMED_MALAYSIA
-    if southeast_asia and southeast_asia_country(normalized):
+    if southeast_asia_country(normalized):
         return LocationCategory.CONFIRMED_SOUTHEAST_ASIA
     if not normalized or normalized == "unknown":
         return LocationCategory.UNCLASSIFIED

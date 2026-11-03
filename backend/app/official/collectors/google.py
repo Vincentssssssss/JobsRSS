@@ -21,7 +21,9 @@ from app.official.registry import get_official_source
 GOOGLE_RESULTS_URL = (
     "https://www.google.com/about/careers/applications/jobs/results/"
 )
-GOOGLE_SEARCH_LOCATIONS = ("Shanghai, China", "Malaysia")
+# Google has no Jiangsu/Zhejiang inventory of its own: "Suzhou, China" returns the
+# Shanghai roles, which would then be labelled with the query location.
+GOOGLE_SEARCH_LOCATIONS = ("Shanghai, China", "Hong Kong", "Malaysia")
 GOOGLE_SEA_SEARCH_LOCATIONS = ("Singapore", "Indonesia", "Thailand", "Vietnam", "Philippines")
 GOOGLE_PAGE_SIZE = 20
 GOOGLE_ROOT = "https://www.google.com"
@@ -214,7 +216,7 @@ def parse_google_job_detail(
         ],
     )
     location = location or default_location
-    location_category = classify_official_location(location, southeast_asia=True)
+    location_category = classify_official_location(location)
     if location_category == LocationCategory.EXCLUDED:
         return None
     description = structured.description or _first_text(

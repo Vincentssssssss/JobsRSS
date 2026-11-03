@@ -88,7 +88,7 @@ def _use_settings(monkeypatch, module: str, **overrides) -> None:
     monkeypatch.setattr(f"app.official.collectors.{module}.get_settings", lambda: settings)
 
 
-def test_amazon_fetch_queries_shanghai_and_malaysia_within_cap(monkeypatch):
+def test_amazon_fetch_queries_target_locations_within_cap(monkeypatch):
     _use_settings(monkeypatch, "amazon", official_source_sea_max_jobs_per_source=0)
     requests = []
 
@@ -96,12 +96,14 @@ def test_amazon_fetch_queries_shanghai_and_malaysia_within_cap(monkeypatch):
         params = dict(request.url.params)
         requests.append(params)
         assert params["result_limit"] == "100"
-        if params["country"] == "CHN":
+        if params.get("city") == "Shanghai":
             prefix, location = "sh", "Shanghai, CHN"
             total = 230
-        else:
+        elif params["country"] == "MYS":
             prefix, location = "my", "Kuala Lumpur, MYS"
             total = 40
+        else:
+            prefix, location, total = "x", "", 0
         offset = int(params["offset"])
         count = max(0, min(100, total - offset))
         jobs = [
@@ -128,10 +130,13 @@ def test_amazon_fetch_queries_shanghai_and_malaysia_within_cap(monkeypatch):
     assert len(ids) == 150
     assert sum(1 for job_id in ids if job_id.startswith("my")) == 40
     assert ids[:4] == ["sh0", "my0", "sh1", "my1"]
-    assert [(r["country"], r["offset"]) for r in requests] == [
-        ("CHN", "0"),
-        ("CHN", "100"),
-        ("MYS", "0"),
+    assert [(r["country"], r.get("city"), r["offset"]) for r in requests] == [
+        ("CHN", "Shanghai", "0"),
+        ("CHN", "Shanghai", "100"),
+        ("CHN", "Hangzhou", "0"),
+        ("CHN", "Nanjing", "0"),
+        ("HKG", None, "0"),
+        ("MYS", None, "0"),
     ]
 
 
@@ -143,7 +148,7 @@ def test_amazon_southeast_asia_has_its_own_cap(monkeypatch):
         official_source_sea_max_jobs_per_source=3,
     )
     inventory = {
-        "CHN": [("sh1", "Shanghai, CHN"), ("sh2", "Shanghai, CHN"), ("sh3", "Shanghai, CHN")],
+        "Shanghai": [("sh1", "Shanghai, CHN"), ("sh2", "Shanghai, CHN"), ("sh3", "Shanghai, CHN")],
         "MYS": [("my1", "Kuala Lumpur, MYS"), ("my2", "Kuala Lumpur, MYS")],
         "SGP": [("sh1", "Shanghai, CHN / SGP"), ("sg1", "SGP"), ("sg2", "SGP")],
         "VNM": [("vn1", "Hanoi, VNM")],
@@ -151,7 +156,8 @@ def test_amazon_southeast_asia_has_its_own_cap(monkeypatch):
     }
 
     def handler(request: httpx.Request) -> httpx.Response:
-        rows = inventory.get(request.url.params["country"], [])
+        params = request.url.params
+        rows = inventory.get(params.get("city") or params["country"], [])
         return httpx.Response(
             200,
             json={
@@ -421,7 +427,8 @@ def test_microsoft_fetch_searches_malaysia_and_skips_out_of_scope_listings(monke
     jobs = MicrosoftOfficialCollector().fetch_raw()
 
     assert searched_locations == [
-        "Shanghai", "Malaysia", "Singapore", "Indonesia", "Thailand", "Vietnam", "Philippines",
+        "Shanghai", "Suzhou", "Hong Kong", "Malaysia",
+        "Singapore", "Indonesia", "Thailand", "Vietnam", "Philippines",
     ]
     assert detail_ids == ["11"]
     assert jobs[0]["location_category"] == LocationCategory.CONFIRMED_MALAYSIA.value
@@ -507,7 +514,7 @@ def test_microsoft_skips_southeast_asia_search_when_its_cap_is_zero(monkeypatch)
     )
 
     assert MicrosoftOfficialCollector().fetch_raw() == []
-    assert searched_locations == ["Shanghai", "Malaysia"]
+    assert searched_locations == ["Shanghai", "Suzhou", "Hong Kong", "Malaysia"]
 
 
 def test_google_detail_from_southeast_asia_search_is_tagged_by_country():

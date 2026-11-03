@@ -15,7 +15,8 @@ from app.official.location import (
 )
 from app.official.registry import get_official_source
 
-MICROSOFT_SEARCH_LOCATIONS = ("Shanghai", "Malaysia")
+# A "Hangzhou" search only returns Suzhou roles, so Suzhou covers the Yangtze delta.
+MICROSOFT_SEARCH_LOCATIONS = ("Shanghai", "Suzhou", "Hong Kong", "Malaysia")
 MICROSOFT_SEA_SEARCH_LOCATIONS = ("Singapore", "Indonesia", "Thailand", "Vietnam", "Philippines")
 # The pcsx search API returns at most 10 positions per request.
 MICROSOFT_PAGE_SIZE = 10
@@ -143,7 +144,7 @@ def _listing_is_excluded(item: Dict[str, Any]) -> bool:
         )
     )
     return (
-        classify_official_location(location, southeast_asia=True) == LocationCategory.EXCLUDED
+        classify_official_location(location) == LocationCategory.EXCLUDED
     )
 
 
@@ -188,7 +189,7 @@ def parse_microsoft_position(
             detail.get("location"),
         )
     )
-    location_category = classify_official_location(location, southeast_asia=True)
+    location_category = classify_official_location(location)
     if location_category == LocationCategory.EXCLUDED:
         return None
     description = "\n\n".join(

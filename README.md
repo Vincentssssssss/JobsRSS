@@ -76,22 +76,25 @@ OFFICIAL_SOURCE_MAX_PAGES_PER_SOURCE=20
 OFFICIAL_SOURCE_STALE_AFTER_DAYS=30
 ```
 
-`OFFICIAL_SOURCE_MAX_JOBS_PER_SOURCE` caps each company. Amazon, Microsoft,
-Google, BCG and Roche search Shanghai and Malaysia separately; when the two
-together exceed the cap, results are taken alternately from each location
-(newest first) so neither crowds out the other.
+`OFFICIAL_SOURCE_MAX_JOBS_PER_SOURCE` caps each company. Collectors that search
+by location query each target separately (Amazon: Shanghai, Hangzhou, Nanjing,
+Hong Kong, Malaysia; Microsoft: Shanghai, Suzhou, Hong Kong, Malaysia; Google:
+Shanghai, Hong Kong, Malaysia; BCG and Roche: Shanghai, Malaysia); when they together exceed the cap,
+results are taken alternately from each location (newest first) so none crowds
+out the others.
 
 Amazon, Microsoft and Google also search Singapore, Indonesia, Thailand,
 Vietnam and the Philippines, with their own cap
 (`OFFICIAL_SOURCE_SEA_MAX_JOBS_PER_SOURCE`, alternating between countries), so
-these markets add to the Shanghai/Malaysia jobs instead of replacing them. A
-job already taken for Shanghai or Malaysia does not use a Southeast Asia slot.
+these markets add to the jobs above instead of replacing them. A job already
+taken by the first group does not use a Southeast Asia slot.
 Set it to `0` to turn the Southeast Asia searches off.
 
 Alibaba is collected from the social-recruitment portals as two sources.
-`official_aliyun` (`careers.aliyun.com`) takes every Alibaba Cloud role in
-Shanghai and Malaysia, searching security, technical-service (TAM) and
-solution-architect titles first so they survive the cap. `official_alibaba`
+`official_aliyun` (`careers.aliyun.com`) takes Alibaba Cloud roles in the
+target locations, searching security, technical-service (TAM) and
+solution-architect titles first so they survive the cap, then sweeping every
+Shanghai and overseas role. `official_alibaba`
 (`talent.alibaba.com`, ~4,000 roles, no function filter) keyword-searches
 "安全" / "security" plus the security category for the rest of the group and
 skips Alibaba Cloud roles, which both portals list under the same id. Any
@@ -100,22 +103,28 @@ remaining campus-portal rows are closed on the next run.
 Official jobs are classified before publication:
 
 - `confirmed_shanghai`: explicitly includes Shanghai/上海.
+- `confirmed_yangtze_delta`: Jiangsu or Zhejiang (Hangzhou, Suzhou, Nanjing,
+  Wuxi, Ningbo, ...).
+- `confirmed_hong_kong`: Hong Kong/香港/Kowloon or the ISO code `HKG`.
 - `confirmed_malaysia`: explicitly includes Malaysia or a Malaysian city
   (Kuala Lumpur, Selangor, Johor, Penang, ...).
 - `confirmed_southeast_asia`: Singapore, Indonesia, Thailand, Vietnam or the
-  Philippines (country names, major cities, or ISO codes such as `SGP` / `VN`).
-  Only Amazon, Microsoft and Google use this category; the job's `country`
-  is set to the matched country.
+  Philippines (country names, major cities, or ISO codes such as `SGP` / `VN`);
+  the job's `country` is set to the matched country.
 - `unclassified`: broad China/APAC/Greater China/Remote or missing location.
 - `excluded`: any other explicit location.
 
-Only confirmed Shanghai, confirmed Malaysia, confirmed Southeast Asia and
-unclassified jobs are ingested.
+Only confirmed and unclassified jobs are ingested. A multi-city role is
+classified by its first matching target in the order above, so "Beijing /
+Hangzhou" is kept.
 
 ## LLM Targeted Matching (V2.1)
 
-The optional LLM reranker keeps broad source recall, then performs cybersecurity
-fit evaluation on active jobs. Results are stored on each job and can be
+The optional LLM reranker keeps broad source recall, then evaluates each active
+job against `LLM_TARGET_PROFILE` (role domain and seniority; seniority is a
+hard gate). Only jobs whose rule score reaches `LLM_MIN_RULE_SCORE` are sent:
+security titles earn 55, customer-facing cloud roles (solutions architect, TAM,
+presales, customer engineer) 40, seniority words 20 and target locations 15. Results are stored on each job and can be
 filtered by API/UI.
 
 Supported provider modes:
@@ -146,7 +155,7 @@ LLM_COMMIT_EVERY_JOBS=20
 LLM_MIN_RULE_SCORE=20
 LLM_ONLY_UNSCORED=true
 LLM_REJECT_EARLY_CAREER=true
-LLM_TARGET_PROFILE=Manager-level or above cybersecurity roles ... across Shanghai/Jiangsu/Zhejiang, Hong Kong, Singapore, Malaysia, and the rest of Southeast Asia...
+LLM_TARGET_PROFILE=Senior individual-contributor or manager-and-above cybersecurity roles ... customer-facing cloud roles (Solutions Architect, TAM, presales) when they centre on cloud or security ... large, well-known employers ... Shanghai, Jiangsu/Zhejiang, Hong Kong, Singapore, Malaysia, the rest of Southeast Asia...
 ```
 
 Qwen example:
