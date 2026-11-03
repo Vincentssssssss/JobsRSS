@@ -198,11 +198,25 @@ def create_llm_client(settings: Optional[Settings] = None) -> Optional[LLMClient
     settings = settings or get_settings()
     if not settings.llm_rerank_enabled:
         return None
-    if not settings.llm_api_key and not settings.llm_azure_use_default_credential:
+    api_key = (settings.llm_api_key or "").strip()
+    if not api_key and not settings.llm_azure_use_default_credential:
         return None
+    if not settings.llm_azure_use_default_credential:
+        # HTTP headers are ASCII-only, so a placeholder such as "<新的key>" would
+        # otherwise fail every job with an opaque codec error.
+        bad_positions = [
+            index for index, char in enumerate(api_key) if ord(char) > 127 or char.isspace()
+        ]
+        if bad_positions:
+            logger.error(
+                "llm_client_unavailable reason=api_key_not_ascii length=%d bad_positions=%s",
+                len(api_key),
+                bad_positions[:5],
+            )
+            return None
     base_url = resolve_base_url(settings.llm_provider, settings.llm_base_url)
     return OpenAICompatibleClient(
-        api_key=settings.llm_api_key,
+        api_key=api_key,
         model=settings.llm_model,
         base_url=base_url,
         api_version=settings.llm_api_version,

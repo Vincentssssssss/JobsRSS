@@ -219,6 +219,38 @@ def test_create_llm_client_allows_default_credential_without_api_key(monkeypatch
     assert client is not None
 
 
+def _api_key_settings(api_key: str) -> SimpleNamespace:
+    return SimpleNamespace(
+        llm_rerank_enabled=True,
+        llm_api_key=api_key,
+        llm_provider="openai",
+        llm_base_url=None,
+        llm_model="gpt-6-luna",
+        llm_api_version=None,
+        llm_temperature=None,
+        llm_timeout_seconds=30,
+        llm_verify_tls=True,
+        llm_azure_use_default_credential=False,
+        llm_azure_scope="https://ai.azure.com/.default",
+    )
+
+
+def test_create_llm_client_rejects_placeholder_api_key(caplog):
+    with caplog.at_level("ERROR", logger="app.matching.llm_reranker"):
+        client = create_llm_client(_api_key_settings("<新的key>"))
+
+    assert client is None
+    assert "api_key_not_ascii length=7 bad_positions=[1, 2]" in caplog.text
+    assert "新" not in caplog.text
+
+
+def test_create_llm_client_strips_whitespace_around_api_key():
+    client = create_llm_client(_api_key_settings("  sk-test-123  \n"))
+
+    assert client is not None
+    assert client.api_key == "sk-test-123"
+
+
 def test_run_llm_rerank_updates_job_fields():
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
