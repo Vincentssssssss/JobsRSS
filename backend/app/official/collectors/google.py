@@ -1,6 +1,8 @@
+import logging
 import re
+import time
 from html import unescape
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin
 
 import httpx
@@ -29,6 +31,10 @@ GOOGLE_CAREERS_ROOT = (
 GOOGLE_JOB_PATH = re.compile(
     r"/about/careers/applications/jobs/results/(\d+)-[^?#]+"
 )
+GOOGLE_REQUEST_ATTEMPTS = 3
+GOOGLE_RETRY_BACKOFF_SECONDS = 2.0
+
+logger = logging.getLogger(__name__)
 
 
 class GoogleOfficialCollector(OfficialCollectorBase):
@@ -48,33 +54,44 @@ class GoogleOfficialCollector(OfficialCollectorBase):
             follow_redirects=False,
         ) as client:
             pairs: List[tuple[str, str]] = []
+            last_error: Optional[httpx.TransportError] = None
             for locations, limit in (
                 (GOOGLE_SEARCH_LOCATIONS, settings.official_source_max_jobs_per_source),
                 (GOOGLE_SEA_SEARCH_LOCATIONS, settings.official_source_sea_max_jobs_per_source),
             ):
                 if limit <= 0:
                     continue
-                groups = [
-                    [
-                        (link, location)
-                        for link in _discover_location_links(
+                groups = []
+                for location in locations:
+                    try:
+                        links = _discover_location_links(
                             client,
                             location,
                             limit=limit,
                             max_pages=settings.official_source_max_pages_per_source,
                         )
-                    ]
-                    for location in locations
-                ]
+                    except httpx.TransportError as exc:
+                        last_error = exc
+                        logger.warning(
+                            "google_location_skipped location=%s error=%r", location, exc
+                        )
+                        continue
+                    groups.append([(link, location) for link in links])
                 pairs += interleave_capped(
                     groups,
                     limit,
                     key=lambda pair: pair[0],
                     exclude={link for link, _ in pairs},
                 )
+            if last_error is not None and not pairs:
+                raise last_error
             jobs = []
             for link, location in pairs:
-                response = client.get(link)
+                try:
+                    response = _get_with_retry(client, link)
+                except httpx.TransportError as exc:
+                    logger.warning("google_job_skipped url=%s error=%r", link, exc)
+                    continue
                 response.raise_for_status()
                 job = parse_google_job_detail(
                     response.text, str(response.url), default_location=location
@@ -91,10 +108,22 @@ def _discover_location_links(
     for page in range(1, max_pages + 1):
         if len(links) >= limit:
             break
-        response = client.get(
-            GOOGLE_RESULTS_URL,
-            params={"location": location, "sort_by": "date", "page": page},
-        )
+        try:
+            response = _get_with_retry(
+                client,
+                GOOGLE_RESULTS_URL,
+                params={"location": location, "sort_by": "date", "page": page},
+            )
+        except httpx.TransportError:
+            if not links:
+                raise
+            logger.warning(
+                "google_listing_truncated location=%s page=%d kept=%d",
+                location,
+                page,
+                len(links),
+            )
+            break
         response.raise_for_status()
         new_links = [
             link for link in discover_google_job_links(response.text) if link not in links
@@ -103,6 +132,21 @@ def _discover_location_links(
         if len(new_links) < GOOGLE_PAGE_SIZE:
             break
     return links
+
+
+def _get_with_retry(
+    client: httpx.Client, url: str, params: Optional[Dict[str, Any]] = None
+) -> httpx.Response:
+    # google.com is reachable only intermittently from mainland China networks;
+    # handshakes are often reset, and a retry usually gets through.
+    for attempt in range(GOOGLE_REQUEST_ATTEMPTS):
+        try:
+            return client.get(url, params=params)
+        except httpx.TransportError:
+            if attempt + 1 >= GOOGLE_REQUEST_ATTEMPTS:
+                raise
+            time.sleep(GOOGLE_RETRY_BACKOFF_SECONDS * (2 ** attempt))
+    raise AssertionError("unreachable")
 
 
 def discover_google_job_links(html: str) -> List[str]:

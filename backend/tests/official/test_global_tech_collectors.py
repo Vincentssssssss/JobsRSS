@@ -1,9 +1,15 @@
 import json
 
 import httpx
+import pytest
 
 from app.official.collectors.amazon import AmazonOfficialCollector, parse_amazon_jobs
-from app.official.collectors.google import discover_google_job_links, parse_google_job_detail
+import app.official.collectors.google as google
+from app.official.collectors.google import (
+    GoogleOfficialCollector,
+    discover_google_job_links,
+    parse_google_job_detail,
+)
 from app.official.collectors.microsoft import (
     MicrosoftOfficialCollector,
     _get_json_with_backoff,
@@ -521,3 +527,60 @@ def test_google_detail_from_southeast_asia_search_is_tagged_by_country():
 
     assert job["location_category"] == LocationCategory.CONFIRMED_SOUTHEAST_ASIA.value
     assert job["country"] == "Singapore"
+
+
+def _google_listing(job_id: str) -> str:
+    return (
+        '<a href="/about/careers/applications/jobs/results/'
+        f'{job_id}-security-manager">Security Manager</a>'
+    )
+
+
+def _google_detail(title: str) -> str:
+    return (
+        f'<html><head><meta property="og:title" content="{title} — Google Careers"></head>'
+        f'<body><h1>{title}</h1><div class="job-description">Lead teams.</div></body></html>'
+    )
+
+
+def _patch_google_transport(monkeypatch, handler) -> None:
+    monkeypatch.setattr(google.time, "sleep", lambda seconds: None)
+    real_client = httpx.Client
+    monkeypatch.setattr(
+        httpx,
+        "Client",
+        lambda **kwargs: real_client(transport=httpx.MockTransport(handler), **kwargs),
+    )
+
+
+def test_google_retries_reset_handshakes_and_skips_unreachable_locations(monkeypatch):
+    _use_settings(monkeypatch, "google", official_source_sea_max_jobs_per_source=0)
+    attempts = {"Shanghai, China": 0, "Malaysia": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        location = request.url.params.get("location")
+        if location in attempts:
+            attempts[location] += 1
+            if location == "Malaysia" or attempts[location] == 1:
+                raise httpx.ConnectError("[SSL: UNEXPECTED_EOF_WHILE_READING]", request=request)
+            return httpx.Response(200, text=_google_listing("111"))
+        return httpx.Response(200, text=_google_detail("Security Manager"))
+
+    _patch_google_transport(monkeypatch, handler)
+
+    jobs = GoogleOfficialCollector().fetch_raw()
+
+    assert [job["source_job_id"] for job in jobs] == ["111"]
+    assert attempts == {"Shanghai, China": 2, "Malaysia": 3}
+
+
+def test_google_fails_when_every_location_is_unreachable(monkeypatch):
+    _use_settings(monkeypatch, "google", official_source_sea_max_jobs_per_source=0)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection reset", request=request)
+
+    _patch_google_transport(monkeypatch, handler)
+
+    with pytest.raises(httpx.ConnectError):
+        GoogleOfficialCollector().fetch_raw()
