@@ -73,6 +73,8 @@ YANGTZE_DELTA_MARKERS = {
     "苏州",
     "kunshan",
     "昆山",
+    "taicang",
+    "太仓",
     "nanjing",
     "南京",
     "wuxi",
@@ -97,6 +99,31 @@ YANGTZE_DELTA_MARKERS = {
     "温州",
     "zhoushan",
     "舟山",
+    "xuzhou",
+    "徐州",
+    "yangzhou",
+    "扬州",
+    "zhenjiang",
+    "镇江",
+    "yancheng",
+    "盐城",
+    "huai'an",
+    "huaian",
+    "淮安",
+    "lianyungang",
+    "连云港",
+    "suqian",
+    "宿迁",
+    "泰州",
+    "jinhua",
+    "金华",
+    "yiwu",
+    "义乌",
+    "台州",
+    "quzhou",
+    "衢州",
+    "lishui",
+    "丽水",
 }
 HONG_KONG_MARKERS = {
     "hong kong",
@@ -145,7 +172,7 @@ SOUTHEAST_ASIA_MARKERS = {
     "Vietnam": ("vietnam", "viet nam", "hanoi", "ha noi", "ho chi minh", "haiphong",
                 "hai phong", "da nang", "越南", "河内", "胡志明"),
     "Philippines": ("philippines", "manila", "makati", "taguig", "quezon city", "pasig",
-                    "cebu", "菲律宾", "马尼拉"),
+                    "pasay", "cebu", "菲律宾", "马尼拉"),
 }
 # Amazon lists bare ISO-3 codes ("SGP", "VNM"); Microsoft may end a segment with ISO-2.
 _SOUTHEAST_ASIA_COUNTRY_CODES = {
@@ -192,8 +219,10 @@ def classify_official_location(location: str) -> LocationCategory:
     # as "Beijing / Hangzhou" or "Singapore / Kuala Lumpur" stay eligible.
     if any(marker in normalized for marker in YANGTZE_DELTA_MARKERS):
         return LocationCategory.CONFIRMED_YANGTZE_DELTA
-    if any(marker in normalized for marker in HONG_KONG_MARKERS) or _HONG_KONG_COUNTRY_CODE.search(
-        normalized
+    # Chongqing's 九龙坡 district contains Kowloon's Chinese name.
+    hong_kong_text = normalized.replace("九龙坡", "")
+    if any(marker in hong_kong_text for marker in HONG_KONG_MARKERS) or _HONG_KONG_COUNTRY_CODE.search(
+        hong_kong_text
     ):
         return LocationCategory.CONFIRMED_HONG_KONG
     if any(marker in normalized for marker in MALAYSIA_MARKERS) or _MALAYSIA_COUNTRY_CODE.search(

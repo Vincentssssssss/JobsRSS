@@ -13,7 +13,15 @@ from app.dedup.service import is_probable_duplicate
 from app.matching.early_career_guard import detect_early_career_markers
 from app.matching.scorer import score_job
 from app.models.job import Job
+from app.normalization.location_standard import (
+    city_country,
+    decode_cities,
+    encode_cities,
+    order_cities,
+    standardize_location,
+)
 from app.normalization.normalizer import normalize_job
+from app.official.location import LocationCategory, classify_official_location
 
 _SEARCH_PAGE_SOURCES = {"liepin_auth", "job51_auth"}
 
@@ -55,6 +63,7 @@ def ingest_collector(db: Session, collector: BaseCollector) -> IngestStats:
                     existing.company = incoming.company
                 if allow_text_replacement and _should_replace_location(existing.location, incoming.location):
                     existing.location = incoming.location
+                    existing.location_cities = incoming.location_cities
                 if allow_text_replacement and incoming.country and incoming.country != "Unknown":
                     existing.country = incoming.country
                 if (
@@ -137,6 +146,7 @@ def ingest_collector(db: Session, collector: BaseCollector) -> IngestStats:
                 status=status,
                 enrichment_source=incoming.enrichment_source,
                 location_category=incoming.location_category,
+                location_cities=incoming.location_cities,
             )
             _apply_early_career_guard(job, settings.llm_reject_early_career)
             db.add(job)
@@ -238,6 +248,43 @@ def repair_fixed_company_names(db: Session, fixed_companies: Dict[str, str]) -> 
         )
     db.commit()
     return repaired
+
+
+def standardize_stored_locations(db: Session) -> int:
+    """Fill in the standard cities, country and (for unclassified rows) location
+    category of stored rows, so searching and filtering by place covers jobs
+    collected before standardization or before a city was added to the table.
+
+    Stored Shanghai rows only keep "上海", so cities seen at collection time are
+    kept; the next sighting replaces them with the full listing."""
+    updates = []
+    # Ordered so the api and worker, which both run this at startup, lock rows in
+    # the same order instead of deadlocking.
+    rows = (
+        db.query(Job.id, Job.location, Job.country, Job.location_cities, Job.location_category)
+        .order_by(Job.id)
+        .all()
+    )
+    for job_id, location, country, stored_cities, category in rows:
+        standard = standardize_location(location, country)
+        cities = order_cities([*standard.cities, *decode_cities(stored_cities)])
+        new_country = city_country(cities[0]) if cities else standard.country
+        new_category = category
+        if category == LocationCategory.UNCLASSIFIED.value:
+            new_category = classify_official_location(location).value
+        change = {}
+        if encode_cities(cities) != stored_cities:
+            change["location_cities"] = encode_cities(cities)
+        if new_country != country:
+            change["country"] = new_country
+        if new_category != category:
+            change["location_category"] = new_category
+        if change:
+            updates.append({"id": job_id, **change})
+    if updates:
+        db.bulk_update_mappings(Job, updates)
+    db.commit()
+    return len(updates)
 
 
 def _as_utc(value: Optional[datetime]) -> Optional[datetime]:

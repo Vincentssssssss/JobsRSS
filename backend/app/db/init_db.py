@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.db.session import Base, engine
 from app.models import Job  # noqa: F401
 from app.official.collectors.catalog import official_fixed_companies
-from app.pipeline import repair_fixed_company_names
+from app.pipeline import repair_fixed_company_names, standardize_stored_locations
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +92,11 @@ def init_db() -> None:
                     "ADD COLUMN IF NOT EXISTS view_count INTEGER NOT NULL DEFAULT 0"
                 )
             )
+            connection.execute(
+                text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS location_cities VARCHAR(512)")
+            )
     _repair_company_names()
+    _standardize_locations()
 
 
 def _repair_company_names() -> None:
@@ -100,3 +104,10 @@ def _repair_company_names() -> None:
         repaired = repair_fixed_company_names(db, official_fixed_companies())
     if repaired:
         logger.info("company_names_repaired count=%d", repaired)
+
+
+def _standardize_locations() -> None:
+    with Session(engine) as db:
+        updated = standardize_stored_locations(db)
+    if updated:
+        logger.info("locations_standardized count=%d", updated)

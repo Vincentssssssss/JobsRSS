@@ -1,5 +1,6 @@
 import re
 
+from app.normalization.location_standard import encode_cities, standardize_location
 from app.official.location import LocationCategory, classify_official_location
 from app.schemas.job import UnifiedJob
 
@@ -54,6 +55,14 @@ def normalize_location(value: str) -> str:
 def normalize_job(job: UnifiedJob) -> UnifiedJob:
     job.title = normalize_text(job.title)
     job.company = normalize_text(job.company)
+    # Standardized before normalize_location collapses Shanghai listings to "上海",
+    # which would drop the other cities of a multi-city role.
+    raw_location = normalize_text(job.location)
+    standard = standardize_location(raw_location, job.country)
+    job.location_cities = encode_cities(standard.cities)
+    job.country = standard.country
+    if job.location_category == LocationCategory.UNCLASSIFIED.value:
+        job.location_category = classify_official_location(raw_location).value
     job.location = normalize_location(job.location)
     job.description = normalize_text(job.description)
     return job

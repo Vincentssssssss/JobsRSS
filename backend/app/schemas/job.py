@@ -23,6 +23,7 @@ class UnifiedJob(BaseModel):
     status: str = "active"
     enrichment_source: Optional[str] = None
     location_category: str = "unclassified"
+    location_cities: Optional[str] = None
 
 
 class JobOut(BaseModel):
@@ -46,6 +47,9 @@ class JobOut(BaseModel):
     applied_at: Optional[datetime] = None
     last_viewed_at: Optional[datetime] = None
     view_count: int = 0
+    country: Optional[str] = None
+    cities: List[str] = Field(default_factory=list)
+    location_label: str = ""
 
 
 class JobMarksUpdate(BaseModel):
@@ -59,7 +63,6 @@ class DescriptionSection(BaseModel):
 
 
 class JobDetail(JobOut):
-    country: Optional[str]
     description: str
     updated_at: Optional[datetime]
     first_seen_at: Optional[datetime]

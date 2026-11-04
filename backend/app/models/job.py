@@ -1,10 +1,11 @@
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 from sqlalchemy import DateTime, Float, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
+from app.normalization.location_standard import decode_cities, location_label
 
 
 class Job(Base):
@@ -54,3 +55,12 @@ class Job(Base):
     view_count: Mapped[int] = mapped_column(
         Integer, default=0, server_default="0", nullable=False
     )
+    location_cities: Mapped[Optional[str]] = mapped_column(String(512))
+
+    @property
+    def cities(self) -> List[str]:
+        return decode_cities(self.location_cities)
+
+    @property
+    def location_label(self) -> str:
+        return location_label(self.cities, self.country)
