@@ -7,7 +7,7 @@
 #
 # Environment overrides: API_URL (default http://localhost:8000), WEB_URL
 # (default http://localhost:3000), COMPOSE (default "docker compose"),
-# EXPECT_VERSION (default: app_version in backend/app/core/config.py).
+# EXPECT_VERSION (default: APP_VERSION in backend/app/core/config.py).
 # Written for bash 3.2 so it runs unchanged on macOS.
 
 set -u
@@ -19,7 +19,11 @@ WEB_URL="${WEB_URL:-http://localhost:3000}"
 COMPOSE="${COMPOSE:-docker compose}"
 WRITE=0
 [ "${1:-}" = "--write" ] && WRITE=1
-EXPECT_VERSION="${EXPECT_VERSION:-$(sed -n 's/^ *app_version: str = "\(.*\)"/\1/p' backend/app/core/config.py)}"
+EXPECT_VERSION="${EXPECT_VERSION:-$(sed -n 's/^APP_VERSION = "\(.*\)"/\1/p' backend/app/core/config.py)}"
+if [ -z "$EXPECT_VERSION" ]; then
+  echo "Could not read APP_VERSION from backend/app/core/config.py; set EXPECT_VERSION." >&2
+  exit 2
+fi
 
 PASS=0
 FAIL=0
