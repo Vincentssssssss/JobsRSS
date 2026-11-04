@@ -42,6 +42,15 @@ class JobOut(BaseModel):
     llm_role_family: Optional[str]
     status: str
     location_category: str
+    favorited_at: Optional[datetime] = None
+    applied_at: Optional[datetime] = None
+    last_viewed_at: Optional[datetime] = None
+    view_count: int = 0
+
+
+class JobMarksUpdate(BaseModel):
+    favorited: Optional[bool] = None
+    applied: Optional[bool] = None
 
 
 class DescriptionSection(BaseModel):

@@ -75,3 +75,13 @@ def init_db() -> None:
                     "ADD COLUMN IF NOT EXISTS last_verified_at TIMESTAMPTZ"
                 )
             )
+            for column in ("favorited_at", "applied_at", "last_viewed_at"):
+                connection.execute(
+                    text(f"ALTER TABLE jobs ADD COLUMN IF NOT EXISTS {column} TIMESTAMPTZ")
+                )
+            connection.execute(
+                text(
+                    "ALTER TABLE jobs "
+                    "ADD COLUMN IF NOT EXISTS view_count INTEGER NOT NULL DEFAULT 0"
+                )
+            )

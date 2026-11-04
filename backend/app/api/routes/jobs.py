@@ -8,10 +8,17 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models.job import Job
 from app.presentation.description_sections import split_description_sections
-from app.schemas.job import JobDetail, JobOut
+from app.schemas.job import JobDetail, JobMarksUpdate, JobOut
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 ALLOWED_LLM_VERDICTS = {"strong_fit", "possible_fit", "not_fit"}
+MARK_FILTERS = {
+    "favorited": Job.favorited_at.is_not(None),
+    "applied": Job.applied_at.is_not(None),
+    "not_applied": Job.applied_at.is_(None),
+    "viewed": Job.last_viewed_at.is_not(None),
+    "not_viewed": Job.last_viewed_at.is_(None),
+}
 
 
 def _parse_llm_verdicts(value: Optional[str]) -> list[str]:
@@ -36,8 +43,13 @@ def _apply_jobs_filters(
     llm_verdicts: list[str],
     llm_verdict_raw: Optional[str],
     status: Optional[str],
+    mark: Optional[str] = None,
 ):
     query = query.filter(Job.match_score >= min_score)
+    if mark:
+        if mark not in MARK_FILTERS:
+            raise HTTPException(status_code=422, detail=f"Unknown mark filter: {mark}")
+        query = query.filter(MARK_FILTERS[mark])
     if status:
         query = query.filter(Job.status == status)
     if source:
@@ -69,6 +81,7 @@ def list_jobs(
     min_llm_score: Optional[float] = Query(default=None, ge=0, le=100),
     llm_verdict: Optional[str] = Query(default=None),
     status: Optional[str] = Query(default="active"),
+    mark: Optional[str] = Query(default=None),
 ):
     llm_verdicts = _parse_llm_verdicts(llm_verdict)
     query = _apply_jobs_filters(
@@ -81,6 +94,7 @@ def list_jobs(
         llm_verdicts=llm_verdicts,
         llm_verdict_raw=llm_verdict,
         status=status,
+        mark=mark,
     )
     return query.order_by(desc(Job.posted_at), desc(Job.id)).offset(offset).limit(limit).all()
 
@@ -95,6 +109,7 @@ def jobs_count(
     min_llm_score: Optional[float] = Query(default=None, ge=0, le=100),
     llm_verdict: Optional[str] = Query(default=None),
     status: Optional[str] = Query(default="active"),
+    mark: Optional[str] = Query(default=None),
 ):
     llm_verdicts = _parse_llm_verdicts(llm_verdict)
     query = _apply_jobs_filters(
@@ -107,6 +122,7 @@ def jobs_count(
         llm_verdicts=llm_verdicts,
         llm_verdict_raw=llm_verdict,
         status=status,
+        mark=mark,
     )
     total = query.scalar() or 0
     return {"total": total}
@@ -122,6 +138,7 @@ def jobs_source_counts(
     min_llm_score: Optional[float] = Query(default=None, ge=0, le=100),
     llm_verdict: Optional[str] = Query(default=None),
     status: Optional[str] = Query(default="active"),
+    mark: Optional[str] = Query(default=None),
 ):
     llm_verdicts = _parse_llm_verdicts(llm_verdict)
     query = _apply_jobs_filters(
@@ -134,6 +151,7 @@ def jobs_source_counts(
         llm_verdicts=llm_verdicts,
         llm_verdict_raw=llm_verdict,
         status=status,
+        mark=mark,
     )
     rows = (
         query
@@ -209,3 +227,33 @@ def get_job_detail(job_id: int, db: Session = Depends(get_db)):
         for section in split_description_sections(job.description)
     ]
     return detail
+
+
+def _get_job_or_404(db: Session, job_id: int) -> Job:
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
+@router.put("/{job_id}/marks", response_model=JobOut)
+def update_job_marks(job_id: int, marks: JobMarksUpdate, db: Session = Depends(get_db)):
+    job = _get_job_or_404(db, job_id)
+    now = datetime.now(timezone.utc)
+    if marks.favorited is not None:
+        job.favorited_at = (job.favorited_at or now) if marks.favorited else None
+    if marks.applied is not None:
+        job.applied_at = (job.applied_at or now) if marks.applied else None
+    db.commit()
+    db.refresh(job)
+    return job
+
+
+@router.post("/{job_id}/view", response_model=JobOut)
+def record_job_view(job_id: int, db: Session = Depends(get_db)):
+    job = _get_job_or_404(db, job_id)
+    job.view_count = (job.view_count or 0) + 1
+    job.last_viewed_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(job)
+    return job

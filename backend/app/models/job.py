@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import DateTime, Float, Index, String, Text, UniqueConstraint, func
+from sqlalchemy import DateTime, Float, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
@@ -47,4 +47,10 @@ class Job(Base):
     llm_model: Mapped[Optional[str]] = mapped_column(String(128))
     llm_last_evaluated_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True)
+    )
+    favorited_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    applied_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    last_viewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    view_count: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
     )

@@ -95,6 +95,7 @@ def test_jobs_source_counts_respects_ai_filters_and_groups_by_source():
             min_llm_score=60,
             llm_verdict="strong_fit,possible_fit",
             status="active",
+            mark=None,
         )
 
         assert result == {
@@ -130,6 +131,7 @@ def test_jobs_source_counts_returns_empty_when_llm_verdict_filter_is_invalid():
             min_llm_score=None,
             llm_verdict="foo,bar",
             status="active",
+            mark=None,
         )
 
         assert result == {"counts": []}
