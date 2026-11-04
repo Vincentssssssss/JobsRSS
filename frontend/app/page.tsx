@@ -230,6 +230,7 @@ export default function HomePage() {
   const [sourceCountsLoadError, setSourceCountsLoadError] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [source, setSource] = useState("");
   const [minScore, setMinScore] = useState(0);
   const [minLlmScore, setMinLlmScore] = useState("60");
@@ -263,8 +264,8 @@ export default function HomePage() {
       params.set("status", "");
     }
     params.set("min_score", aiPrecisionMode || !includeLlm ? "0" : String(minScore));
-    if (query.trim()) {
-      params.set("q", query.trim());
+    if (debouncedQuery.trim()) {
+      params.set("q", debouncedQuery.trim());
     }
     if (source) {
       params.set("source", source);
@@ -289,54 +290,58 @@ export default function HomePage() {
     return params;
   };
 
-  const loadJobs = async (includeLlm: boolean) => {
+  // Loaders take isCurrent so a slow response for an older filter state (an
+  // earlier keystroke, say) cannot overwrite the results of the latest one.
+  const loadJobs = async (includeLlm: boolean, isCurrent: () => boolean) => {
+    let payload: JobCard[] | null = null;
     try {
-      const payload = await fetchJsonWithFallback<JobCard[]>("/jobs", buildJobParams(includeLlm, true));
-      if (!payload) {
-        setJobs([]);
-        return [];
-      }
-      setJobs(payload);
-      return payload;
+      payload = await fetchJsonWithFallback<JobCard[]>("/jobs", buildJobParams(includeLlm, true));
     } catch {
-      setJobs([]);
-      return [];
+      payload = null;
     }
+    if (isCurrent()) {
+      setJobs(payload ?? []);
+    }
+    return payload ?? [];
   };
 
-  const loadSummary = async () => {
+  const loadSummary = async (isCurrent: () => boolean) => {
+    let payload: SummaryResponse | null = null;
     try {
-      const payload = await fetchJsonWithFallback<SummaryResponse>("/jobs/summary/last-24h");
-      if (!payload) {
-        setSummary(null);
-        return;
-      }
+      payload = await fetchJsonWithFallback<SummaryResponse>("/jobs/summary/last-24h");
+    } catch {
+      payload = null;
+    }
+    if (isCurrent()) {
       setSummary(payload);
-    } catch {
-      setSummary(null);
     }
   };
 
-  const loadCount = async (includeLlm: boolean) => {
+  const loadCount = async (includeLlm: boolean, isCurrent: () => boolean) => {
+    let total = 0;
     try {
       const payload = await fetchJsonWithFallback<{ total?: number }>(
         "/jobs/count",
         buildJobParams(includeLlm, false),
       );
-      const total = Number(payload?.total || 0);
-      setTotalCount(total);
-      return total;
+      total = Number(payload?.total || 0);
     } catch {
-      setTotalCount(0);
-      return 0;
+      total = 0;
     }
+    if (isCurrent()) {
+      setTotalCount(total);
+    }
+    return total;
   };
 
-  const loadSourceCounts = async (includeLlm: boolean) => {
+  const loadSourceCounts = async (includeLlm: boolean, isCurrent: () => boolean) => {
     const params = buildJobParams(includeLlm, false);
     params.delete("source");
     try {
       const payload = await fetchJsonWithFallback<SourceCountsResponse>("/jobs/source-counts", params);
+      if (!isCurrent()) {
+        return;
+      }
       if (!payload) {
         setSourceCounts({});
         setSourceCountsLoaded(false);
@@ -351,20 +356,27 @@ export default function HomePage() {
       setSourceCountsLoaded(true);
       setSourceCountsLoadError(false);
     } catch {
+      if (!isCurrent()) {
+        return;
+      }
       setSourceCounts({});
       setSourceCountsLoaded(false);
       setSourceCountsLoadError(true);
     }
   };
 
-  const loadLocations = async (includeLlm: boolean) => {
+  const loadLocations = async (includeLlm: boolean, isCurrent: () => boolean) => {
     const params = buildJobParams(includeLlm, false);
     params.delete("city");
     params.delete("country");
+    let payload: LocationsResponse | null = null;
     try {
-      setLocations(await fetchJsonWithFallback<LocationsResponse>("/jobs/locations", params));
+      payload = await fetchJsonWithFallback<LocationsResponse>("/jobs/locations", params);
     } catch {
-      setLocations(null);
+      payload = null;
+    }
+    if (isCurrent()) {
+      setLocations(payload);
     }
   };
 
@@ -487,6 +499,13 @@ export default function HomePage() {
   };
 
   useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedQuery(query), 300);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+
+  useEffect(() => {
+    let current = true;
+    const isCurrent = () => current;
     const load = async () => {
       setListLoading(true);
       try {
@@ -497,34 +516,49 @@ export default function HomePage() {
             "/jobs/count",
             new URLSearchParams({ min_llm_score: "0" }),
           ),
-          loadSummary(),
+          loadSummary(isCurrent),
         ]);
+        if (!isCurrent()) {
+          return;
+        }
         const inventory = Number(inventoryPayload?.total || 0);
         const scored = Number(scoredPayload?.total || 0);
         setInventoryCount(inventory);
         setScoredCount(scored);
 
-        const filteredJobs = await loadJobs(true);
+        const filteredJobs = await loadJobs(true, isCurrent);
+        if (!isCurrent()) {
+          return;
+        }
         const shouldRelax =
           llmFiltersOn && filteredJobs.length === 0 && scored === 0 && inventory > 0;
         if (shouldRelax) {
           setFilterRelaxed(true);
           await Promise.all([
-            loadJobs(false),
-            loadCount(false),
-            loadSourceCounts(false),
-            loadLocations(false),
+            loadJobs(false, isCurrent),
+            loadCount(false, isCurrent),
+            loadSourceCounts(false, isCurrent),
+            loadLocations(false, isCurrent),
           ]);
         } else {
           setFilterRelaxed(false);
-          await Promise.all([loadCount(true), loadSourceCounts(true), loadLocations(true)]);
+          await Promise.all([
+            loadCount(true, isCurrent),
+            loadSourceCounts(true, isCurrent),
+            loadLocations(true, isCurrent),
+          ]);
         }
       } finally {
-        setListLoading(false);
+        if (isCurrent()) {
+          setListLoading(false);
+        }
       }
     };
     void load();
-  }, [query, source, minScore, minLlmScore, aiPrecisionMode, limit, locationCategory, place, markFilter]);
+    return () => {
+      current = false;
+    };
+  }, [debouncedQuery, source, minScore, minLlmScore, aiPrecisionMode, limit, locationCategory, place, markFilter]);
 
   useEffect(() => {
     void loadOfficialSources();

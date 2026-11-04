@@ -9,3 +9,4 @@ backend/.venv/
 frontend/node_modules/
 frontend/.next/
 frontend/npm-debug.log*
+frontend/tsconfig.tsbuildinfo
