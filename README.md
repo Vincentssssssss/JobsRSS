@@ -48,6 +48,33 @@ PyPI access. Dashboard changes under `frontend/` need
 `docker compose build frontend && docker compose up -d frontend`, which only
 needs npm registry access.
 
+## Smoke Test
+
+`scripts/smoke_test.sh` checks a running stack end to end and exits non-zero
+if anything fails. It needs only `curl` and `docker`:
+
+```bash
+scripts/smoke_test.sh            # read-only
+scripts/smoke_test.sh --write    # also sets and restores favorite/applied on one job
+```
+
+It checks:
+
+- **Containers:** all four are up, none is restart-looping, and api and worker
+  run the checked-out code.
+- **API:** `/healthz` reports this release's version; the jobs endpoints,
+  filters and mark filters respond; RSS feeds are well-formed.
+- **Dashboard:** the page renders and its `/api/backend` proxy reaches the API.
+- **Database:** every schema column exists, no official job has a region
+  as its company, and location categories are valid.
+- **Worker:** collectors ran in the last 6 hours, and the LLM settings are
+  usable (enabled, key ASCII-only, no deployment or quota errors). The key is
+  never printed.
+
+Run it after every upgrade. A worker that was just recreated needs about 15
+minutes to finish its first collection cycle. `API_URL`, `WEB_URL` and
+`COMPOSE` override the defaults.
+
 ## DevOps Pipeline (Near Production)
 
 GCP GKE is the supported cloud runtime. Use Cloud Shell plus Cloud Build
