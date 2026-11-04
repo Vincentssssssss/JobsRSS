@@ -21,7 +21,7 @@ from app.normalization.location_standard import (
     standardize_location,
 )
 from app.normalization.normalizer import normalize_job
-from app.official.location import LocationCategory, classify_official_location
+from app.official.location import classify_official_location
 
 _SEARCH_PAGE_SOURCES = {"liepin_auth", "job51_auth"}
 
@@ -251,12 +251,14 @@ def repair_fixed_company_names(db: Session, fixed_companies: Dict[str, str]) -> 
 
 
 def standardize_stored_locations(db: Session) -> int:
-    """Fill in the standard cities, country and (for unclassified rows) location
-    category of stored rows, so searching and filtering by place covers jobs
-    collected before standardization or before a city was added to the table.
+    """Recompute the standard cities, country and location category of stored
+    rows, so place search and filters cover jobs collected before
+    standardization, and classifier or city-table fixes reach old rows.
 
-    Stored Shanghai rows only keep "上海", so cities seen at collection time are
-    kept; the next sighting replaces them with the full listing."""
+    Every collector stores the location string it classified, so reclassifying
+    it gives the category a collection today would. Stored Shanghai rows only
+    keep "上海", so cities seen at collection time are kept; the next sighting
+    replaces them with the full listing."""
     updates = []
     # Ordered so the api and worker, which both run this at startup, lock rows in
     # the same order instead of deadlocking.
@@ -269,9 +271,7 @@ def standardize_stored_locations(db: Session) -> int:
         standard = standardize_location(location, country)
         cities = order_cities([*standard.cities, *decode_cities(stored_cities)])
         new_country = city_country(cities[0]) if cities else standard.country
-        new_category = category
-        if category == LocationCategory.UNCLASSIFIED.value:
-            new_category = classify_official_location(location).value
+        new_category = classify_official_location(location).value
         change = {}
         if encode_cities(cities) != stored_cities:
             change["location_cities"] = encode_cities(cities)

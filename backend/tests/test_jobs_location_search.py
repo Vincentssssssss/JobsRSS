@@ -185,10 +185,11 @@ def test_stored_rows_are_standardized_once_and_keep_collected_cities():
             row("official_amazon_aws", "aws", "上海", "China", "confirmed_shanghai",
                 "|Shanghai|Beijing|"),
             row("official_kpmg", "kp", "武侯区, 四川, China", "China"),
+            row("official_anta", "an", "九龙坡区, 重庆市, 中国", "China", "confirmed_hong_kong"),
         ])
         db.commit()
 
-        assert standardize_stored_locations(db) == 3
+        assert standardize_stored_locations(db) == 4
         stored = {job.source_job_id: job for job in db.query(Job).all()}
         assert (stored["li"].location_cities, stored["li"].country) == ("|Kuala Lumpur|", "Malaysia")
         assert stored["li"].location_category == "confirmed_malaysia"
@@ -196,5 +197,7 @@ def test_stored_rows_are_standardized_once_and_keep_collected_cities():
         assert stored["aws"].location_cities == "|Shanghai|Beijing|"
         assert stored["kp"].location_cities == "|Chengdu|"
         assert stored["kp"].location_category == "unclassified"
+        assert stored["an"].location_cities == "|Chongqing|"
+        assert stored["an"].location_category == "excluded"
 
         assert standardize_stored_locations(db) == 0
