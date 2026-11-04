@@ -296,9 +296,31 @@ filled or withdrawn simply stops appearing. Rows not seen for
 results; a run that returns nothing (for example, an expired cookie) closes
 nothing. Cards that say 停止招聘 / 职位已关闭 are closed immediately.
 
+## Favorites, Applied and View History
+
+Each job card and the detail panel have **Favorite** and **Mark Applied**
+toggles. Clicking **View Details** or **Apply Now** records a view: the card
+title turns purple and a "Viewed N× · last …" badge shows how often and when
+you opened it. Marks are stored on the job row (`favorited_at`, `applied_at`,
+`last_viewed_at`, `view_count`), so they survive re-collection and
+`refresh_all --reset-scores`.
+
+The **My Marks** filter narrows the list to Favorites, Applied, Not applied or
+Not viewed yet. Favorites and Applied also include closed postings (shown with
+a Closed badge) and ignore the AI and rule-score filters, so a job you applied
+to stays findable after it is taken down.
+
+API: `PUT /jobs/{id}/marks` with `{"favorited": true|false, "applied": true|false}`
+(either field may be omitted; setting a mark again keeps its first timestamp),
+`POST /jobs/{id}/view`, and `mark=favorited|applied|not_applied|viewed|not_viewed`
+on `/jobs`, `/jobs/count` and `/jobs/source-counts`. The API container adds
+the columns when it starts, so after pulling run
+`docker compose up -d --force-recreate api` and rebuild the frontend.
+
 ## Closing Dead and Outdated Postings
 
-Closed rows disappear from the dashboard, RSS and the digest. A posting is
+Closed rows disappear from the dashboard, RSS and the digest, except under the
+Favorites and Applied filters described above. A posting is
 closed when any of these applies:
 
 - **LinkedIn says it is closed.** The logged-in collector checks each job

@@ -244,6 +244,70 @@ body {
   background: #fff;
 }
 
+.job-card.viewed h2 {
+  color: #5a4a8a;
+}
+
+.job-card.applied {
+  border-left: 4px solid #2e9d5b;
+}
+
+.mark-btn {
+  cursor: pointer;
+}
+
+.mark-btn:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+
+.mark-btn.active-favorite {
+  background: #fff6db;
+  border-color: #e8b923;
+  color: #8a6400;
+}
+
+.mark-btn.active-applied {
+  background: #e3f5ea;
+  border-color: #2e9d5b;
+  color: #1d6b3d;
+}
+
+.mark-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.mark-badge {
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: #f0f0f2;
+  color: var(--muted);
+}
+
+.mark-badge.applied {
+  background: #e3f5ea;
+  color: #1d6b3d;
+}
+
+.mark-badge.favorite {
+  background: #fff6db;
+  color: #8a6400;
+}
+
+.mark-badge.viewed {
+  background: #efeaf8;
+  color: #5a4a8a;
+}
+
+.mark-badge.closed {
+  background: #fdeaea;
+  color: #a33a3a;
+}
+
 .detail-overlay {
   position: fixed;
   inset: 0;

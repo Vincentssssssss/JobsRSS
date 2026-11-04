@@ -15,7 +15,14 @@ type JobCard = {
   llm_fit_score?: number | null;
   llm_verdict?: string | null;
   llm_role_family?: string | null;
+  status?: string;
+  favorited_at?: string | null;
+  applied_at?: string | null;
+  last_viewed_at?: string | null;
+  view_count?: number;
 };
+
+type MarkUpdate = { favorited?: boolean; applied?: boolean };
 
 type DescriptionSection = {
   title: string;
@@ -146,6 +153,40 @@ async function fetchJsonWithFallback<T>(path: string, params?: URLSearchParams):
   return null;
 }
 
+// Writes are tried once per base and never retried: a timed-out POST /view may already have counted.
+async function sendJsonWithFallback<T>(method: "POST" | "PUT", path: string, body?: unknown): Promise<T | null> {
+  for (const base of apiBaseCandidates()) {
+    try {
+      const response = await fetch(`${base}${path}`, {
+        method,
+        cache: "no-store",
+        headers: body === undefined ? undefined : { "content-type": "application/json" },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: AbortSignal.timeout(4000),
+      });
+      const contentType = (response.headers.get("content-type") || "").toLowerCase();
+      if (!response.ok || !contentType.includes("application/json")) {
+        continue;
+      }
+      return (await response.json()) as T;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+function formatShortTime(value: string): string {
+  return new Date(value).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+const SAVED_MARK_FILTERS = new Set(["favorited", "applied"]);
+
 export default function HomePage() {
   const [jobs, setJobs] = useState<JobCard[]>([]);
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
@@ -163,6 +204,8 @@ export default function HomePage() {
   const [aiPrecisionMode, setAiPrecisionMode] = useState(true);
   const [limit, setLimit] = useState(500);
   const [locationCategory, setLocationCategory] = useState("");
+  const [markFilter, setMarkFilter] = useState("");
+  const [pendingMarks, setPendingMarks] = useState<Record<number, boolean>>({});
   const [selectedJob, setSelectedJob] = useState<JobDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [listLoading, setListLoading] = useState(true);
@@ -170,10 +213,20 @@ export default function HomePage() {
   const [inventoryCount, setInventoryCount] = useState(0);
   const [scoredCount, setScoredCount] = useState(0);
 
-  const buildJobParams = (includeLlm: boolean, includeLimit: boolean): URLSearchParams => {
+  // Favorites and applied jobs are a personal list: show them even if closed or below the AI filters.
+  const savedMarkView = SAVED_MARK_FILTERS.has(markFilter);
+
+  const buildJobParams = (requestedLlm: boolean, includeLimit: boolean): URLSearchParams => {
+    const includeLlm = requestedLlm && !savedMarkView;
     const params = new URLSearchParams();
     if (includeLimit) {
       params.set("limit", String(limit));
+    }
+    if (markFilter) {
+      params.set("mark", markFilter);
+    }
+    if (savedMarkView) {
+      params.set("status", "");
     }
     params.set("min_score", aiPrecisionMode || !includeLlm ? "0" : String(minScore));
     if (query.trim()) {
@@ -285,19 +338,102 @@ export default function HomePage() {
     }
   };
 
+  const applyJobUpdate = (updated: JobCard) => {
+    const pick = (job: JobCard) => ({
+      status: updated.status,
+      favorited_at: updated.favorited_at,
+      applied_at: updated.applied_at,
+      last_viewed_at: updated.last_viewed_at,
+      view_count: updated.view_count,
+    });
+    setJobs((current) => current.map((job) => (job.id === updated.id ? { ...job, ...pick(updated) } : job)));
+    setSelectedJob((current) => (current && current.id === updated.id ? { ...current, ...pick(updated) } : current));
+  };
+
+  const recordView = async (jobId: number) => {
+    const updated = await sendJsonWithFallback<JobCard>("POST", `/jobs/${jobId}/view`);
+    if (updated) {
+      applyJobUpdate(updated);
+    }
+  };
+
+  const toggleMark = async (job: JobCard, update: MarkUpdate) => {
+    if (pendingMarks[job.id]) {
+      return;
+    }
+    setPendingMarks((current) => ({ ...current, [job.id]: true }));
+    try {
+      const updated = await sendJsonWithFallback<JobCard>("PUT", `/jobs/${job.id}/marks`, update);
+      if (updated) {
+        applyJobUpdate(updated);
+      } else {
+        window.alert("Could not save the mark. Is the API container running?");
+      }
+    } finally {
+      setPendingMarks((current) => {
+        const next = { ...current };
+        delete next[job.id];
+        return next;
+      });
+    }
+  };
+
+  const renderMarkButtons = (job: JobCard) => (
+    <>
+      <button
+        className={`button small mark-btn${job.favorited_at ? " active-favorite" : ""}`}
+        disabled={Boolean(pendingMarks[job.id])}
+        onClick={() => void toggleMark(job, { favorited: !job.favorited_at })}
+        title={job.favorited_at ? `Favorited ${formatShortTime(job.favorited_at)}` : "Save to favorites"}
+      >
+        {job.favorited_at ? "★ Favorited" : "☆ Favorite"}
+      </button>
+      <button
+        className={`button small mark-btn${job.applied_at ? " active-applied" : ""}`}
+        disabled={Boolean(pendingMarks[job.id])}
+        onClick={() => void toggleMark(job, { applied: !job.applied_at })}
+        title={job.applied_at ? "Click to undo" : "Mark as applied"}
+      >
+        {job.applied_at ? "✓ Applied" : "Mark Applied"}
+      </button>
+    </>
+  );
+
+  const renderMarkBadges = (job: JobCard) => {
+    const viewCount = job.view_count ?? 0;
+    const closed = job.status != null && job.status !== "active";
+    if (!job.applied_at && !job.favorited_at && !job.last_viewed_at && !closed) {
+      return null;
+    }
+    return (
+      <div className="mark-badges">
+        {job.applied_at && <span className="mark-badge applied">Applied {formatShortTime(job.applied_at)}</span>}
+        {job.favorited_at && <span className="mark-badge favorite">Favorited</span>}
+        {job.last_viewed_at && (
+          <span className="mark-badge viewed">
+            Viewed {viewCount}× · last {formatShortTime(job.last_viewed_at)}
+          </span>
+        )}
+        {closed && <span className="mark-badge closed">Closed</span>}
+      </div>
+    );
+  };
+
   const loadJobDetail = async (jobId: number) => {
     setDetailLoading(true);
+    const viewed = sendJsonWithFallback<JobCard>("POST", `/jobs/${jobId}/view`);
     try {
       const payload = await fetchJsonWithFallback<JobDetail>(`/jobs/${jobId}`);
-      if (!payload) {
-        setSelectedJob(null);
-        return;
-      }
-      setSelectedJob(payload);
+      setSelectedJob(payload ?? null);
     } catch {
       setSelectedJob(null);
     } finally {
       setDetailLoading(false);
+    }
+    // Applied after the detail is set so the panel shows this view even if the GET raced ahead of it.
+    const updated = await viewed;
+    if (updated) {
+      applyJobUpdate(updated);
     }
   };
 
@@ -305,7 +441,7 @@ export default function HomePage() {
     const load = async () => {
       setListLoading(true);
       try {
-        const llmFiltersOn = Boolean(aiPrecisionMode || minLlmScore);
+        const llmFiltersOn = !savedMarkView && Boolean(aiPrecisionMode || minLlmScore);
         const [inventoryPayload, scoredPayload] = await Promise.all([
           fetchJsonWithFallback<{ total?: number }>("/jobs/count"),
           fetchJsonWithFallback<{ total?: number }>(
@@ -334,7 +470,7 @@ export default function HomePage() {
       }
     };
     void load();
-  }, [query, source, minScore, minLlmScore, aiPrecisionMode, limit, locationCategory]);
+  }, [query, source, minScore, minLlmScore, aiPrecisionMode, limit, locationCategory, markFilter]);
 
   useEffect(() => {
     void loadOfficialSources();
@@ -500,6 +636,19 @@ export default function HomePage() {
             <option value="unclassified">Unclassified</option>
           </select>
         </div>
+        <div className="field">
+          <label>My Marks</label>
+          <select value={markFilter} onChange={(event) => setMarkFilter(event.target.value)}>
+            <option value="">All</option>
+            <option value="favorited">Favorites</option>
+            <option value="applied">Applied</option>
+            <option value="not_applied">Not applied</option>
+            <option value="not_viewed">Not viewed yet</option>
+          </select>
+          {savedMarkView && (
+            <p className="field-note">Includes closed jobs; AI and rule score filters are ignored.</p>
+          )}
+        </div>
       </section>
 
       {summary && summary.by_source.length > 0 && (
@@ -528,13 +677,18 @@ export default function HomePage() {
           <div className="empty glass">Loading collected jobs...</div>
         ) : jobs.length === 0 ? (
           <div className="empty glass">
-            {inventoryCount > 0
+            {markFilter
+              ? "No jobs with this mark yet."
+              : inventoryCount > 0
               ? "No jobs matched current filters. Try setting AI Score to All or turning AI Precision Mode Off."
               : "No collected jobs yet. The worker is still running official-source collectors."}
           </div>
         ) : (
           jobs.map((job) => (
-            <article key={job.id} className="job-card glass">
+            <article
+              key={job.id}
+              className={`job-card glass${job.last_viewed_at ? " viewed" : ""}${job.applied_at ? " applied" : ""}`}
+            >
               <div>
                 <p className="job-company">{job.company}</p>
                 <h2>{job.title}</h2>
@@ -552,17 +706,24 @@ export default function HomePage() {
                   {LOCATION_BADGES[job.location_category] ?? "Location unclassified"}
                 </span>
                 {job.posted_at && <p className="job-meta">Posted: {new Date(job.posted_at).toLocaleString()}</p>}
+                {renderMarkBadges(job)}
               </div>
               <div className="job-right">
                 <span className="score">
                   {job.llm_fit_score != null ? `AI ${Math.round(job.llm_fit_score)}` : `Rule ${Math.round(job.match_score)}`}
                 </span>
-                <a className="button small" href={job.apply_url} target="_blank">
+                <a
+                  className="button small"
+                  href={job.apply_url}
+                  target="_blank"
+                  onClick={() => void recordView(job.id)}
+                >
                   Apply Now
                 </a>
                 <button className="button small detail-btn" onClick={() => void loadJobDetail(job.id)}>
                   View Details
                 </button>
+                {renderMarkButtons(job)}
               </div>
             </article>
           ))
@@ -583,18 +744,25 @@ export default function HomePage() {
                     <p className="job-meta">
                       {selectedJob.location} · {selectedJob.source}
                     </p>
+                    {renderMarkBadges(selectedJob)}
                   </div>
                   <button className="button small detail-close" onClick={() => setSelectedJob(null)}>
                     Close
                   </button>
                 </div>
                 <div className="detail-actions">
-                  <a className="button small primary" href={selectedJob.apply_url} target="_blank">
+                  <a
+                    className="button small primary"
+                    href={selectedJob.apply_url}
+                    target="_blank"
+                    onClick={() => void recordView(selectedJob.id)}
+                  >
                     Apply Now
                   </a>
                   <a className="button small" href={selectedJob.source_url} target="_blank">
                     Open Source
                   </a>
+                  {renderMarkButtons(selectedJob)}
                 </div>
                 <div className="detail-description">
                   <h3>Description</h3>

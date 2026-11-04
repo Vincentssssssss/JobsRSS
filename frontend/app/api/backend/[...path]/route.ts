@@ -37,24 +37,31 @@ async function getPathSegments(context: RouteContext): Promise<string[]> {
   return resolved.path || [];
 }
 
-export async function GET(request: Request, context: RouteContext): Promise<Response> {
+async function proxy(request: Request, context: RouteContext): Promise<Response> {
   const pathSegments = await getPathSegments(context);
   const incoming = new URL(request.url);
   const targetPath = `/${pathSegments.join("/")}${incoming.search}`;
   const attempts: Array<{ target: string; error: string; round: number }> = [];
   const bases = backendBases();
-  const retryDelaysMs = [250, 800];
+  const method = request.method.toUpperCase();
+  const body = method === "GET" ? undefined : await request.text();
+  // Writes are not idempotent (POST /view increments a counter), so only reads are retried.
+  const retryDelaysMs = method === "GET" ? [250, 800] : [];
 
   for (let round = 0; round <= retryDelaysMs.length; round += 1) {
     for (const base of bases) {
       const targetUrl = `${base}${targetPath}`;
       try {
         const response = await fetch(targetUrl, {
-          method: "GET",
+          method,
           cache: "no-store",
           headers: {
             Accept: request.headers.get("accept") || "application/json",
+            ...(body !== undefined
+              ? { "content-type": request.headers.get("content-type") || "application/json" }
+              : {}),
           },
+          body,
           signal: AbortSignal.timeout(4000),
         });
 
@@ -87,3 +94,7 @@ export async function GET(request: Request, context: RouteContext): Promise<Resp
     }
   );
 }
+
+export const GET = proxy;
+export const POST = proxy;
+export const PUT = proxy;
