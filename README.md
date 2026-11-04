@@ -2,7 +2,7 @@
 
 Phase 1 monorepo for a personal Job Intelligence platform.
 
-Current release: **v2.2.0** ([release notes and test report](docs/RELEASE_V2.2.0.md))
+Current release: **v2.2.1** ([release notes and test report](docs/RELEASE_V2.2.1.md))
 
 ## Services
 
@@ -351,6 +351,32 @@ API: `PUT /jobs/{id}/marks` with `{"favorited": true|false, "applied": true|fals
 on `/jobs`, `/jobs/count` and `/jobs/source-counts`. The API container adds
 the columns when it starts, so after pulling run
 `docker compose up -d --force-recreate api` and rebuild the frontend.
+
+## Searching and Filtering by Location
+
+Sources write places differently (`上海-浦东新区`, `Shanghai, Shanghai, CN`,
+`Shanghai, CHN`, `China\Shanghai-Shanghai`). Every job is mapped to standard
+cities and a country (`backend/app/normalization/location_standard.py`: Chinese
+and English names, pinyin variants, districts, ISO codes), and cards show the
+result, for example `上海 Shanghai · 中国 China`. A multi-city role keeps all
+its cities, with the target-region city first.
+
+- **Search**: a place name in either language (`上海`, `Shanghai`, `杭州`,
+  `Hong Kong`, `香港`, `吉隆坡`, `KL`, `新加坡`) matches the standard location as
+  well as the text, and every word must match. `security 杭州` finds Hangzhou
+  security roles whatever the source wrote; `上海安全` works without a space.
+  Districts and provinces (`浦东`, `浙江`) match as plain text only.
+- **Location** picker: countries and cities with job counts under the other
+  filters. "All of 中国 China" includes multi-city roles that list a Chinese
+  city anywhere.
+- **Target Region** keeps the coarse categories (Shanghai, Jiangsu/Zhejiang,
+  Hong Kong, Malaysia, Southeast Asia, Outside target areas). LinkedIn, Liepin
+  and 51job rows are now classified too; before they were all Unclassified.
+
+API: `city=` and `country=` on `/jobs`, `/jobs/count` and
+`/jobs/source-counts` (comma-separated; any listed spelling, such as
+`city=上海` or `country=HKG`), and `GET /jobs/locations` for the counts. Stored
+rows are standardized when the api or worker starts.
 
 ## Closing Dead and Outdated Postings
 
