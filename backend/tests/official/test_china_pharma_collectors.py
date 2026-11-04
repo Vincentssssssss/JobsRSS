@@ -1,3 +1,5 @@
+import httpx
+
 from app.official.collectors.beisen import parse_beisen_jobs
 from app.official.collectors.catalog import official_fixed_companies
 from app.official.collectors.hotjob import (
@@ -7,10 +9,7 @@ from app.official.collectors.hotjob import (
     YunnanBaiyaoOfficialCollector,
     parse_hotjob_detail,
 )
-from app.official.collectors.fosun import (
-    _discover_fosun_links,
-    parse_fosun_detail,
-)
+from app.official.collectors.fosun import FosunPharmaOfficialCollector
 from app.official.location import LocationCategory
 
 
@@ -110,39 +109,46 @@ def test_parses_deloitte_hotjob_detail_on_custom_host():
     assert job["location_category"] == LocationCategory.CONFIRMED_SHANGHAI.value
 
 
-def test_parses_fosun_server_rendered_detail():
-    html = """
-    <div class="xqbox">
-      <h2>信息安全负责人(J10001)</h2>
-      <div class="xqt"><ul>
-        <li>成员公司：复星医药</li>
-        <li>发布时间：2026-08-20</li>
-        <li>工作地点：上海市</li>
-      </ul></div>
-      <div class="zwxqm">
-        <h3>工作职责</h3><p>负责云安全和应用安全体系。</p>
-        <h3>任职资格</h3><p>熟悉 IAM 和 DevSecOps。</p>
-      </div>
-    </div>
-    """
+def test_fosun_uses_the_beisen_api_and_retires_old_server_rendered_rows(monkeypatch):
+    requests = []
 
-    job = parse_fosun_detail(
-        html,
-        "https://fosunpharma.zhiye.com/socialxq?jobId=561287805",
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "Count": 1,
+                "Data": [
+                    {
+                        "Id": "ba857293-fea4-4360-99b8-d2c5c8c0a86d",
+                        "JobAdName": "信息安全高级经理(J15113)",
+                        "LocNames": ["上海市"],
+                        "Duty": "负责集团云安全和应用安全体系。",
+                        "Require": "熟悉 IAM 和 DevSecOps。",
+                        "PostDate": "2026-10-26T19:51:01",
+                    }
+                ],
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+    real_client = httpx.Client
+    monkeypatch.setattr(
+        "app.official.collectors.beisen.httpx.Client",
+        lambda **kwargs: real_client(transport=transport, **kwargs),
     )
+    collector = FosunPharmaOfficialCollector()
 
-    assert job["source_job_id"] == "561287805"
-    assert job["company"] == "复星医药"
-    assert job["location_category"] == LocationCategory.CONFIRMED_SHANGHAI.value
+    jobs = collector.collect()
 
-
-def test_fosun_discovery_rejects_external_job_shaped_url():
-    html = (
-        '<a href="http://169.254.169.254/socialxq?jobId=123">'
-        "fake job</a>"
+    assert str(requests[0].url) == "https://fosunpharma.zhiye.com/api/Jobad/GetJobAdPageList"
+    assert len(jobs) == 1
+    assert jobs[0].company == "Fosun Pharma / 复星医药"
+    assert jobs[0].source_url == (
+        "https://fosunpharma.zhiye.com/social/detail?jobAdId=ba857293-fea4-4360-99b8-d2c5c8c0a86d"
     )
-
-    assert _discover_fosun_links(html) == []
+    assert collector.retired_source_url_prefixes == ("https://fosunpharma.zhiye.com/socialxq",)
+    assert not jobs[0].source_url.startswith(collector.retired_source_url_prefixes)
 
 
 def test_hotjob_collectors_store_their_own_name_even_if_raw_company_differs():

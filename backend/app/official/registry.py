@@ -236,7 +236,7 @@ OFFICIAL_SOURCE_REGISTRY = [
         "Fosun Pharma / 复星医药",
         "pharma",
         "https://fosunpharma.zhiye.com/social",
-        "server_rendered_html",
+        "json",
     ),
     _source(
         "ct_tianqing",
