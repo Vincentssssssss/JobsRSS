@@ -20,6 +20,9 @@ type JobCard = {
   applied_at?: string | null;
   last_viewed_at?: string | null;
   view_count?: number;
+  country?: string | null;
+  cities?: string[];
+  location_label?: string;
 };
 
 type MarkUpdate = { favorited?: boolean; applied?: boolean };
@@ -31,7 +34,6 @@ type DescriptionSection = {
 
 type JobDetail = JobCard & {
   description: string;
-  country?: string | null;
   updated_at?: string | null;
   first_seen_at?: string | null;
   last_seen_at?: string | null;
@@ -68,13 +70,34 @@ type SourceCountsResponse = {
   }>;
 };
 
+type LocationsResponse = {
+  total: number;
+  unknown: number;
+  countries: Array<{
+    country: string;
+    label: string;
+    count: number;
+    cities: Array<{ city: string; label: string; count: number }>;
+  }>;
+};
+
 const LOCATION_BADGES: Record<string, string> = {
   confirmed_shanghai: "Shanghai",
   confirmed_yangtze_delta: "Jiangsu/Zhejiang",
   confirmed_hong_kong: "Hong Kong",
   confirmed_malaysia: "Malaysia",
   confirmed_southeast_asia: "Southeast Asia",
+  excluded: "Outside target areas",
 };
+
+// The location picker's value: "city:<standard name>" or "country:<standard name>".
+function placeParams(place: string): [string, string] | null {
+  const separator = place.indexOf(":");
+  if (separator <= 0) {
+    return null;
+  }
+  return [place.slice(0, separator), place.slice(separator + 1)];
+}
 
 function buildDirectBackendBase(): string {
   if (typeof window !== "undefined" && window.location?.hostname) {
@@ -213,6 +236,8 @@ export default function HomePage() {
   const [aiPrecisionMode, setAiPrecisionMode] = useState(true);
   const [limit, setLimit] = useState(500);
   const [locationCategory, setLocationCategory] = useState("");
+  const [place, setPlace] = useState("");
+  const [locations, setLocations] = useState<LocationsResponse | null>(null);
   const [markFilter, setMarkFilter] = useState("");
   const [pendingMarks, setPendingMarks] = useState<Record<number, boolean>>({});
   const [selectedJob, setSelectedJob] = useState<JobDetail | null>(null);
@@ -246,6 +271,10 @@ export default function HomePage() {
     }
     if (locationCategory) {
       params.set("location_category", locationCategory);
+    }
+    const placeFilter = placeParams(place);
+    if (placeFilter) {
+      params.set(placeFilter[0], placeFilter[1]);
     }
     if (includeLlm) {
       if (aiPrecisionMode) {
@@ -325,6 +354,17 @@ export default function HomePage() {
       setSourceCounts({});
       setSourceCountsLoaded(false);
       setSourceCountsLoadError(true);
+    }
+  };
+
+  const loadLocations = async (includeLlm: boolean) => {
+    const params = buildJobParams(includeLlm, false);
+    params.delete("city");
+    params.delete("country");
+    try {
+      setLocations(await fetchJsonWithFallback<LocationsResponse>("/jobs/locations", params));
+    } catch {
+      setLocations(null);
     }
   };
 
@@ -469,17 +509,22 @@ export default function HomePage() {
           llmFiltersOn && filteredJobs.length === 0 && scored === 0 && inventory > 0;
         if (shouldRelax) {
           setFilterRelaxed(true);
-          await Promise.all([loadJobs(false), loadCount(false), loadSourceCounts(false)]);
+          await Promise.all([
+            loadJobs(false),
+            loadCount(false),
+            loadSourceCounts(false),
+            loadLocations(false),
+          ]);
         } else {
           setFilterRelaxed(false);
-          await Promise.all([loadCount(true), loadSourceCounts(true)]);
+          await Promise.all([loadCount(true), loadSourceCounts(true), loadLocations(true)]);
         }
       } finally {
         setListLoading(false);
       }
     };
     void load();
-  }, [query, source, minScore, minLlmScore, aiPrecisionMode, limit, locationCategory, markFilter]);
+  }, [query, source, minScore, minLlmScore, aiPrecisionMode, limit, locationCategory, place, markFilter]);
 
   useEffect(() => {
     void loadOfficialSources();
@@ -540,8 +585,41 @@ export default function HomePage() {
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="cloud security / architect / devsecops"
+            placeholder="cloud security / 架构师 / 上海 / Hong Kong"
           />
+          <p className="field-note">
+            Place names in Chinese or English (上海, Hangzhou, 香港, KL, 新加坡) also match the
+            standardized location, whatever format the source uses.
+          </p>
+        </div>
+        <div className="field">
+          <label>Location</label>
+          <select value={place} onChange={(event) => setPlace(event.target.value)}>
+            <option value="">
+              {locations ? `All locations (${locations.total})` : "All locations"}
+            </option>
+            {placeParams(place) &&
+              !locations?.countries.some(
+                (item) =>
+                  place === `country:${item.country}` ||
+                  item.cities.some((city) => place === `city:${city.city}`),
+              ) && <option value={place}>{`${placeParams(place)?.[1]} (0)`}</option>}
+            {locations?.countries.map((item) => (
+              <optgroup key={item.country} label={`${item.label} (${item.count})`}>
+                {!(item.cities.length === 1 && item.cities[0].city === item.country) && (
+                  <option value={`country:${item.country}`}>{`All of ${item.label} (${item.count})`}</option>
+                )}
+                {item.cities.map((city) => (
+                  <option key={city.city} value={`city:${city.city}`}>
+                    {`${city.label} (${city.count})`}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+          {locations && locations.unknown > 0 && (
+            <p className="field-note">{locations.unknown} jobs list no recognizable place.</p>
+          )}
         </div>
         <div className="field">
           <label>Source</label>
@@ -631,7 +709,7 @@ export default function HomePage() {
           </select>
         </div>
         <div className="field">
-          <label>Location Classification</label>
+          <label>Target Region</label>
           <select
             value={locationCategory}
             onChange={(event) => setLocationCategory(event.target.value)}
@@ -643,6 +721,7 @@ export default function HomePage() {
             <option value="confirmed_malaysia">Confirmed Malaysia</option>
             <option value="confirmed_southeast_asia">Confirmed Southeast Asia</option>
             <option value="unclassified">Unclassified</option>
+            <option value="excluded">Outside target areas</option>
           </select>
         </div>
         <div className="field">
@@ -701,8 +780,8 @@ export default function HomePage() {
               <div>
                 <p className="job-company">{job.company}</p>
                 <h2>{job.title}</h2>
-                <p className="job-meta">
-                  {job.location} · {job.source}
+                <p className="job-meta" title={job.location}>
+                  {job.location_label || job.location} · {job.source}
                 </p>
                 {job.llm_fit_score != null ? (
                   <p className="job-meta">
@@ -751,8 +830,11 @@ export default function HomePage() {
                     <p className="job-company">{selectedJob.company}</p>
                     <h2>{selectedJob.title}</h2>
                     <p className="job-meta">
-                      {selectedJob.location} · {selectedJob.source}
+                      {selectedJob.location_label || selectedJob.location} · {selectedJob.source}
                     </p>
+                    {selectedJob.location_label && selectedJob.location_label !== selectedJob.location && (
+                      <p className="job-meta">Listed as: {selectedJob.location}</p>
+                    )}
                     {renderMarkBadges(selectedJob)}
                   </div>
                   <button className="button small detail-close" onClick={() => setSelectedJob(null)}>
