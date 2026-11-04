@@ -9,6 +9,13 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      # TCP, not the socket: during first-run initdb the image runs a socket-only
+      # temporary server that pg_isready would otherwise report as ready.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U jobsrss -d jobsrss"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
     restart: unless-stopped
 
   # api and worker run the checked-out backend code instead of the copy baked
@@ -27,7 +34,8 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
 
   worker:
@@ -40,7 +48,8 @@ services:
       - ./backend:/app
       - ./secrets:/secrets:ro
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
 
   frontend:
