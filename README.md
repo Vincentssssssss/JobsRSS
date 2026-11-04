@@ -331,10 +331,21 @@ filled or withdrawn simply stops appearing. Rows not seen for
 results; a run that returns nothing (for example, an expired cookie) closes
 nothing. Cards that say 停止招聘 / 职位已关闭 are closed immediately.
 
+## Job List and Details
+
+Jobs are listed as two-line cards: title, then company, standardized location,
+source and posting date, with the AI score (solid blue for `strong_fit`) and
+Apply Now, Details, Favorite and Mark Applied buttons. Clicking a title or
+**Details** on a window at least 1024px wide splits the page: the list narrows
+to a compact column and the job's details (AI reasons, description) stay
+pinned on the right while you scroll. **J** / **K** move to the next or
+previous job and **Esc** (or Close) returns to the full-width list. Narrower
+windows show the details as a dialog instead.
+
 ## Favorites, Applied and View History
 
 Each job card and the detail panel have **Favorite** and **Mark Applied**
-toggles. Clicking **View Details** or **Apply Now** records a view: the card
+toggles. Opening a job's details or clicking **Apply Now** records a view: the card
 title turns purple and a "Viewed N× · last …" badge shows how often and when
 you opened it. Marks are stored on the job row (`favorited_at`, `applied_at`,
 `last_viewed_at`, `view_count`), so they survive re-collection and

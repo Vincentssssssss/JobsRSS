@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type JobCard = {
   id: number;
@@ -217,6 +217,41 @@ function formatShortTime(value: string): string {
   });
 }
 
+function formatShortDate(value: string): string {
+  return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function shortSource(source: string): string {
+  return source.replace(/^official_/, "");
+}
+
+function scoreTone(job: JobCard): string {
+  if (job.llm_fit_score == null) {
+    return "pending";
+  }
+  if (job.llm_verdict === "strong_fit") {
+    return "strong";
+  }
+  return job.llm_verdict === "possible_fit" ? "possible" : "weak";
+}
+
+// The region badge is noise when the standardized place already names it ("香港 Hong Kong").
+function regionBadge(job: JobCard): string | null {
+  const label = LOCATION_BADGES[job.location_category];
+  if (!label) {
+    return null;
+  }
+  const place = job.location_label || job.location || "";
+  return place.includes(label) ? null : label;
+}
+
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  return target.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName);
+}
+
 const SAVED_MARK_FILTERS = new Set(["favorited", "applied"]);
 
 export default function HomePage() {
@@ -243,6 +278,9 @@ export default function HomePage() {
   const [pendingMarks, setPendingMarks] = useState<Record<number, boolean>>({});
   const [selectedJob, setSelectedJob] = useState<JobDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [openJobId, setOpenJobId] = useState<number | null>(null);
+  const detailRequest = useRef(0);
+  const lastOpenedJobId = useRef<number | null>(null);
   const [listLoading, setListLoading] = useState(true);
   const [filterRelaxed, setFilterRelaxed] = useState(false);
   const [inventoryCount, setInventoryCount] = useState(0);
@@ -439,10 +477,10 @@ export default function HomePage() {
     }
   };
 
-  const renderMarkButtons = (job: JobCard) => (
+  const renderMarkButtons = (job: JobCard, size: "small" | "tiny" = "small") => (
     <>
       <button
-        className={`button small mark-btn${job.favorited_at ? " active-favorite" : ""}`}
+        className={`button ${size} mark-btn${job.favorited_at ? " active-favorite" : ""}`}
         disabled={Boolean(pendingMarks[job.id])}
         onClick={() => void toggleMark(job, { favorited: !job.favorited_at })}
         title={job.favorited_at ? `Favorited ${formatShortTime(job.favorited_at)}` : "Save to favorites"}
@@ -450,7 +488,7 @@ export default function HomePage() {
         {job.favorited_at ? "★ Favorited" : "☆ Favorite"}
       </button>
       <button
-        className={`button small mark-btn${job.applied_at ? " active-applied" : ""}`}
+        className={`button ${size} mark-btn${job.applied_at ? " active-applied" : ""}`}
         disabled={Boolean(pendingMarks[job.id])}
         onClick={() => void toggleMark(job, { applied: !job.applied_at })}
         title={job.applied_at ? "Click to undo" : "Mark as applied"}
@@ -480,15 +518,21 @@ export default function HomePage() {
     );
   };
 
-  const loadJobDetail = async (jobId: number) => {
+  const openJob = async (jobId: number) => {
+    const request = ++detailRequest.current;
+    lastOpenedJobId.current = jobId;
+    setOpenJobId(jobId);
     setDetailLoading(true);
     const viewed = sendJsonWithFallback<JobCard>("POST", `/jobs/${jobId}/view`);
+    let payload: JobDetail | null = null;
     try {
-      const payload = await fetchJsonWithFallback<JobDetail>(`/jobs/${jobId}`);
-      setSelectedJob(payload ?? null);
+      payload = await fetchJsonWithFallback<JobDetail>(`/jobs/${jobId}`);
     } catch {
-      setSelectedJob(null);
-    } finally {
+      payload = null;
+    }
+    // Stepping through jobs quickly can finish requests out of order; only the latest may fill the panel.
+    if (request === detailRequest.current) {
+      setSelectedJob(payload);
       setDetailLoading(false);
     }
     // Applied after the detail is set so the panel shows this view even if the GET raced ahead of it.
@@ -497,6 +541,55 @@ export default function HomePage() {
       applyJobUpdate(updated);
     }
   };
+
+  const closeJob = () => {
+    detailRequest.current += 1;
+    setOpenJobId(null);
+    setSelectedJob(null);
+    setDetailLoading(false);
+  };
+
+  // The list reflows between the full-width and split layouts, so keep the job being
+  // read (or just closed) on screen instead of leaving the reader somewhere else.
+  useEffect(() => {
+    const targetId = openJobId ?? lastOpenedJobId.current;
+    if (targetId == null) {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      document
+        .getElementById(`job-${targetId}`)
+        ?.scrollIntoView({ block: openJobId == null ? "center" : "nearest" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [openJobId]);
+
+  useEffect(() => {
+    if (openJobId == null) {
+      return;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey || isTypingTarget(event.target)) {
+        return;
+      }
+      if (event.key === "Escape") {
+        closeJob();
+        return;
+      }
+      const step = event.key === "j" ? 1 : event.key === "k" ? -1 : 0;
+      if (!step) {
+        return;
+      }
+      const index = jobs.findIndex((job) => job.id === openJobId);
+      const next = jobs[index + step];
+      if (index >= 0 && next) {
+        event.preventDefault();
+        void openJob(next.id);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [openJobId, jobs]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedQuery(query), 300);
@@ -794,137 +887,185 @@ export default function HomePage() {
         </section>
       )}
 
-      <section className="job-list">
-        {listLoading ? (
-          <div className="empty glass">Loading collected jobs...</div>
-        ) : jobs.length === 0 ? (
-          <div className="empty glass">
-            {markFilter
-              ? "No jobs with this mark yet."
-              : inventoryCount > 0
-              ? "No jobs matched current filters. Try setting AI Score to All or turning AI Precision Mode Off."
-              : "No collected jobs yet. The worker is still running official-source collectors."}
-          </div>
-        ) : (
-          jobs.map((job) => (
-            <article
-              key={job.id}
-              className={`job-card glass${job.last_viewed_at ? " viewed" : ""}${job.applied_at ? " applied" : ""}`}
-            >
-              <div>
-                <p className="job-company">{job.company}</p>
-                <h2>{job.title}</h2>
-                <p className="job-meta" title={job.location}>
-                  {job.location_label || job.location} · {job.source}
-                </p>
-                {job.llm_fit_score != null ? (
-                  <p className="job-meta">
-                    LLM Fit: {Math.round(job.llm_fit_score)} ({job.llm_verdict || "n/a"})
-                  </p>
-                ) : (
-                  <p className="job-meta">AI score pending</p>
-                )}
-                <span className="location-badge">
-                  {LOCATION_BADGES[job.location_category] ?? "Location unclassified"}
-                </span>
-                {job.posted_at && <p className="job-meta">Posted: {new Date(job.posted_at).toLocaleString()}</p>}
-                {renderMarkBadges(job)}
-              </div>
-              <div className="job-right">
-                <span className="score">
-                  {job.llm_fit_score != null ? `AI ${Math.round(job.llm_fit_score)}` : `Rule ${Math.round(job.match_score)}`}
-                </span>
-                <a
-                  className="button small"
-                  href={job.apply_url}
-                  target="_blank"
-                  onClick={() => void recordView(job.id)}
+      <div className={`workspace${openJobId != null ? " split" : ""}`}>
+        <section className="job-list">
+          {listLoading ? (
+            <div className="empty glass">Loading collected jobs...</div>
+          ) : jobs.length === 0 ? (
+            <div className="empty glass">
+              {markFilter
+                ? "No jobs with this mark yet."
+                : inventoryCount > 0
+                ? "No jobs matched current filters. Try setting AI Score to All or turning AI Precision Mode Off."
+                : "No collected jobs yet. The worker is still running official-source collectors."}
+            </div>
+          ) : (
+            jobs.map((job) => {
+              const region = regionBadge(job);
+              const closed = job.status != null && job.status !== "active";
+              return (
+                <article
+                  key={job.id}
+                  id={`job-${job.id}`}
+                  className={`job-card glass${job.last_viewed_at ? " viewed" : ""}${job.applied_at ? " applied" : ""}${job.id === openJobId ? " open" : ""}`}
                 >
-                  Apply Now
-                </a>
-                <button className="button small detail-btn" onClick={() => void loadJobDetail(job.id)}>
-                  View Details
-                </button>
-                {renderMarkButtons(job)}
-              </div>
-            </article>
-          ))
-        )}
-      </section>
-
-      {(selectedJob || detailLoading) && (
-        <section className="detail-overlay" onClick={() => setSelectedJob(null)}>
-          <article className="detail-panel glass" onClick={(event) => event.stopPropagation()}>
-            {detailLoading || !selectedJob ? (
-              <p className="detail-loading">Loading full job details...</p>
-            ) : (
-              <>
-                <div className="detail-header">
-                  <div>
-                    <p className="job-company">{selectedJob.company}</p>
-                    <h2>{selectedJob.title}</h2>
-                    <p className="job-meta">
-                      {selectedJob.location_label || selectedJob.location} · {selectedJob.source}
-                    </p>
-                    {selectedJob.location_label && selectedJob.location_label !== selectedJob.location && (
-                      <p className="job-meta">Listed as: {selectedJob.location}</p>
-                    )}
-                    {renderMarkBadges(selectedJob)}
-                  </div>
-                  <button className="button small detail-close" onClick={() => setSelectedJob(null)}>
-                    Close
-                  </button>
-                </div>
-                <div className="detail-actions">
-                  <a
-                    className="button small primary"
-                    href={selectedJob.apply_url}
-                    target="_blank"
-                    onClick={() => void recordView(selectedJob.id)}
-                  >
-                    Apply Now
-                  </a>
-                  <a className="button small" href={selectedJob.source_url} target="_blank">
-                    Open Source
-                  </a>
-                  {renderMarkButtons(selectedJob)}
-                </div>
-                <div className="detail-description">
-                  <h3>Description</h3>
-                  {selectedJob.description_sections && selectedJob.description_sections.length > 0 ? (
-                    <div className="description-sections">
-                      {selectedJob.description_sections.map((section, index) => (
-                        <section key={`${section.title}-${index}`} className="description-section">
-                          <h4>{section.title}</h4>
-                          <ul>
-                            {section.lines.map((line, lineIndex) => (
-                              <li key={`${index}-${lineIndex}`}>{line}</li>
-                            ))}
-                          </ul>
-                        </section>
-                      ))}
+                  <div className="job-head" onClick={() => void openJob(job.id)}>
+                    <div className="job-text">
+                      <h2>
+                        <button type="button" className="job-title" title={job.title}>
+                          {job.favorited_at && (
+                            <span className="fav-star" title="Favorited">
+                              ★{" "}
+                            </span>
+                          )}
+                          {job.title}
+                        </button>
+                      </h2>
+                      <p className="job-line" title={job.location}>
+                        <span className="job-line-company">{job.company}</span>
+                        <span>{job.location_label || job.location}</span>
+                        <span>{shortSource(job.source)}</span>
+                        {job.posted_at && (
+                          <span title={`Posted ${new Date(job.posted_at).toLocaleString()}`}>
+                            {formatShortDate(job.posted_at)}
+                          </span>
+                        )}
+                      </p>
                     </div>
-                  ) : (
-                    <p>{selectedJob.description || "No description available."}</p>
-                  )}
-                </div>
-                {selectedJob.llm_match_reasons && (
-                  <div className="detail-description">
-                    <h3>LLM Match Reasons</h3>
-                    <p>{selectedJob.llm_match_reasons}</p>
+                    <span className={`score ${scoreTone(job)}`} title={job.llm_verdict || "AI score pending"}>
+                      {job.llm_fit_score != null
+                        ? `AI ${Math.round(job.llm_fit_score)}`
+                        : `Rule ${Math.round(job.match_score)}`}
+                    </span>
                   </div>
-                )}
-                {selectedJob.llm_reject_reasons && (
-                  <div className="detail-description">
-                    <h3>LLM Reject Reasons</h3>
-                    <p>{selectedJob.llm_reject_reasons}</p>
+                  <div className="job-footer">
+                    {region && <span className="location-badge">{region}</span>}
+                    {job.applied_at && (
+                      <span className="mark-badge applied">Applied {formatShortTime(job.applied_at)}</span>
+                    )}
+                    {job.last_viewed_at && (
+                      <span className="mark-badge viewed">
+                        Viewed {job.view_count ?? 0}× · last {formatShortTime(job.last_viewed_at)}
+                      </span>
+                    )}
+                    {closed && <span className="mark-badge closed">Closed</span>}
+                    <span className="job-footer-spacer" />
+                    <a
+                      className="button tiny primary"
+                      href={job.apply_url}
+                      target="_blank"
+                      onClick={() => void recordView(job.id)}
+                    >
+                      Apply Now
+                    </a>
+                    <button className="button tiny" onClick={() => void openJob(job.id)}>
+                      Details
+                    </button>
+                    {renderMarkButtons(job, "tiny")}
                   </div>
-                )}
-              </>
-            )}
-          </article>
+                </article>
+              );
+            })
+          )}
         </section>
-      )}
+
+        {openJobId != null && (
+          <>
+            <div className="detail-backdrop" onClick={closeJob} />
+            <aside className="detail-pane glass" aria-label="Job details">
+              {(() => {
+                const detail = selectedJob && selectedJob.id === openJobId ? selectedJob : null;
+                const card = detail ?? jobs.find((job) => job.id === openJobId) ?? null;
+                if (!card) {
+                  return <p className="detail-loading">Loading full job details...</p>;
+                }
+                return (
+                  <>
+                    <div className="detail-header">
+                      <div>
+                        <p className="job-company">{card.company}</p>
+                        <h2>{card.title}</h2>
+                        <p className="job-meta">
+                          {card.location_label || card.location} · {card.source}
+                          {card.posted_at ? ` · Posted ${formatShortDate(card.posted_at)}` : ""}
+                        </p>
+                        {card.location_label && card.location_label !== card.location && (
+                          <p className="job-meta">Listed as: {card.location}</p>
+                        )}
+                        {renderMarkBadges(card)}
+                      </div>
+                      <div className="detail-header-side">
+                        <span className={`score ${scoreTone(card)}`} title={card.llm_verdict || "AI score pending"}>
+                          {card.llm_fit_score != null
+                            ? `AI ${Math.round(card.llm_fit_score)}`
+                            : `Rule ${Math.round(card.match_score)}`}
+                        </span>
+                        <button className="button small detail-close" onClick={closeJob} title="Close (Esc)">
+                          Close
+                        </button>
+                      </div>
+                    </div>
+                    <div className="detail-actions">
+                      <a
+                        className="button small primary"
+                        href={card.apply_url}
+                        target="_blank"
+                        onClick={() => void recordView(card.id)}
+                      >
+                        Apply Now
+                      </a>
+                      {detail && (
+                        <a className="button small" href={detail.source_url} target="_blank">
+                          Open Source
+                        </a>
+                      )}
+                      {renderMarkButtons(card)}
+                    </div>
+                    <p className="detail-hint">J / K: next / previous job · Esc: close</p>
+                    {!detail ? (
+                      <p className="detail-loading">{detailLoading ? "Loading full job details..." : "Could not load this job's details."}</p>
+                    ) : (
+                      <>
+                        {detail.llm_match_reasons && (
+                          <div className="detail-description">
+                            <h3>LLM Match Reasons</h3>
+                            <p>{detail.llm_match_reasons}</p>
+                          </div>
+                        )}
+                        {detail.llm_reject_reasons && (
+                          <div className="detail-description">
+                            <h3>LLM Reject Reasons</h3>
+                            <p>{detail.llm_reject_reasons}</p>
+                          </div>
+                        )}
+                        <div className="detail-description">
+                          <h3>Description</h3>
+                          {detail.description_sections && detail.description_sections.length > 0 ? (
+                            <div className="description-sections">
+                              {detail.description_sections.map((section, index) => (
+                                <section key={`${section.title}-${index}`} className="description-section">
+                                  <h4>{section.title}</h4>
+                                  <ul>
+                                    {section.lines.map((line, lineIndex) => (
+                                      <li key={`${index}-${lineIndex}`}>{line}</li>
+                                    ))}
+                                  </ul>
+                                </section>
+                              ))}
+                            </div>
+                          ) : (
+                            <p>{detail.description || "No description available."}</p>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </>
+                );
+              })()}
+            </aside>
+          </>
+        )}
+      </div>
     </main>
   );
 }
