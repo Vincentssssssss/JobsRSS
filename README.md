@@ -100,6 +100,14 @@ Shanghai and overseas role. `official_alibaba`
 skips Alibaba Cloud roles, which both portals list under the same id. Any
 remaining campus-portal rows are closed on the next run.
 
+Deloitte, Yunnan Baiyao and Simcere use HotJob portals whose "company" field is
+a practice region (中国大陆, 中国香港) or a business unit (药品事业群,
+零售事业部), so their jobs always show the employer: `Deloitte / 德勤`,
+`Yunnan Baiyao / 云南白药`, `Simcere / 先声药业`. Every api or worker start
+(and `refresh_all.py`) rewrites stored rows of these sources that still carry
+another value, so `docker compose up -d --force-recreate api worker` fixes old
+rows without waiting for the next collection.
+
 Official jobs are classified before publication:
 
 - `confirmed_shanghai`: explicitly includes Shanghai/上海.
