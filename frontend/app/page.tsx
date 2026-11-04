@@ -102,17 +102,22 @@ function isLocalHostname(hostname: string): boolean {
   return hostname === "localhost" || hostname === "127.0.0.1";
 }
 
+// Same-origin API paths only exist behind the GKE Gateway; locally they 404 before
+// the proxy answers. Remembering the base that worked avoids that on every request.
+let workingApiBase: string | null = null;
+
 function apiBaseCandidates(): string[] {
   const sameOrigin = "";
   const proxied = "/api/backend";
+  const preferred = workingApiBase === null ? [] : [workingApiBase];
   if (typeof window !== "undefined" && !isLocalHostname(window.location.hostname)) {
     // GKE Gateway only listens on :80/:443. :8000 hangs for tens of seconds.
-    return [sameOrigin, proxied];
+    return Array.from(new Set([...preferred, sameOrigin, proxied]));
   }
   const direct = normalizeBase(buildDirectBackendBase());
   const localhost = "http://localhost:8000";
   const loopback = "http://127.0.0.1:8000";
-  return Array.from(new Set([sameOrigin, proxied, direct, localhost, loopback]));
+  return Array.from(new Set([...preferred, sameOrigin, proxied, direct, localhost, loopback]));
 }
 
 async function sleep(ms: number): Promise<void> {
@@ -141,7 +146,9 @@ async function fetchJsonWithFallback<T>(path: string, params?: URLSearchParams):
           // Avoid parsing HTML error pages as JSON.
           continue;
         }
-        return (await response.json()) as T;
+        const payload = (await response.json()) as T;
+        workingApiBase = base;
+        return payload;
       } catch {
         continue;
       }
@@ -168,7 +175,9 @@ async function sendJsonWithFallback<T>(method: "POST" | "PUT", path: string, bod
       if (!response.ok || !contentType.includes("application/json")) {
         continue;
       }
-      return (await response.json()) as T;
+      const payload = (await response.json()) as T;
+      workingApiBase = base;
+      return payload;
     } catch {
       continue;
     }
