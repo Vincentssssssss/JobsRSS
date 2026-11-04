@@ -10,6 +10,11 @@ from app.official.registry import get_official_source
 HOTJOB_ROOT = "https://wecruit.hotjob.cn"
 YUNNAN_BAIYAO_TENANT = "SU6136b970bef57c3b638162c4"
 SIMCERE_TENANT = "SU61458d83bef57c54dcb4e43f"
+# wecruit.hotjob.cn answers 405 to a bare "Mozilla/5.0".
+HOTJOB_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 Chrome/124.0 Safari/537.36"
+)
 
 
 class HotJobOfficialCollector(OfficialCollectorBase):
@@ -34,7 +39,7 @@ class HotJobOfficialCollector(OfficialCollectorBase):
     def fetch_raw(self) -> List[Dict[str, Any]]:
         settings = get_settings()
         headers = {
-            "User-Agent": "Mozilla/5.0",
+            "User-Agent": HOTJOB_USER_AGENT,
             "Referer": f"{self.api_root}/{self.tenant}/pb/social.html",
         }
         jobs: List[Dict[str, Any]] = []

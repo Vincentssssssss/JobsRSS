@@ -1,5 +1,9 @@
 from app.official.collectors.beisen import parse_beisen_jobs
-from app.official.collectors.hotjob import DeloitteOfficialCollector, parse_hotjob_detail
+from app.official.collectors.hotjob import (
+    HOTJOB_USER_AGENT,
+    DeloitteOfficialCollector,
+    parse_hotjob_detail,
+)
 from app.official.collectors.fosun import (
     _discover_fosun_links,
     parse_fosun_detail,
@@ -141,3 +145,7 @@ def test_fosun_discovery_rejects_external_job_shaped_url():
 
 def test_deloitte_collector_ignores_the_practice_region_company_field():
     assert DeloitteOfficialCollector().site_company_is_employer is False
+
+
+def test_hotjob_sends_a_full_browser_user_agent():
+    assert "AppleWebKit" in HOTJOB_USER_AGENT
