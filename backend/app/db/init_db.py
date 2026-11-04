@@ -1,7 +1,14 @@
+import logging
+
 from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from app.db.session import Base, engine
 from app.models import Job  # noqa: F401
+from app.official.collectors.catalog import official_fixed_companies
+from app.pipeline import repair_fixed_company_names
+
+logger = logging.getLogger(__name__)
 
 
 def init_db() -> None:
@@ -85,3 +92,11 @@ def init_db() -> None:
                     "ADD COLUMN IF NOT EXISTS view_count INTEGER NOT NULL DEFAULT 0"
                 )
             )
+    _repair_company_names()
+
+
+def _repair_company_names() -> None:
+    with Session(engine) as db:
+        repaired = repair_fixed_company_names(db, official_fixed_companies())
+    if repaired:
+        logger.info("company_names_repaired count=%d", repaired)

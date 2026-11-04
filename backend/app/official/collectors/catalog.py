@@ -65,3 +65,15 @@ def create_official_collector(source_id: str) -> BaseCollector:
     except KeyError as exc:
         raise ValueError(f"No operational collector for {source_id}") from exc
     return factory()
+
+
+def official_fixed_companies() -> Dict[str, str]:
+    """Map source names to the single company every row of that source must
+    carry, for collectors whose portal company field is not the employer."""
+    fixed: Dict[str, str] = {}
+    for factory in OFFICIAL_COLLECTOR_FACTORIES.values():
+        collector = factory()
+        company = getattr(collector, "fixed_company", None)
+        if company:
+            fixed[collector.meta.source_name] = company
+    return fixed

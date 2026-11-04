@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
-from typing import Iterable, Optional
+from typing import Dict, Iterable, Optional
 from urllib.parse import urlparse
 
 from sqlalchemy import or_
@@ -224,6 +224,20 @@ def close_rows_from_removed_sources(db: Session, current_sources: Iterable[str])
     )
     db.commit()
     return closed
+
+
+def repair_fixed_company_names(db: Session, fixed_companies: Dict[str, str]) -> int:
+    """Rows stored before a source's company name was fixed keep the old value
+    until the next sighting, so rewrite them directly."""
+    repaired = 0
+    for source, company in fixed_companies.items():
+        repaired += (
+            db.query(Job)
+            .filter(Job.source == source, Job.company != company)
+            .update({"company": company}, synchronize_session=False)
+        )
+    db.commit()
+    return repaired
 
 
 def _as_utc(value: Optional[datetime]) -> Optional[datetime]:

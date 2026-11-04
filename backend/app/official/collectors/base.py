@@ -15,6 +15,10 @@ class OfficialCollectorBase(BaseCollector):
     # Rows from a portal this source no longer collects are closed on every run
     # instead of waiting for official_source_stale_after_days.
     retired_source_url_prefixes: Tuple[str, ...] = ()
+    # Set when the portal's own company field is a region or business unit
+    # rather than the employer. Every row then carries this name, and startup
+    # rewrites stored rows of this source that say anything else.
+    fixed_company: Optional[str] = None
 
     def __init__(self, spec: OfficialSourceSpec, method: str, parser_name: str) -> None:
         self.spec = spec
@@ -52,7 +56,7 @@ class OfficialCollectorBase(BaseCollector):
         return UnifiedJob(
             source=self.meta.source_name,
             source_job_id=str(raw["source_job_id"]),
-            company=raw.get("company") or self.spec.company,
+            company=self.fixed_company or raw.get("company") or self.spec.company,
             title=raw["title"],
             location=location,
             country=country,

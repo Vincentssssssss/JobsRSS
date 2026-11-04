@@ -18,13 +18,16 @@ HOTJOB_USER_AGENT = (
 
 
 class HotJobOfficialCollector(OfficialCollectorBase):
+    """HotJob's per-post "company" field holds a region (Deloitte: 中国大陆 /
+    中国香港) or a business unit (Yunnan Baiyao: 药品事业群, Simcere: 零售事业部),
+    so every row carries the collector's company name instead."""
+
     def __init__(
         self,
         source_id: str,
         company: str,
         tenant: str,
         api_root: str = HOTJOB_ROOT,
-        site_company_is_employer: bool = True,
     ) -> None:
         super().__init__(
             get_official_source(source_id),
@@ -32,9 +35,9 @@ class HotJobOfficialCollector(OfficialCollectorBase):
             parser_name="hotjob-json",
         )
         self.company = company
+        self.fixed_company = company
         self.tenant = tenant
         self.api_root = api_root.rstrip("/")
-        self.site_company_is_employer = site_company_is_employer
 
     def fetch_raw(self) -> List[Dict[str, Any]]:
         settings = get_settings()
@@ -83,10 +86,9 @@ class HotJobOfficialCollector(OfficialCollectorBase):
                     detail.raise_for_status()
                     job = parse_hotjob_detail(
                         detail.json(),
-                        company_fallback=self.company,
+                        company=self.company,
                         tenant=self.tenant,
                         api_root=self.api_root,
-                        site_company_is_employer=self.site_company_is_employer,
                     )
                     if job is not None:
                         jobs.append(job)
@@ -138,18 +140,15 @@ class DeloitteOfficialCollector(HotJobOfficialCollector):
             company="Deloitte / 德勤",
             tenant="SU649e304a6a9f0ef690533e9a",
             api_root="https://ehjobs.deloitte.com.cn",
-            # Deloitte's "company" field is the practice region (中国大陆 / 中国香港).
-            site_company_is_employer=False,
         )
 
 
 def parse_hotjob_detail(
     payload: Dict[str, Any],
     *,
-    company_fallback: str = "Yunnan Baiyao / 云南白药",
+    company: str = "Yunnan Baiyao / 云南白药",
     tenant: str = YUNNAN_BAIYAO_TENANT,
     api_root: str = HOTJOB_ROOT,
-    site_company_is_employer: bool = True,
 ) -> Dict[str, Any] | None:
     item = payload.get("data") or {}
     source_job_id = str(item.get("postId") or "").strip()
@@ -168,8 +167,6 @@ def parse_hotjob_detail(
         )
         if value
     )
-    site_company = item.get("company") if site_company_is_employer else None
-    company = str(site_company or company_fallback)
     source_url = (
         f"{api_root.rstrip('/')}/{tenant}/pb/"
         f"posDetail.html?postId={source_job_id}"

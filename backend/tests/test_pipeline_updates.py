@@ -6,7 +6,11 @@ from sqlalchemy.orm import Session
 from app.collectors.base import BaseCollector, CollectorMeta
 from app.db.session import Base
 from app.models.job import Job
-from app.pipeline import close_rows_from_removed_sources, ingest_collector
+from app.pipeline import (
+    close_rows_from_removed_sources,
+    ingest_collector,
+    repair_fixed_company_names,
+)
 from app.schemas.job import UnifiedJob
 
 
@@ -843,3 +847,85 @@ def test_reopened_row_is_queued_for_immediate_reverification():
         assert reopened.status == "active"
         assert reopened.last_verified_at is None
         assert still_open.last_verified_at is not None
+
+
+def _official_job(source: str, source_job_id: str, company: str) -> Job:
+    now = datetime.now(timezone.utc)
+    return Job(
+        source=source,
+        source_job_id=source_job_id,
+        company=company,
+        title="Senior Manager - Cyber Defense & Resilience- Shanghai",
+        location="上海",
+        country="China",
+        description="Lead cyber defense engagements.",
+        apply_url=f"https://jobs.example/{source_job_id}",
+        source_url=f"https://jobs.example/{source_job_id}",
+        posted_at=now,
+        updated_at=now,
+        first_seen_at=now,
+        last_seen_at=now,
+        content_hash="old",
+        match_score=50,
+        status="active",
+        enrichment_source=source.removeprefix("official_"),
+        location_category="confirmed_shanghai",
+    )
+
+
+def test_official_rerun_replaces_a_wrong_company_on_an_existing_row():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        db.add(_official_job("official_test_company", "dt-1", "中国大陆"))
+        db.commit()
+
+        incoming = UnifiedJob(
+            source="official_test_company",
+            source_job_id="dt-1",
+            company="Deloitte / 德勤",
+            title="Senior Manager - Cyber Defense & Resilience- Shanghai",
+            location="上海",
+            country="China",
+            description="Lead cyber defense engagements.",
+            apply_url="https://jobs.example/dt-1",
+            source_url="https://jobs.example/dt-1",
+            updated_at=datetime.now(timezone.utc),
+            first_seen_at=datetime.now(timezone.utc),
+            last_seen_at=datetime.now(timezone.utc),
+            content_hash="new",
+            enrichment_source="test_company",
+            location_category="confirmed_shanghai",
+        )
+        ingest_collector(db, StubOfficialCollector(incoming))
+
+        assert db.query(Job).one().company == "Deloitte / 德勤"
+
+
+def test_repair_fixed_company_names_rewrites_only_mismatched_rows_of_listed_sources():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        db.add_all(
+            [
+                _official_job("official_deloitte", "dt-1", "中国大陆"),
+                _official_job("official_deloitte", "dt-2", "中国香港"),
+                _official_job("official_deloitte", "dt-3", "Deloitte / 德勤"),
+                _official_job("official_amazon_aws", "aws-1", "Amazon Web Services Singapore"),
+            ]
+        )
+        db.commit()
+
+        repaired = repair_fixed_company_names(db, {"official_deloitte": "Deloitte / 德勤"})
+
+        assert repaired == 2
+        companies = {job.source_job_id: job.company for job in db.query(Job).all()}
+        assert companies == {
+            "dt-1": "Deloitte / 德勤",
+            "dt-2": "Deloitte / 德勤",
+            "dt-3": "Deloitte / 德勤",
+            "aws-1": "Amazon Web Services Singapore",
+        }
+        assert repair_fixed_company_names(db, {"official_deloitte": "Deloitte / 德勤"}) == 0
