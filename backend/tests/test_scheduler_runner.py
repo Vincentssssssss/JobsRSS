@@ -62,6 +62,73 @@ def test_worker_applies_schema_before_scheduling_and_retries_while_db_boots(monk
     assert calls == ["init_db", "init_db", "init_db", "close_removed", "start"]
 
 
+class _FlakyCollector:
+    def __init__(self, failures):
+        self.meta = type("Meta", (), {"source_name": "official_flaky"})()
+        self.failures = list(failures)
+        self.calls = 0
+
+
+def _patch_ingest(monkeypatch, collector):
+    def fake_ingest(db, target):
+        target.calls += 1
+        if target.failures:
+            raise target.failures.pop(0)
+        return type("Stats", (), {"found": 3, "new": 3, "duplicates": 0, "errors": 0})()
+
+    monkeypatch.setattr(runner, "ingest_collector", fake_ingest)
+    monkeypatch.setattr(runner, "SessionLocal", lambda: type("DB", (), {"close": lambda self: None, "rollback": lambda self: None})())
+    monkeypatch.setattr(runner.time, "sleep", lambda seconds: None)
+
+
+def test_collector_run_is_retried_once_after_a_network_failure(monkeypatch, caplog):
+    import httpx
+
+    collector = _FlakyCollector([httpx.ConnectTimeout("_ssl.c:994: The handshake operation timed out")])
+    _patch_ingest(monkeypatch, collector)
+
+    with caplog.at_level("INFO"):
+        runner._run_collector(collector)
+
+    assert collector.calls == 2
+    assert "collector_run_retry source=official_flaky" in caplog.text
+    assert "collector_run source=official_flaky" in caplog.text
+    assert "collector_run_failed" not in caplog.text
+
+
+def test_wrapped_network_failure_is_retried_and_reported_when_it_persists(monkeypatch, caplog):
+    import httpx
+
+    def wrapped():
+        try:
+            raise httpx.ConnectError("Connection reset by peer")
+        except httpx.ConnectError as exc:
+            try:
+                raise RuntimeError("listing request failed") from exc
+            except RuntimeError as wrapped_exc:
+                return wrapped_exc
+
+    collector = _FlakyCollector([wrapped(), wrapped()])
+    _patch_ingest(monkeypatch, collector)
+
+    with caplog.at_level("INFO"):
+        runner._run_collector(collector)
+
+    assert collector.calls == 2
+    assert "collector_run_failed source=official_flaky" in caplog.text
+
+
+def test_non_network_collector_errors_are_not_retried(monkeypatch, caplog):
+    collector = _FlakyCollector([ValueError("unexpected payload")])
+    _patch_ingest(monkeypatch, collector)
+
+    with caplog.at_level("INFO"):
+        runner._run_collector(collector)
+
+    assert collector.calls == 1
+    assert "collector_run_failed source=official_flaky" in caplog.text
+
+
 def test_current_source_names_cover_every_collector():
     names = current_source_names()
 

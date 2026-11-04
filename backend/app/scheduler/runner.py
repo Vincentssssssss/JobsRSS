@@ -1,8 +1,9 @@
 import logging
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Set, Type
+from typing import Optional, Set, Type
 
+import httpx
 from apscheduler.schedulers.base import BaseScheduler
 from apscheduler.schedulers.blocking import BlockingScheduler
 
@@ -30,25 +31,59 @@ from app.verification.linkedin import verify_linkedin_postings
 
 logger = logging.getLogger(__name__)
 
+# A dropped connection or TLS handshake timeout otherwise loses a source until
+# its next interval (6 hours). Retrying here rather than in each collector's
+# httpx client keeps env proxy support, which a custom retrying transport disables.
+COLLECTOR_RUN_ATTEMPTS = 2
+COLLECTOR_RETRY_DELAY_SECONDS = 15.0
+
+
+def _is_network_error(exc: BaseException) -> bool:
+    seen = set()
+    current: Optional[BaseException] = exc
+    while current is not None and id(current) not in seen:
+        if isinstance(current, httpx.TransportError):
+            return True
+        seen.add(id(current))
+        current = current.__cause__ or current.__context__
+    return False
+
 
 def _run_collector(collector: BaseCollector) -> None:
-    start = datetime.now(timezone.utc)
+    source = collector.meta.source_name
     db = SessionLocal()
     try:
-        stats = ingest_collector(db, collector)
-        end = datetime.now(timezone.utc)
-        logger.info(
-            "collector_run source=%s start=%s end=%s found=%d new=%d duplicates=%d errors=%d",
-            collector.meta.source_name,
-            start.isoformat(),
-            end.isoformat(),
-            stats.found,
-            stats.new,
-            stats.duplicates,
-            stats.errors,
-        )
-    except Exception:
-        logger.exception("collector_run_failed source=%s", collector.meta.source_name)
+        for attempt in range(1, COLLECTOR_RUN_ATTEMPTS + 1):
+            start = datetime.now(timezone.utc)
+            try:
+                stats = ingest_collector(db, collector)
+            except Exception as exc:
+                db.rollback()
+                if attempt < COLLECTOR_RUN_ATTEMPTS and _is_network_error(exc):
+                    logger.warning(
+                        "collector_run_retry source=%s attempt=%d/%d error=%s: %s",
+                        source,
+                        attempt,
+                        COLLECTOR_RUN_ATTEMPTS,
+                        type(exc).__name__,
+                        exc,
+                    )
+                    time.sleep(COLLECTOR_RETRY_DELAY_SECONDS)
+                    continue
+                logger.exception("collector_run_failed source=%s", source)
+                return
+            end = datetime.now(timezone.utc)
+            logger.info(
+                "collector_run source=%s start=%s end=%s found=%d new=%d duplicates=%d errors=%d",
+                source,
+                start.isoformat(),
+                end.isoformat(),
+                stats.found,
+                stats.new,
+                stats.duplicates,
+                stats.errors,
+            )
+            return
     finally:
         db.close()
 
