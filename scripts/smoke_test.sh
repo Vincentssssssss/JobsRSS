@@ -101,6 +101,17 @@ for mark in favorited applied not_applied viewed not_viewed; do
   json_check "mark=$mark filter is accepted" "$API_URL/jobs/count?mark=$mark&status=" "isinstance(d.get('total'), int)"
 done
 status_check "unknown mark filter is rejected" 422 "$API_URL/jobs/count?mark=bogus"
+json_check "GET /jobs/locations groups cities by country" "$API_URL/jobs/locations" "isinstance(d.get('countries'), list) and all(c.get('label') and isinstance(c.get('cities'), list) for c in d['countries'])"
+json_check "jobs carry a standardized location" "$API_URL/jobs?limit=50" "all('location_label' in j and isinstance(j.get('cities'), list) for j in d)"
+json_check "city filter returns only that city" "$API_URL/jobs?city=Shanghai&limit=100" "all('Shanghai' in j['cities'] for j in d)"
+json_check "city filter accepts a Chinese alias" "$API_URL/jobs?city=%E4%B8%8A%E6%B5%B7&limit=100" "all('Shanghai' in j['cities'] for j in d)"
+city_total="$(curl -fsS --max-time 20 "$API_URL/jobs/count?city=Shanghai" 2>/dev/null | api_python "import json,sys; print(json.load(sys.stdin)['total'])" 2>/dev/null)"
+search_total="$(curl -fsS --max-time 20 "$API_URL/jobs/count?q=%E4%B8%8A%E6%B5%B7" 2>/dev/null | api_python "import json,sys; print(json.load(sys.stdin)['total'])" 2>/dev/null)"
+if [ -n "$city_total" ] && [ -n "$search_total" ] && [ "$search_total" -ge "$city_total" ]; then
+  pass "searching 上海 finds every Shanghai job ($search_total >= $city_total)"
+else
+  fail "searching 上海 finds every Shanghai job" "q=上海 -> ${search_total:-error}, city=Shanghai -> ${city_total:-error}"
+fi
 status_check "unknown job returns 404" 404 "$API_URL/jobs/999999999"
 
 first_id="$(curl -fsS --max-time 20 "$API_URL/jobs?limit=1" 2>/dev/null | api_python "import json,sys; d=json.load(sys.stdin); print(d[0]['id'] if d else '')" 2>/dev/null)"
@@ -127,17 +138,19 @@ json_check "dashboard proxy reaches the API" "$WEB_URL/api/backend/healthz" "d.g
 json_check "dashboard proxy forwards job queries" "$WEB_URL/api/backend/jobs/count?min_llm_score=0" "isinstance(d.get('total'), int)"
 
 section "Database"
-for column in location_category llm_verdict llm_fit_score last_verified_at favorited_at applied_at last_viewed_at view_count; do
+for column in location_category location_cities llm_verdict llm_fit_score last_verified_at favorited_at applied_at last_viewed_at view_count; do
   found="$(psql_value "SELECT count(*) FROM information_schema.columns WHERE table_name='jobs' AND column_name='$column'")"
   if [ "$found" = "1" ]; then pass "jobs.$column exists"; else fail "jobs.$column exists" "restart the api to apply schema changes: $COMPOSE up -d --force-recreate api"; fi
 done
-bad_categories="$(psql_value "SELECT count(*) FROM jobs WHERE status='active' AND location_category NOT IN ('confirmed_shanghai','confirmed_yangtze_delta','confirmed_hong_kong','confirmed_malaysia','confirmed_southeast_asia','unclassified')")"
+bad_categories="$(psql_value "SELECT count(*) FROM jobs WHERE status='active' AND location_category NOT IN ('confirmed_shanghai','confirmed_yangtze_delta','confirmed_hong_kong','confirmed_malaysia','confirmed_southeast_asia','unclassified','excluded')")"
 if [ "$bad_categories" = "0" ]; then pass "active jobs have known location categories"; else warn "$bad_categories active jobs have an unknown location category"; fi
 region_companies="$(psql_value "SELECT count(*) FROM jobs WHERE status='active' AND source LIKE 'official_%' AND company IN ('中国大陆','中国香港','中国台湾','中国澳门','中国','China','Hong Kong')")"
 if [ "$region_companies" = "0" ]; then pass "no official job uses a region as its company"; else fail "$region_companies official jobs use a region as the company"; fi
 active="$(psql_value "SELECT count(*) FROM jobs WHERE status='active'")"
 scored="$(psql_value "SELECT count(*) FROM jobs WHERE status='active' AND llm_fit_score IS NOT NULL AND llm_verdict IS NOT NULL")"
 printf '       active jobs: %s, AI-scored: %s\n' "${active:-?}" "${scored:-?}"
+no_place="$(psql_value "SELECT count(*) FROM jobs WHERE status='active' AND location_cities IS NULL AND country IS NULL")"
+printf '       active jobs with no recognizable place: %s\n' "${no_place:-?}"
 
 section "Worker"
 logs="$($COMPOSE logs --no-color --since 6h worker 2>/dev/null)"
