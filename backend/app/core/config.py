@@ -5,12 +5,16 @@ from typing import Annotated, List, Optional
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
+# Not a setting: a stale APP_VERSION in .env must not misreport the running code.
+APP_VERSION = "2.2.0"
+
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=False)
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore"
+    )
 
     app_name: str = "JobsRSS"
-    app_version: str = "2.1.0"
     environment: str = "development"
     database_url: str = "postgresql+psycopg2://jobsrss:jobsrss@postgres:5432/jobsrss"
     rss_base_url: str = "http://localhost:8000"

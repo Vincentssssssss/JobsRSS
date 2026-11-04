@@ -5,11 +5,11 @@ from app.api.routes.health import router as health_router
 from app.api.routes.jobs import router as jobs_router
 from app.api.routes.rss import router as rss_router
 from app.api.routes.sources import router as sources_router
-from app.core.config import get_settings
+from app.core.config import APP_VERSION, get_settings
 from app.db.init_db import init_db
 
 settings = get_settings()
-app = FastAPI(title=settings.app_name, version=settings.app_version)
+app = FastAPI(title=settings.app_name, version=APP_VERSION)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,

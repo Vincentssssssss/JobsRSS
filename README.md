@@ -2,7 +2,7 @@
 
 Phase 1 monorepo for a personal Job Intelligence platform.
 
-Current release: **v2.1.0**
+Current release: **v2.2.0**
 
 ## Services
 
