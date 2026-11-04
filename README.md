@@ -363,9 +363,10 @@ its cities, with the target-region city first.
 
 - **Search**: a place name in either language (`上海`, `Shanghai`, `杭州`,
   `Hong Kong`, `香港`, `吉隆坡`, `KL`, `新加坡`) matches the standard location as
-  well as the text, and every word must match. `security 杭州` finds Hangzhou
+  well as the text, and every word must match. `安全 杭州` finds Hangzhou
   security roles whatever the source wrote; `上海安全` works without a space.
-  Districts and provinces (`浦东`, `浙江`) match as plain text only.
+  Keywords are not translated (`security` does not match `安全`), and
+  districts and provinces (`浦东`, `浙江`) match as plain text only.
 - **Location** picker: countries and cities with job counts under the other
   filters. "All of 中国 China" includes multi-city roles that list a Chinese
   city anywhere.
