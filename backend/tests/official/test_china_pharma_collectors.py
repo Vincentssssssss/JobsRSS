@@ -1,5 +1,5 @@
 from app.official.collectors.beisen import parse_beisen_jobs
-from app.official.collectors.hotjob import parse_hotjob_detail
+from app.official.collectors.hotjob import DeloitteOfficialCollector, parse_hotjob_detail
 from app.official.collectors.fosun import (
     _discover_fosun_links,
     parse_fosun_detail,
@@ -83,6 +83,7 @@ def test_parses_deloitte_hotjob_detail_on_custom_host():
         "data": {
             "postId": "6a9939a79e5f824145243a1b",
             "postName": "Cyber Risk Consultant",
+            "company": "中国大陆",
             "workPlaceStr": "上海市",
             "workContent": "负责客户网络安全咨询项目。",
             "serviceCondition": "熟悉 IAM 与云安全。",
@@ -95,6 +96,7 @@ def test_parses_deloitte_hotjob_detail_on_custom_host():
         company_fallback="Deloitte / 德勤",
         tenant="SU649e304a6a9f0ef690533e9a",
         api_root="https://ehjobs.deloitte.com.cn",
+        site_company_is_employer=False,
     )
 
     assert job["company"] == "Deloitte / 德勤"
@@ -135,3 +137,7 @@ def test_fosun_discovery_rejects_external_job_shaped_url():
     )
 
     assert _discover_fosun_links(html) == []
+
+
+def test_deloitte_collector_ignores_the_practice_region_company_field():
+    assert DeloitteOfficialCollector().site_company_is_employer is False
