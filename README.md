@@ -2,7 +2,7 @@
 
 Phase 1 monorepo for a personal Job Intelligence platform.
 
-Current release: **v2.2.2** ([release notes and test report](docs/RELEASE_V2.2.2.md))
+Current release: **v2.2.3** ([release notes and test report](docs/RELEASE_V2.2.3.md))
 
 ## Services
 
@@ -346,14 +346,34 @@ nothing. Cards that say 停止招聘 / 职位已关闭 are closed immediately.
 
 ## Job List and Details
 
-Jobs are listed as two-line cards: title, then company, standardized location,
-source and posting date, with the AI score (solid blue for `strong_fit`) and
-Apply Now, Details, Favorite and Mark Applied buttons. Clicking a title or
+Jobs are listed as two-line cards: title, then company, standardized location
+and source, with the AI score (solid blue for `strong_fit`) and the posting date
+under it, and Apply Now, Details, Favorite and Mark Applied buttons. Clicking a title or
 **Details** on a window at least 1024px wide splits the page: the list narrows
 to a compact column and the job's details (AI reasons, description) stay
 pinned on the right while you scroll. **J** / **K** move to the next or
 previous job and **Esc** (or Close) returns to the full-width list. Narrower
 windows show the details as a dialog instead.
+
+### Posting dates
+
+Each card shows the date and age, for example `Posted Nov 2 · 3d ago`; the
+details pane shows the full date. The label says where the date comes from:
+
+- **Posted**: the source's publish date.
+- **Updated**: Tencent and Huawei only give the date a posting was last
+  updated, which can be later than when it first went up.
+- **First seen** (italic): the source gives no date (LinkedIn email alerts
+  without one, for example), so this is when JobsRSS first collected the job.
+
+### Sorting
+
+**Sort By** orders the list by **Newest posted first** (the default) or
+**AI score, highest first**. With AI score, ties are broken by the newest
+posting, and jobs without an AI score come last, ordered by rule score. Newest
+first uses the first-seen date for jobs without a posting date. The choice is
+saved in the browser. The API takes the same values: `GET /jobs?sort=newest`
+or `GET /jobs?sort=ai_score`.
 
 ## Favorites, Applied and View History
 
