@@ -73,7 +73,8 @@ had something to filter.
 | Frontend typecheck | final | `npx tsc --noEmit` | passed |
 | Filter behaviour | `7214d23` | Browser run at 1440 px (Asia/Shanghai): each AI chip, More filters, tag removal, Clear all, location, favoriting a job, the Favorites view, a search with no results | All passed. Default request is `min_llm_score=60` with strong and possible fits (495 jobs). `≥ 80` returned only cards scored 80 or more. `Off` dropped the AI parameters (1,002 jobs). The badge counted 2 with a source and a rule score set, and 1 once the AI filter was back on. The Favorites count went up when a job was favorited |
 | Layout | `7214d23` | Same run at 1440, 1100, 1024, 900, 760, 700 and 390 px | No horizontal scrolling. The filter panel is 135 px tall at 1440 px with More filters closed |
-| Smoke test | final | `scripts/smoke_test.sh` | SMOKE_RESULT |
+| Upgrade | final | Recreated api, worker and frontend on the same database, then repeated the browser run | Dashboard reports v2.2.4; all checks passed again |
+| Smoke test | final | `scripts/smoke_test.sh` | 53 passed, 0 failed, 1 warning (LLM off) |
 
 The first browser run found that the More filters dropdowns clipped their
 text and that one overlapped the next column at 900 px. `7214d23` fixes
