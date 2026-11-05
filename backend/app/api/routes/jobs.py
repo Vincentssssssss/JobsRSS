@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import asc, desc, false, func, or_
 from sqlalchemy.orm import Session
 
+from app.api.ordering import JOB_SORTS, job_order
 from app.db.session import get_db
 from app.models.job import Job
 from app.normalization.location_standard import (
@@ -32,6 +33,10 @@ MARK_FILTERS = {
 }
 CityParam = Annotated[Optional[str], Query(description="Standard city name(s) or alias(es), comma-separated")]
 CountryParam = Annotated[Optional[str], Query(description="Country name(s) or alias(es), comma-separated")]
+SortParam = Annotated[
+    str,
+    Query(description="newest: posting date, newest first. ai_score: AI fit score, highest first"),
+]
 
 
 def _parse_llm_verdicts(value: Optional[str]) -> list[str]:
@@ -150,7 +155,10 @@ def list_jobs(
     mark: Optional[str] = Query(default=None),
     city: CityParam = None,
     country: CountryParam = None,
+    sort: SortParam = "newest",
 ):
+    if sort not in JOB_SORTS:
+        raise HTTPException(status_code=422, detail=f"Unknown sort: {sort}")
     llm_verdicts = _parse_llm_verdicts(llm_verdict)
     query = _apply_jobs_filters(
         db.query(Job),
@@ -166,7 +174,7 @@ def list_jobs(
         city=city,
         country=country,
     )
-    return query.order_by(desc(Job.posted_at), desc(Job.id)).offset(offset).limit(limit).all()
+    return query.order_by(*job_order(sort)).offset(offset).limit(limit).all()
 
 
 @router.get("/count")

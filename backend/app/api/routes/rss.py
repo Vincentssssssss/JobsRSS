@@ -3,9 +3,9 @@ import re
 
 from fastapi import APIRouter, Depends, Response
 from feedgen.feed import FeedGenerator
-from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
+from app.api.ordering import newest_first
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.job import Job
@@ -28,7 +28,7 @@ def _build_feed(title: str, jobs: list[Job]) -> str:
     fg.description(f"JobsRSS feed: {title}")
 
     for job in jobs:
-        fe = fg.add_entry()
+        fe = fg.add_entry(order="append")
         fe.id(f"{job.source}:{job.source_job_id}")
         fe.title(
             _sanitize_feed_text(f"{job.company} - {job.title} ({job.location})")
@@ -53,7 +53,7 @@ def rss_all(db: Session = Depends(get_db)):
     jobs = (
         db.query(Job)
         .filter(Job.status == "active")
-        .order_by(desc(Job.posted_at), desc(Job.id))
+        .order_by(*newest_first())
         .limit(200)
         .all()
     )
@@ -70,7 +70,7 @@ def rss_high_match(db: Session = Depends(get_db)):
             Job.match_score >= settings.high_match_threshold,
             Job.status == "active",
         )
-        .order_by(desc(Job.posted_at), desc(Job.id))
+        .order_by(*newest_first())
         .limit(200)
         .all()
     )
@@ -86,7 +86,7 @@ def rss_by_company(company: str, db: Session = Depends(get_db)):
             Job.company.ilike(f"%{company}%"),
             Job.status == "active",
         )
-        .order_by(desc(Job.posted_at), desc(Job.id))
+        .order_by(*newest_first())
         .limit(200)
         .all()
     )

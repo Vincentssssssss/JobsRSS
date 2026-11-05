@@ -37,6 +37,7 @@ class JobOut(BaseModel):
     apply_url: str
     source_url: str
     posted_at: Optional[datetime]
+    first_seen_at: Optional[datetime] = None
     match_score: float
     llm_fit_score: Optional[float]
     llm_verdict: Optional[str]
@@ -65,7 +66,6 @@ class DescriptionSection(BaseModel):
 class JobDetail(JobOut):
     description: str
     updated_at: Optional[datetime]
-    first_seen_at: Optional[datetime]
     last_seen_at: Optional[datetime]
     enrichment_source: Optional[str]
     llm_match_reasons: Optional[str]
