@@ -34,7 +34,8 @@ def db():
             _row("old-strong", posted_days=40, seen_days=40, llm=92),
             _row("new-weak", posted_days=1, seen_days=1, llm=61),
             _row("mid-good", posted_days=10, seen_days=10, llm=80),
-            _row("tie-newer", posted_days=2, seen_days=2, llm=80),
+            _row("tie-newer", posted_days=2, seen_days=2, llm=80, rule=20),
+            _row("unscored-old-high-rule", posted_days=30, seen_days=30, rule=90),
             _row("undated-recent", posted_days=None, seen_days=3, rule=70),
             _row("unscored-new", posted_days=0, seen_days=0, rule=40),
         ])
@@ -52,14 +53,17 @@ def _order(db, **filters):
 def test_newest_first_uses_first_seen_for_undated_jobs(db):
     # Before, an undated row sorted as NULL, which Postgres places first.
     assert _order(db) == [
-        "unscored-new", "new-weak", "tie-newer", "undated-recent", "mid-good", "old-strong",
+        "unscored-new", "new-weak", "tie-newer", "undated-recent", "mid-good",
+        "unscored-old-high-rule", "old-strong",
     ]
     assert _order(db, sort="newest") == _order(db)
 
 
 def test_ai_score_sort_puts_best_fit_first_and_unscored_last(db):
+    # Equal AI scores go newest first, whatever their rule score; unscored jobs by rule score.
     assert _order(db, sort="ai_score") == [
-        "old-strong", "tie-newer", "mid-good", "new-weak", "undated-recent", "unscored-new",
+        "old-strong", "tie-newer", "mid-good", "new-weak",
+        "unscored-old-high-rule", "undated-recent", "unscored-new",
     ]
 
 
@@ -86,5 +90,6 @@ def test_rss_lists_newest_first_with_undated_jobs_by_first_seen(db):
     xml = rss_all(db=db).body.decode()
     titles = [line for line in xml.splitlines() if "<link>https://e.x/" in line]
     assert [line.strip()[len("<link>https://e.x/"):-len("</link>")] for line in titles] == [
-        "unscored-new", "new-weak", "tie-newer", "undated-recent", "mid-good", "old-strong",
+        "unscored-new", "new-weak", "tie-newer", "undated-recent", "mid-good",
+        "unscored-old-high-rule", "old-strong",
     ]

@@ -1,4 +1,4 @@
-from sqlalchemy import desc, func
+from sqlalchemy import case, desc, func
 
 from app.models.job import Job
 
@@ -17,6 +17,12 @@ def newest_first():
 
 def job_order(sort: str):
     if sort == "ai_score":
-        # Unscored jobs follow every scored one, best rule score first.
-        return (desc(Job.llm_fit_score).nulls_last(), desc(Job.match_score), *newest_first())
+        # Equal AI scores are common (the model favours round numbers), so they go
+        # newest first. Unscored jobs follow every scored one, best rule score first.
+        unscored_rule_score = case((Job.llm_fit_score.is_(None), Job.match_score))
+        return (
+            desc(Job.llm_fit_score).nulls_last(),
+            desc(unscored_rule_score).nulls_last(),
+            *newest_first(),
+        )
     return newest_first()

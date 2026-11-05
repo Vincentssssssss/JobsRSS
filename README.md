@@ -363,14 +363,15 @@ details pane shows the full date. The label says where the date comes from:
 - **Posted**: the source's publish date.
 - **Updated**: Tencent and Huawei only give the date a posting was last
   updated, which can be later than when it first went up.
-- **First seen** (italic): the source gives no date (LinkedIn email alerts
-  without one, for example), so this is when JobsRSS first collected the job.
+- **First seen** (italic): the listing has no date, so this is when JobsRSS
+  first collected the job. Every official source sends a date; Liepin and
+  51job cards sometimes do not.
 
 ### Sorting
 
 **Sort By** orders the list by **Newest posted first** (the default) or
-**AI score, highest first**. With AI score, ties are broken by the newest
-posting, and jobs without an AI score come last, ordered by rule score. Newest
+**AI score, highest first**. With AI score, equal scores go newest first, and
+jobs without an AI score come last, ordered by rule score. Newest
 first uses the first-seen date for jobs without a posting date. The choice is
 saved in the browser. The API takes the same values: `GET /jobs?sort=newest`
 or `GET /jobs?sort=ai_score`.
