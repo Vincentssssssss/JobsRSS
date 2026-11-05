@@ -14,7 +14,8 @@ type JobCard = {
   match_score: number;
   apply_url: string;
   source: string;
-  posted_at?: string;
+  posted_at?: string | null;
+  first_seen_at?: string | null;
   location_category: string;
   llm_fit_score?: number | null;
   llm_verdict?: string | null;
@@ -39,7 +40,6 @@ type DescriptionSection = {
 type JobDetail = JobCard & {
   description: string;
   updated_at?: string | null;
-  first_seen_at?: string | null;
   last_seen_at?: string | null;
   source_url: string;
   llm_match_reasons?: string | null;
@@ -225,6 +225,51 @@ function formatShortDate(value: string): string {
   return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+function formatLongDate(value: string): string {
+  return new Date(value).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function formatAge(value: string): string {
+  const days = Math.floor((Date.now() - new Date(value).getTime()) / 86_400_000);
+  if (days <= 0) {
+    return "today";
+  }
+  if (days < 30) {
+    return `${days}d ago`;
+  }
+  const months = Math.floor(days / 30);
+  return months < 12 ? `${months}mo ago` : `${Math.floor(days / 365)}y ago`;
+}
+
+// These portals only expose when a posting was last updated, not when it was published.
+const UPDATE_DATE_SOURCES = new Set(["official_tencent", "official_huawei"]);
+
+type JobDate = { kind: "Posted" | "Updated" | "First seen"; value: string; note: string };
+
+function jobDate(job: JobCard): JobDate | null {
+  if (job.posted_at) {
+    const kind = UPDATE_DATE_SOURCES.has(job.source) ? "Updated" : "Posted";
+    const note =
+      kind === "Updated" ? "This source only shows when the posting was last updated." : "";
+    return { kind, value: job.posted_at, note };
+  }
+  if (job.first_seen_at) {
+    return {
+      kind: "First seen",
+      value: job.first_seen_at,
+      note: "This source gives no posting date; this is when JobsRSS first collected it.",
+    };
+  }
+  return null;
+}
+
+const SORT_STORAGE_KEY = "jobsrss.sort";
+const SORT_OPTIONS = ["newest", "ai_score"];
+
 function shortSource(source: string): string {
   return source.replace(/^official_/, "");
 }
@@ -279,6 +324,8 @@ export default function HomePage() {
   const [place, setPlace] = useState("");
   const [locations, setLocations] = useState<LocationsResponse | null>(null);
   const [markFilter, setMarkFilter] = useState("");
+  // null until the saved choice is read, so the first list request already uses it.
+  const [sortBy, setSortBy] = useState<string | null>(null);
   const [pendingMarks, setPendingMarks] = useState<Record<number, boolean>>({});
   const [selectedJob, setSelectedJob] = useState<JobDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -337,8 +384,10 @@ export default function HomePage() {
   // earlier keystroke, say) cannot overwrite the results of the latest one.
   const loadJobs = async (includeLlm: boolean, isCurrent: () => boolean) => {
     let payload: JobCard[] | null = null;
+    const params = buildJobParams(includeLlm, true);
+    params.set("sort", sortBy ?? "newest");
     try {
-      payload = await fetchJsonWithFallback<JobCard[]>("/jobs", buildJobParams(includeLlm, true));
+      payload = await fetchJsonWithFallback<JobCard[]>("/jobs", params);
     } catch {
       payload = null;
     }
@@ -602,6 +651,28 @@ export default function HomePage() {
   }, [query]);
 
   useEffect(() => {
+    let saved: string | null = null;
+    try {
+      saved = window.localStorage.getItem(SORT_STORAGE_KEY);
+    } catch {
+      saved = null;
+    }
+    setSortBy(saved && SORT_OPTIONS.includes(saved) ? saved : "newest");
+  }, []);
+
+  const changeSort = (value: string) => {
+    setSortBy(value);
+    try {
+      window.localStorage.setItem(SORT_STORAGE_KEY, value);
+    } catch {
+      // Private browsing can refuse storage; the choice then lasts until reload.
+    }
+  };
+
+  useEffect(() => {
+    if (sortBy === null) {
+      return;
+    }
     let current = true;
     const isCurrent = () => current;
     const load = async () => {
@@ -656,7 +727,7 @@ export default function HomePage() {
     return () => {
       current = false;
     };
-  }, [debouncedQuery, source, minScore, minLlmScore, aiPrecisionMode, limit, locationCategory, place, markFilter]);
+  }, [debouncedQuery, source, minScore, minLlmScore, aiPrecisionMode, limit, locationCategory, place, markFilter, sortBy]);
 
   useEffect(() => {
     void loadOfficialSources();
@@ -760,6 +831,18 @@ export default function HomePage() {
           {locations && locations.unknown > 0 && (
             <p className="field-note">{locations.unknown} jobs list no recognizable place.</p>
           )}
+        </div>
+        <div className="field">
+          <label>Sort By</label>
+          <select value={sortBy ?? "newest"} onChange={(event) => changeSort(event.target.value)}>
+            <option value="newest">Newest posted first</option>
+            <option value="ai_score">AI score, highest first</option>
+          </select>
+          <p className="field-note">
+            {sortBy === "ai_score"
+              ? "Jobs without an AI score come last, by rule score."
+              : "Jobs without a posting date sort by when they were first collected."}
+          </p>
         </div>
         <div className="field">
           <label>Source</label>
@@ -924,6 +1007,7 @@ export default function HomePage() {
           ) : (
             jobs.map((job) => {
               const region = regionBadge(job);
+              const date = jobDate(job);
               const closed = job.status != null && job.status !== "active";
               return (
                 <article
@@ -947,18 +1031,23 @@ export default function HomePage() {
                         <span className="job-line-company">{job.company}</span>
                         <span>{job.location_label || job.location}</span>
                         <span>{shortSource(job.source)}</span>
-                        {job.posted_at && (
-                          <span title={`Posted ${new Date(job.posted_at).toLocaleString()}`}>
-                            {formatShortDate(job.posted_at)}
-                          </span>
-                        )}
                       </p>
                     </div>
-                    <span className={`score ${scoreTone(job)}`} title={job.llm_verdict || "AI score pending"}>
-                      {job.llm_fit_score != null
-                        ? `AI ${Math.round(job.llm_fit_score)}`
-                        : `Rule ${Math.round(job.match_score)}`}
-                    </span>
+                    <div className="job-side">
+                      <span className={`score ${scoreTone(job)}`} title={job.llm_verdict || "AI score pending"}>
+                        {job.llm_fit_score != null
+                          ? `AI ${Math.round(job.llm_fit_score)}`
+                          : `Rule ${Math.round(job.match_score)}`}
+                      </span>
+                      {date && (
+                        <span
+                          className={`job-date${date.kind === "Posted" ? "" : " estimated"}`}
+                          title={`${date.kind} ${formatLongDate(date.value)}${date.note ? `. ${date.note}` : ""}`}
+                        >
+                          {date.kind} {formatShortDate(date.value)} · {formatAge(date.value)}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div className="job-footer">
                     {region && <span className="location-badge">{region}</span>}
@@ -1009,8 +1098,18 @@ export default function HomePage() {
                         <h2>{card.title}</h2>
                         <p className="job-meta">
                           {card.location_label || card.location} · {card.source}
-                          {card.posted_at ? ` · Posted ${formatShortDate(card.posted_at)}` : ""}
                         </p>
+                        {(() => {
+                          const date = jobDate(card);
+                          return date ? (
+                            <p className="job-meta" title={date.note || undefined}>
+                              {date.kind} {formatLongDate(date.value)} ({formatAge(date.value)})
+                              {date.note && <span className="job-meta-note"> · {date.note}</span>}
+                            </p>
+                          ) : (
+                            <p className="job-meta">No posting date</p>
+                          );
+                        })()}
                         {card.location_label && card.location_label !== card.location && (
                           <p className="job-meta">Listed as: {card.location}</p>
                         )}
