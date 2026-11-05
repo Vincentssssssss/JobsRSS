@@ -306,6 +306,38 @@ function isTypingTarget(target: EventTarget | null): boolean {
 
 const SAVED_MARK_FILTERS = new Set(["favorited", "applied"]);
 
+// One AI filter replaces the old precision mode, AI score and rule score trio.
+// "fit" is every strong or possible fit; "off" drops the AI filters entirely.
+type AiLevel = "80" | "70" | "60" | "fit" | "off";
+const DEFAULT_AI_LEVEL: AiLevel = "60";
+const AI_LEVELS: Array<{ value: AiLevel; label: string; title: string }> = [
+  { value: "80", label: "≥ 80", title: "Strong or possible fit, AI score 80 or more" },
+  { value: "70", label: "≥ 70", title: "Strong or possible fit, AI score 70 or more" },
+  { value: "60", label: "≥ 60", title: "Strong or possible fit, AI score 60 or more (default)" },
+  { value: "fit", label: "Any fit", title: "Every job the AI rated a strong or possible fit" },
+  { value: "off", label: "Off", title: "No AI filter; set a rule score under More filters" },
+];
+
+const MARK_CHIPS: Array<{ value: string; label: string }> = [
+  { value: "", label: "All" },
+  { value: "favorited", label: "★ Favorites" },
+  { value: "applied", label: "Applied" },
+  { value: "not_applied", label: "Not applied" },
+  { value: "not_viewed", label: "Not viewed" },
+];
+
+const REGION_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "confirmed_shanghai", label: "Confirmed Shanghai" },
+  { value: "confirmed_yangtze_delta", label: "Confirmed Jiangsu/Zhejiang" },
+  { value: "confirmed_hong_kong", label: "Confirmed Hong Kong" },
+  { value: "confirmed_malaysia", label: "Confirmed Malaysia" },
+  { value: "confirmed_southeast_asia", label: "Confirmed Southeast Asia" },
+  { value: "unclassified", label: "Unclassified" },
+  { value: "excluded", label: "Outside target areas" },
+];
+
+const DEFAULT_LIMIT = 500;
+
 export default function HomePage() {
   const [jobs, setJobs] = useState<JobCard[]>([]);
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
@@ -320,9 +352,10 @@ export default function HomePage() {
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [source, setSource] = useState("");
   const [minScore, setMinScore] = useState(0);
-  const [minLlmScore, setMinLlmScore] = useState("60");
-  const [aiPrecisionMode, setAiPrecisionMode] = useState(true);
-  const [limit, setLimit] = useState(500);
+  const [aiLevel, setAiLevel] = useState<AiLevel>(DEFAULT_AI_LEVEL);
+  const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
+  const [markCounts, setMarkCounts] = useState<Record<string, number>>({});
+  const [limit, setLimit] = useState(DEFAULT_LIMIT);
   const [locationCategory, setLocationCategory] = useState("");
   const [place, setPlace] = useState("");
   const [locations, setLocations] = useState<LocationsResponse | null>(null);
@@ -356,7 +389,7 @@ export default function HomePage() {
     if (savedMarkView) {
       params.set("status", "");
     }
-    params.set("min_score", aiPrecisionMode || !includeLlm ? "0" : String(minScore));
+    params.set("min_score", includeLlm && aiLevel === "off" ? String(minScore) : "0");
     if (debouncedQuery.trim()) {
       params.set("q", debouncedQuery.trim());
     }
@@ -370,14 +403,10 @@ export default function HomePage() {
     if (placeFilter) {
       params.set(placeFilter[0], placeFilter[1]);
     }
-    if (includeLlm) {
-      if (aiPrecisionMode) {
-        params.set("llm_verdict", "strong_fit,possible_fit");
-        if (minLlmScore) {
-          params.set("min_llm_score", minLlmScore);
-        }
-      } else if (minLlmScore) {
-        params.set("min_llm_score", minLlmScore);
+    if (includeLlm && aiLevel !== "off") {
+      params.set("llm_verdict", "strong_fit,possible_fit");
+      if (aiLevel !== "fit") {
+        params.set("min_llm_score", aiLevel);
       }
     }
     return params;
@@ -494,6 +523,19 @@ export default function HomePage() {
     }
   };
 
+  const loadMarkCounts = async () => {
+    const entries = await Promise.all(
+      ["favorited", "applied"].map(async (mark) => {
+        const payload = await fetchJsonWithFallback<{ total?: number }>(
+          "/jobs/count",
+          new URLSearchParams({ mark, status: "" }),
+        );
+        return [mark, Number(payload?.total || 0)] as const;
+      }),
+    );
+    setMarkCounts(Object.fromEntries(entries));
+  };
+
   const applyJobUpdate = (updated: JobCard) => {
     const pick = (job: JobCard) => ({
       status: updated.status,
@@ -522,6 +564,7 @@ export default function HomePage() {
       const updated = await sendJsonWithFallback<JobCard>("PUT", `/jobs/${job.id}/marks`, update);
       if (updated) {
         applyJobUpdate(updated);
+        void loadMarkCounts();
       } else {
         window.alert("Could not save the mark. Is the API container running?");
       }
@@ -681,7 +724,7 @@ export default function HomePage() {
     const load = async () => {
       setListLoading(true);
       try {
-        const llmFiltersOn = !savedMarkView && Boolean(aiPrecisionMode || minLlmScore);
+        const llmFiltersOn = !savedMarkView && aiLevel !== "off";
         const [inventoryPayload, scoredPayload] = await Promise.all([
           fetchJsonWithFallback<{ total?: number }>("/jobs/count"),
           fetchJsonWithFallback<{ total?: number }>(
@@ -730,10 +773,11 @@ export default function HomePage() {
     return () => {
       current = false;
     };
-  }, [debouncedQuery, source, minScore, minLlmScore, aiPrecisionMode, limit, locationCategory, place, markFilter, sortBy]);
+  }, [debouncedQuery, source, minScore, aiLevel, limit, locationCategory, place, markFilter, sortBy]);
 
   useEffect(() => {
     void loadOfficialSources();
+    void loadMarkCounts();
     void fetchJsonWithFallback<{ version?: string }>("/healthz").then((payload) => {
       setApiVersion(payload?.version ?? null);
     });
@@ -753,6 +797,71 @@ export default function HomePage() {
     const fromCounts = Object.keys(sourceCounts);
     return Array.from(new Set([...fromJobs, ...fromSummary, ...officialSources, ...fromCounts])).sort();
   }, [jobs, summary, officialSources, sourceCounts]);
+
+  const placeLabel = (value: string): string => {
+    const parsed = placeParams(value);
+    if (!parsed) {
+      return value;
+    }
+    for (const item of locations?.countries ?? []) {
+      if (parsed[0] === "country" && item.country === parsed[1]) {
+        return item.label;
+      }
+      const city = item.cities.find((entry) => entry.city === parsed[1]);
+      if (parsed[0] === "city" && city) {
+        return city.label;
+      }
+    }
+    return parsed[1];
+  };
+
+  const ruleScoreActive = aiLevel === "off" && minScore > 0;
+  const moreFiltersActive = [Boolean(source), Boolean(locationCategory), ruleScoreActive, limit !== DEFAULT_LIMIT]
+    .filter(Boolean).length;
+
+  const activeFilters: Array<{ key: string; label: string; clear: () => void }> = [];
+  if (debouncedQuery.trim()) {
+    activeFilters.push({ key: "q", label: `“${debouncedQuery.trim()}”`, clear: () => {
+      setQuery("");
+      setDebouncedQuery("");
+    } });
+  }
+  if (place) {
+    activeFilters.push({ key: "place", label: placeLabel(place), clear: () => setPlace("") });
+  }
+  if (aiLevel !== DEFAULT_AI_LEVEL) {
+    const label = AI_LEVELS.find((item) => item.value === aiLevel)?.label ?? aiLevel;
+    activeFilters.push({ key: "ai", label: `AI: ${label}`, clear: () => setAiLevel(DEFAULT_AI_LEVEL) });
+  }
+  if (markFilter) {
+    const label = MARK_CHIPS.find((item) => item.value === markFilter)?.label ?? markFilter;
+    activeFilters.push({ key: "mark", label, clear: () => setMarkFilter("") });
+  }
+  if (source) {
+    activeFilters.push({ key: "source", label: `Source: ${shortSource(source)}`, clear: () => setSource("") });
+  }
+  if (locationCategory) {
+    const label = REGION_OPTIONS.find((item) => item.value === locationCategory)?.label ?? locationCategory;
+    activeFilters.push({ key: "region", label, clear: () => setLocationCategory("") });
+  }
+  if (ruleScoreActive) {
+    activeFilters.push({ key: "rule", label: `Rule ≥ ${minScore}`, clear: () => setMinScore(0) });
+  }
+  if (limit !== DEFAULT_LIMIT) {
+    activeFilters.push({ key: "limit", label: `Fetch ${limit}`, clear: () => setLimit(DEFAULT_LIMIT) });
+  }
+
+  const clearFilters = () => {
+    setQuery("");
+    setDebouncedQuery("");
+    setPlace("");
+    setAiLevel(DEFAULT_AI_LEVEL);
+    setMarkFilter("");
+    setSource("");
+    setLocationCategory("");
+    setMinScore(0);
+    setLimit(DEFAULT_LIMIT);
+  };
 
   return (
     <main className="page">
@@ -793,22 +902,26 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="glass filters">
-        <div className="field">
-          <label>Search</label>
+      <section className="glass filters" aria-label="Filters">
+        <div className="filter-main">
           <input
+            className="filter-search"
+            aria-label="Search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="cloud security / 架构师 / 上海 / Hong Kong"
+            placeholder="Search: cloud security / 架构师 / 上海 / Hong Kong"
+            title="Every word must match. Place names in Chinese or English (上海, Hangzhou, 香港, KL, 新加坡) also match the standardized location."
           />
-          <p className="field-note">
-            Place names in Chinese or English (上海, Hangzhou, 香港, KL, 新加坡) also match the
-            standardized location, whatever format the source uses.
-          </p>
-        </div>
-        <div className="field">
-          <label>Location</label>
-          <select value={place} onChange={(event) => setPlace(event.target.value)}>
+          <select
+            aria-label="Location"
+            value={place}
+            onChange={(event) => setPlace(event.target.value)}
+            title={
+              locations && locations.unknown > 0
+                ? `${locations.unknown} jobs list no recognizable place and only appear under All locations.`
+                : undefined
+            }
+          >
             <option value="">
               {locations ? `All locations (${locations.total})` : "All locations"}
             </option>
@@ -831,136 +944,156 @@ export default function HomePage() {
               </optgroup>
             ))}
           </select>
-          {locations && locations.unknown > 0 && (
-            <p className="field-note">{locations.unknown} jobs list no recognizable place.</p>
-          )}
-        </div>
-        <div className="field">
-          <label>Sort By</label>
-          <select value={sortBy ?? "newest"} onChange={(event) => changeSort(event.target.value)}>
-            <option value="newest">Newest posted first</option>
-            <option value="ai_score">AI score, highest first</option>
+          <select
+            aria-label="Sort by"
+            value={sortBy ?? "newest"}
+            onChange={(event) => changeSort(event.target.value)}
+            title={
+              sortBy === "ai_score"
+                ? "Equal scores go newest first; jobs without an AI score come last, by rule score."
+                : "Jobs without a posting date sort by when they were first collected."
+            }
+          >
+            <option value="newest">Sort: Newest posted</option>
+            <option value="ai_score">Sort: AI score ↓</option>
           </select>
-          <p className="field-note">
-            {sortBy === "ai_score"
-              ? "Jobs without an AI score come last, by rule score."
-              : "Jobs without a posting date sort by when they were first collected."}
-          </p>
         </div>
-        <div className="field">
-          <label>Source</label>
-          <select value={source} onChange={(event) => setSource(event.target.value)}>
-            <option value="">
-              {allSourcesCount == null ? "All sources" : `All sources (${allSourcesCount})`}
-            </option>
-            {sourceOptions.map((item) => {
-              const countText = sourceCountsLoaded ? ` (${sourceCounts[item] ?? 0})` : "";
-              return (
-                <option key={item} value={item}>
-                  {`${item}${countText}`}
+
+        <div className="filter-chips">
+          <div
+            className="chip-group"
+            role="group"
+            aria-label="AI filter"
+            title={savedMarkView ? "Favorites and Applied ignore the AI filter." : undefined}
+          >
+            <span className="chip-group-label">AI</span>
+            {AI_LEVELS.map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                className={`filter-chip${aiLevel === item.value ? " on" : ""}`}
+                aria-pressed={aiLevel === item.value}
+                disabled={savedMarkView}
+                title={item.title}
+                onClick={() => setAiLevel(item.value)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+          <div className="chip-group" role="group" aria-label="My marks">
+            <span className="chip-group-label">Mine</span>
+            {MARK_CHIPS.map((item) => (
+              <button
+                key={item.value || "all"}
+                type="button"
+                className={`filter-chip${markFilter === item.value ? " on" : ""}`}
+                aria-pressed={markFilter === item.value}
+                onClick={() => setMarkFilter(item.value)}
+              >
+                {item.label}
+                {markCounts[item.value] ? <span className="filter-chip-count">{markCounts[item.value]}</span> : null}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            className="more-toggle"
+            aria-expanded={moreFiltersOpen}
+            aria-controls="more-filters"
+            onClick={() => setMoreFiltersOpen((open) => !open)}
+          >
+            More filters
+            {moreFiltersActive > 0 && <span className="more-badge">{moreFiltersActive}</span>}
+            <span aria-hidden="true">{moreFiltersOpen ? "▴" : "▾"}</span>
+          </button>
+        </div>
+
+        {moreFiltersOpen && (
+          <div className="filter-more" id="more-filters">
+            <div className="field">
+              <label htmlFor="filter-source">Source</label>
+              <select id="filter-source" value={source} onChange={(event) => setSource(event.target.value)}>
+                <option value="">
+                  {allSourcesCount == null ? "All sources" : `All sources (${allSourcesCount})`}
                 </option>
-              );
-            })}
-          </select>
-          {officialSourceLoadError ? (
-            <p className="field-note warning">
-              Official source catalog unavailable, showing only sources present in current jobs.
-            </p>
-          ) : (
-            <p className="field-note">
-              Official source catalog loaded
-              {officialSourceTotal != null ? ` (${officialSourceTotal} sources)` : ""}.
-            </p>
+                {sourceOptions.map((item) => {
+                  const countText = sourceCountsLoaded ? ` (${sourceCounts[item] ?? 0})` : "";
+                  return (
+                    <option key={item} value={item}>
+                      {`${shortSource(item)}${countText}`}
+                    </option>
+                  );
+                })}
+              </select>
+              {officialSourceLoadError && (
+                <p className="field-note warning">Source catalog unavailable; listing sources found in jobs.</p>
+              )}
+              {sourceCountsLoadError && <p className="field-note warning">Source counts unavailable.</p>}
+            </div>
+            <div className="field">
+              <label htmlFor="filter-region">Target Region</label>
+              <select
+                id="filter-region"
+                value={locationCategory}
+                onChange={(event) => setLocationCategory(event.target.value)}
+              >
+                <option value="">All</option>
+                {REGION_OPTIONS.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="filter-rule">Rule Score</label>
+              <select
+                id="filter-rule"
+                disabled={aiLevel !== "off"}
+                title={aiLevel !== "off" ? "Applies when the AI filter is Off." : undefined}
+                value={String(minScore)}
+                onChange={(event) => setMinScore(Number(event.target.value))}
+              >
+                <option value="0">Any</option>
+                <option value="60">≥ 60</option>
+                <option value="80">≥ 80</option>
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="filter-limit">Fetch Limit</label>
+              <select id="filter-limit" value={String(limit)} onChange={(event) => setLimit(Number(event.target.value))}>
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="200">200</option>
+                <option value="500">500</option>
+              </select>
+            </div>
+          </div>
+        )}
+
+        <div className="filter-summary" aria-live="polite">
+          <strong>
+            {listLoading ? "Loading…" : `${totalCount} ${totalCount === 1 ? "job" : "jobs"}`}
+          </strong>
+          {activeFilters.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              className="filter-tag"
+              title="Remove this filter"
+              onClick={item.clear}
+            >
+              {item.label} <span aria-hidden="true">×</span>
+            </button>
+          ))}
+          {activeFilters.length > 1 && (
+            <button type="button" className="filter-clear" onClick={clearFilters}>
+              Clear all
+            </button>
           )}
-          {sourceCountsLoadError ? (
-            <p className="field-note warning">
-              Source counts unavailable for current filters.
-            </p>
-          ) : sourceCountsLoaded ? (
-            <p className="field-note">
-              Source counts reflect current filters (AI score, query, location).
-            </p>
-          ) : null}
-        </div>
-        <div className="field">
-          <label>AI Precision Mode</label>
-          <select
-            value={aiPrecisionMode ? "on" : "off"}
-            onChange={(event) => {
-              const enabled = event.target.value === "on";
-              setAiPrecisionMode(enabled);
-              if (enabled) {
-                setMinScore(0);
-                if (!minLlmScore) {
-                  setMinLlmScore("60");
-                }
-              }
-            }}
-          >
-            <option value="on">On (AI-only final filter)</option>
-            <option value="off">Off (manual rule + AI mix)</option>
-          </select>
-        </div>
-        <div className="field">
-          <label>Rule Score</label>
-          <select
-            disabled={aiPrecisionMode}
-            value={String(minScore)}
-            onChange={(event) => setMinScore(Number(event.target.value))}
-          >
-            <option value="0">0</option>
-            <option value="60">60</option>
-            <option value="80">80</option>
-          </select>
-        </div>
-        <div className="field">
-          <label>Fetch Limit</label>
-          <select value={String(limit)} onChange={(event) => setLimit(Number(event.target.value))}>
-            <option value="50">50</option>
-            <option value="100">100</option>
-            <option value="200">200</option>
-            <option value="500">500</option>
-          </select>
-        </div>
-        <div className="field">
-          <label>AI Score</label>
-          <select
-            value={minLlmScore}
-            onChange={(event) => setMinLlmScore(event.target.value)}
-          >
-            <option value="">All</option>
-            <option value="60">60</option>
-            <option value="70">70</option>
-            <option value="80">80</option>
-          </select>
-        </div>
-        <div className="field">
-          <label>Target Region</label>
-          <select
-            value={locationCategory}
-            onChange={(event) => setLocationCategory(event.target.value)}
-          >
-            <option value="">All</option>
-            <option value="confirmed_shanghai">Confirmed Shanghai</option>
-            <option value="confirmed_yangtze_delta">Confirmed Jiangsu/Zhejiang</option>
-            <option value="confirmed_hong_kong">Confirmed Hong Kong</option>
-            <option value="confirmed_malaysia">Confirmed Malaysia</option>
-            <option value="confirmed_southeast_asia">Confirmed Southeast Asia</option>
-            <option value="unclassified">Unclassified</option>
-            <option value="excluded">Outside target areas</option>
-          </select>
-        </div>
-        <div className="field">
-          <label>My Marks</label>
-          <select value={markFilter} onChange={(event) => setMarkFilter(event.target.value)}>
-            <option value="">All</option>
-            <option value="favorited">Favorites</option>
-            <option value="applied">Applied</option>
-            <option value="not_applied">Not applied</option>
-            <option value="not_viewed">Not viewed yet</option>
-          </select>
           {savedMarkView && (
-            <p className="field-note">Includes closed jobs; AI and rule score filters are ignored.</p>
+            <span className="filter-summary-note">Includes closed jobs; AI and rule score filters are ignored.</span>
           )}
         </div>
       </section>
@@ -990,8 +1123,8 @@ export default function HomePage() {
       {filterRelaxed && (
         <section className="notice glass">
           Worker has collected <strong>{inventoryCount}</strong> jobs, but AI scoring has not
-          finished yet ({scoredCount} scored). Showing collected jobs by rule score. AI Precision
-          will apply automatically once the LLM rerank writes scores.
+          finished yet ({scoredCount} scored). Showing collected jobs by rule score. The AI filter
+          applies automatically once the LLM rerank writes scores.
         </section>
       )}
 
@@ -1004,7 +1137,20 @@ export default function HomePage() {
               {markFilter
                 ? "No jobs with this mark yet."
                 : inventoryCount > 0
-                ? "No jobs matched current filters. Try setting AI Score to All or turning AI Precision Mode Off."
+                ? (
+                  <>
+                    No jobs match these filters.{" "}
+                    {aiLevel !== "off" ? (
+                      <button type="button" className="filter-clear" onClick={() => setAiLevel("off")}>
+                        Turn the AI filter off
+                      </button>
+                    ) : activeFilters.length > 0 ? (
+                      <button type="button" className="filter-clear" onClick={clearFilters}>
+                        Clear all filters
+                      </button>
+                    ) : null}
+                  </>
+                )
                 : "No collected jobs yet. The worker is still running official-source collectors."}
             </div>
           ) : (

@@ -355,6 +355,24 @@ pinned on the right while you scroll. **J** / **K** move to the next or
 previous job and **Esc** (or Close) returns to the full-width list. Narrower
 windows show the details as a dialog instead.
 
+### Filters
+
+The filter panel above the list has three rows:
+
+1. **Search**, **Location** and **Sort**.
+2. Chips that apply on click:
+   - **AI**: `≥ 80`, `≥ 70`, `≥ 60` (the default) and **Any fit** show jobs
+     the AI rated a strong or possible fit at that score or more. **Off**
+     removes the AI filter.
+   - **Mine**: All, Favorites, Applied, Not applied and Not viewed, with
+     counts for Favorites and Applied.
+3. A line with the number of matching jobs and every filter that differs
+   from the default. Click a filter's **×** to remove it, or **Clear all**.
+
+**More filters** opens Source, Target Region, Rule Score (used only when AI is
+Off) and Fetch Limit. Its badge counts how many of them are set. Hover a
+control for its help text.
+
 ### Posting dates
 
 Each card shows the date and age, for example `Posted Nov 2 · 3d ago`; the
@@ -369,8 +387,8 @@ details pane shows the full date. The label says where the date comes from:
 
 ### Sorting
 
-**Sort By** orders the list by **Newest posted first** (the default) or
-**AI score, highest first**. With AI score, equal scores go newest first, and
+**Sort** orders the list by **Newest posted** (the default) or
+**AI score ↓** (highest first). With AI score, equal scores go newest first, and
 jobs without an AI score come last, ordered by rule score. Newest
 first uses the first-seen date for jobs without a posting date. The choice is
 saved in the browser. The API takes the same values: `GET /jobs?sort=newest`
@@ -385,8 +403,8 @@ you opened it. Marks are stored on the job row (`favorited_at`, `applied_at`,
 `last_viewed_at`, `view_count`), so they survive re-collection and
 `refresh_all --reset-scores`.
 
-The **My Marks** filter narrows the list to Favorites, Applied, Not applied or
-Not viewed yet. Favorites and Applied also include closed postings (shown with
+The **Mine** chips narrow the list to Favorites, Applied, Not applied or
+Not viewed. Favorites and Applied also include closed postings (shown with
 a Closed badge) and ignore the AI and rule-score filters, so a job you applied
 to stays findable after it is taken down.
 
@@ -415,7 +433,7 @@ its cities, with the target-region city first.
 - **Location** picker: countries and cities with job counts under the other
   filters. "All of 中国 China" includes multi-city roles that list a Chinese
   city anywhere.
-- **Target Region** keeps the coarse categories (Shanghai, Jiangsu/Zhejiang,
+- **Target Region** (under More filters) keeps the coarse categories (Shanghai, Jiangsu/Zhejiang,
   Hong Kong, Malaysia, Southeast Asia, Outside target areas). LinkedIn, Liepin
   and 51job rows are now classified too; before they were all Unclassified.
 
