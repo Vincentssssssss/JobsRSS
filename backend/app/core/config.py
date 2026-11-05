@@ -6,7 +6,7 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # Not a setting: a stale APP_VERSION in .env must not misreport the running code.
-APP_VERSION = "2.2.3"
+APP_VERSION = "2.2.4"
 
 
 class Settings(BaseSettings):
