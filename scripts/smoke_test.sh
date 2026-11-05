@@ -106,6 +106,9 @@ for mark in favorited applied not_applied viewed not_viewed; do
   json_check "mark=$mark filter is accepted" "$API_URL/jobs/count?mark=$mark&status=" "isinstance(d.get('total'), int)"
 done
 status_check "unknown mark filter is rejected" 422 "$API_URL/jobs/count?mark=bogus"
+json_check "sort=ai_score lists scored jobs highest first" "$API_URL/jobs?sort=ai_score&limit=200" "(lambda s: s == sorted(s, reverse=True))([j['llm_fit_score'] for j in d if j.get('llm_fit_score') is not None])"
+json_check "sort=newest lists newest posting first" "$API_URL/jobs?sort=newest&limit=200" "(lambda s: s == sorted(s, reverse=True))([__import__('datetime').datetime.fromisoformat((j.get('posted_at') or j['first_seen_at']).replace('Z', '+00:00')) for j in d])"
+status_check "unknown sort is rejected" 422 "$API_URL/jobs?sort=bogus"
 json_check "GET /jobs/locations groups cities by country" "$API_URL/jobs/locations" "isinstance(d.get('countries'), list) and all(c.get('label') and isinstance(c.get('cities'), list) for c in d['countries'])"
 json_check "jobs carry a standardized location" "$API_URL/jobs?limit=50" "all('location_label' in j and isinstance(j.get('cities'), list) for j in d)"
 json_check "city filter returns only that city" "$API_URL/jobs?city=Shanghai&limit=100" "all('Shanghai' in j['cities'] for j in d)"

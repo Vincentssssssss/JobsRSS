@@ -76,7 +76,7 @@ It checks:
 - **Containers:** all four are up, none is restart-looping, and api, worker
   and frontend run the checked-out code.
 - **API:** `/healthz` reports this release's version; the jobs endpoints,
-  filters and mark filters respond; RSS feeds are well-formed.
+  filters, mark filters and both sort orders respond; RSS feeds are well-formed.
 - **Dashboard:** the page renders and its `/api/backend` proxy reaches the API.
 - **Database:** every schema column exists, no official job has a region
   as its company, and location categories are valid.
