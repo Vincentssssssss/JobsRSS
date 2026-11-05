@@ -1,8 +1,23 @@
 import json
 from datetime import datetime, timezone
 
-from app.official.collectors.base import parse_source_datetime
-from app.official.collectors.google import google_posted_at, parse_google_job_detail
+from app.official.collectors.alibaba import AlibabaOfficialCollector
+from app.official.collectors.amazon import AmazonOfficialCollector
+from app.official.collectors.base import CHINA_TIMEZONE, parse_source_datetime
+from app.official.collectors.bcg import BcgOfficialCollector
+from app.official.collectors.beisen import WuXiAppTecOfficialCollector
+from app.official.collectors.feishu_jobs import XiaomiOfficialCollector
+from app.official.collectors.google import (
+    GoogleOfficialCollector,
+    google_posted_at,
+    parse_google_job_detail,
+)
+from app.official.collectors.hotjob import DeloitteOfficialCollector
+from app.official.collectors.huawei import HuaweiOfficialCollector
+from app.official.collectors.microsoft import MicrosoftOfficialCollector
+from app.official.collectors.midea import MideaOfficialCollector
+from app.official.collectors.moka import KpmgOfficialCollector
+from app.official.collectors.roche import RocheOfficialCollector
 from app.official.collectors.tencent import TencentOfficialCollector, parse_tencent_jobs
 
 GOOGLE_URL = (
@@ -49,7 +64,36 @@ def test_tencent_jobs_keep_their_update_date():
     }]}}
     raw = parse_tencent_jobs(payload)[0]
     job = TencentOfficialCollector().normalize(raw)
-    assert job.posted_at == datetime(2026, 11, 5, tzinfo=timezone.utc)
+    assert job.posted_at == datetime(2026, 11, 5, tzinfo=CHINA_TIMEZONE)
+
+
+def test_chinese_portals_read_offsetless_times_as_beijing_time():
+    # KPMG's Moka portal sent 10:14 while it was 02:14 UTC; read as UTC, the job
+    # was posted 8 hours in the future and sorted above everything else.
+    raw = {"source_job_id": "1", "title": "Tax Manager", "source_url": "https://e.x/1",
+           "content_hash": "h", "posted_at": "2026-11-05T10:14:03"}
+    assert KpmgOfficialCollector().normalize(raw).posted_at == datetime(
+        2026, 11, 5, 2, 14, 3, tzinfo=timezone.utc
+    )
+    # Offsets and epoch values are unaffected, and global portals keep UTC.
+    raw["posted_at"] = "2026-11-05T10:14:03+00:00"
+    assert KpmgOfficialCollector().normalize(raw).posted_at.hour == 10
+    raw["posted_at"] = 1793606931000
+    assert KpmgOfficialCollector().normalize(raw).posted_at == datetime.fromtimestamp(
+        1793606931, tz=timezone.utc
+    )
+    raw["posted_at"] = "2026-11-05T10:14:03"
+    assert GoogleOfficialCollector().normalize(raw).posted_at.hour == 10
+
+
+def test_every_chinese_portal_family_uses_beijing_time():
+    for collector in (KpmgOfficialCollector, WuXiAppTecOfficialCollector, DeloitteOfficialCollector,
+                      HuaweiOfficialCollector, TencentOfficialCollector, MideaOfficialCollector,
+                      XiaomiOfficialCollector, AlibabaOfficialCollector):
+        assert collector.naive_timezone is CHINA_TIMEZONE, collector.__name__
+    for collector in (AmazonOfficialCollector, MicrosoftOfficialCollector, GoogleOfficialCollector,
+                      BcgOfficialCollector, RocheOfficialCollector):
+        assert collector.naive_timezone is timezone.utc, collector.__name__
 
 
 def test_google_posting_date_comes_from_the_embedded_job_record():

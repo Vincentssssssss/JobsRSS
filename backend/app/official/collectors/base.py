@@ -1,5 +1,5 @@
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone, tzinfo
 from typing import Any, Callable, Dict, Hashable, Iterable, List, Optional, Tuple, TypeVar
 
 from app.collectors.base import BaseCollector, CollectorMeta
@@ -9,6 +9,7 @@ from app.official.registry import OfficialSourceSpec
 from app.schemas.job import UnifiedJob
 
 T = TypeVar("T")
+CHINA_TIMEZONE = timezone(timedelta(hours=8), "Asia/Shanghai")
 _LOCAL_DATE = re.compile(r"(\d{4})\s*[年/.]\s*(\d{1,2})\s*[月/.]\s*(\d{1,2})\s*日?")
 
 
@@ -21,6 +22,9 @@ class OfficialCollectorBase(BaseCollector):
     # rather than the employer. Every row then carries this name, and startup
     # rewrites stored rows of this source that say anything else.
     fixed_company: Optional[str] = None
+    # Zone of timestamps the portal sends without an offset. Chinese portals send
+    # Beijing time, which read as UTC lands 8 hours late (often in the future).
+    naive_timezone: tzinfo = timezone.utc
 
     def __init__(self, spec: OfficialSourceSpec, method: str, parser_name: str) -> None:
         self.spec = spec
@@ -36,7 +40,7 @@ class OfficialCollectorBase(BaseCollector):
 
     def normalize(self, raw: Dict[str, Any]) -> UnifiedJob:
         now = self.now()
-        posted_at = parse_source_datetime(raw.get("posted_at"))
+        posted_at = parse_source_datetime(raw.get("posted_at"), self.naive_timezone)
         location = raw.get("location") or "Unknown"
         location_category = raw.get(
             "location_category", LocationCategory.UNCLASSIFIED.value
@@ -104,11 +108,11 @@ def interleave_capped(
         iterators = still_open
     return merged
 
-def parse_source_datetime(value: Any) -> Optional[datetime]:
+def parse_source_datetime(value: Any, naive_timezone: tzinfo = timezone.utc) -> Optional[datetime]:
     if value is None or value == "":
         return None
     if isinstance(value, datetime):
-        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return value if value.tzinfo else value.replace(tzinfo=naive_timezone)
     if isinstance(value, (int, float)):
         if value > 10_000_000_000:
             value = value / 1000
@@ -118,7 +122,7 @@ def parse_source_datetime(value: Any) -> Optional[datetime]:
     local_date = _LOCAL_DATE.fullmatch(text)
     if local_date:
         try:
-            return datetime(*(int(part) for part in local_date.groups()), tzinfo=timezone.utc)
+            return datetime(*(int(part) for part in local_date.groups()), tzinfo=naive_timezone)
         except ValueError:
             return None
     for parser in (
@@ -128,7 +132,7 @@ def parse_source_datetime(value: Any) -> Optional[datetime]:
     ):
         try:
             parsed = parser()
-            return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=naive_timezone)
         except ValueError:
             continue
     return None

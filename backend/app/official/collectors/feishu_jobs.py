@@ -4,12 +4,14 @@ from urllib.parse import urljoin
 import httpx
 
 from app.core.config import get_settings
-from app.official.collectors.base import OfficialCollectorBase
+from app.official.collectors.base import CHINA_TIMEZONE, OfficialCollectorBase
 from app.official.location import LocationCategory, classify_official_location
 from app.official.registry import get_official_source
 
 
 class FeishuJobsOfficialCollector(OfficialCollectorBase):
+    naive_timezone = CHINA_TIMEZONE
+
     def __init__(
         self,
         source_id: str,

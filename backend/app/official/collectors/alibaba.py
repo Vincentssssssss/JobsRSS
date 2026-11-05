@@ -4,7 +4,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 from app.core.config import get_settings
-from app.official.collectors.base import OfficialCollectorBase, interleave_capped
+from app.official.collectors.base import CHINA_TIMEZONE, OfficialCollectorBase, interleave_capped
 from app.official.location import (
     LocationCategory,
     classify_official_location,
@@ -56,6 +56,8 @@ ALIYUN_SOCIAL_SEARCHES: Tuple[SearchSpec, ...] = (
 
 
 class AlibabaPlatformCollector(OfficialCollectorBase):
+    naive_timezone = CHINA_TIMEZONE
+
     root: str
     company: str
     searches: Tuple[SearchSpec, ...]

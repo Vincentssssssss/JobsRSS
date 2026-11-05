@@ -9,7 +9,7 @@ from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 from app.core.config import get_settings
-from app.official.collectors.base import OfficialCollectorBase
+from app.official.collectors.base import CHINA_TIMEZONE, OfficialCollectorBase
 from app.official.location import LocationCategory, classify_official_location
 from app.official.registry import get_official_source
 
@@ -17,6 +17,8 @@ MOKA_API_ROOT = "https://app.mokahr.com"
 
 
 class MokaOfficialCollector(OfficialCollectorBase):
+    naive_timezone = CHINA_TIMEZONE
+
     def __init__(
         self,
         source_id: str,

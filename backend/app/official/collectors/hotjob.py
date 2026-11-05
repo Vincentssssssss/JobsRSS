@@ -3,7 +3,7 @@ from typing import Any, Dict, List
 import httpx
 
 from app.core.config import get_settings
-from app.official.collectors.base import OfficialCollectorBase
+from app.official.collectors.base import CHINA_TIMEZONE, OfficialCollectorBase
 from app.official.location import LocationCategory, classify_official_location
 from app.official.registry import get_official_source
 
@@ -21,6 +21,8 @@ class HotJobOfficialCollector(OfficialCollectorBase):
     """HotJob's per-post "company" field holds a region (Deloitte: 中国大陆 /
     中国香港) or a business unit (Yunnan Baiyao: 药品事业群, Simcere: 零售事业部),
     so every row carries the collector's company name instead."""
+
+    naive_timezone = CHINA_TIMEZONE
 
     def __init__(
         self,
