@@ -1,0 +1,303 @@
+import json
+import logging
+import re
+import time
+from datetime import datetime, timezone
+from html import unescape
+from typing import Any, Dict, List, Optional
+from urllib.parse import urljoin
+
+import httpx
+from bs4 import BeautifulSoup
+
+from app.core.config import get_settings
+from app.enrichment.external_job import ExternalJobEnricher
+from app.official.collectors.base import OfficialCollectorBase, interleave_capped
+from app.official.location import (
+    LocationCategory,
+    classify_official_location,
+    country_for_category,
+)
+from app.official.registry import get_official_source
+
+GOOGLE_RESULTS_URL = (
+    "https://www.google.com/about/careers/applications/jobs/results/"
+)
+# Google has no Jiangsu/Zhejiang inventory of its own: "Suzhou, China" returns the
+# Shanghai roles, which would then be labelled with the query location.
+GOOGLE_SEARCH_LOCATIONS = ("Shanghai, China", "Hong Kong", "Malaysia")
+GOOGLE_SEA_SEARCH_LOCATIONS = ("Singapore", "Indonesia", "Thailand", "Vietnam", "Philippines")
+GOOGLE_PAGE_SIZE = 20
+GOOGLE_ROOT = "https://www.google.com"
+GOOGLE_CAREERS_ROOT = (
+    "https://www.google.com/about/careers/applications/"
+)
+GOOGLE_JOB_PATH = re.compile(
+    r"/about/careers/applications/jobs/results/(\d+)-[^?#]+"
+)
+GOOGLE_REQUEST_ATTEMPTS = 3
+GOOGLE_RETRY_BACKOFF_SECONDS = 2.0
+
+logger = logging.getLogger(__name__)
+
+
+class GoogleOfficialCollector(OfficialCollectorBase):
+    def __init__(self) -> None:
+        super().__init__(
+            get_official_source("google"),
+            method="server_rendered_html",
+            parser_name="google-careers-ssr-html",
+        )
+
+    def fetch_raw(self) -> List[Dict[str, Any]]:
+        settings = get_settings()
+        with httpx.Client(
+            timeout=settings.official_source_timeout_seconds,
+            verify=settings.official_source_verify_tls,
+            headers={"User-Agent": "JobsRSS/2.0 (+personal job monitor)"},
+            follow_redirects=False,
+        ) as client:
+            pairs: List[tuple[str, str]] = []
+            last_error: Optional[httpx.TransportError] = None
+            for locations, limit in (
+                (GOOGLE_SEARCH_LOCATIONS, settings.official_source_max_jobs_per_source),
+                (GOOGLE_SEA_SEARCH_LOCATIONS, settings.official_source_sea_max_jobs_per_source),
+            ):
+                if limit <= 0:
+                    continue
+                groups = []
+                for location in locations:
+                    try:
+                        links = _discover_location_links(
+                            client,
+                            location,
+                            limit=limit,
+                            max_pages=settings.official_source_max_pages_per_source,
+                        )
+                    except httpx.TransportError as exc:
+                        last_error = exc
+                        logger.warning(
+                            "google_location_skipped location=%s error=%r", location, exc
+                        )
+                        continue
+                    groups.append([(link, location) for link in links])
+                pairs += interleave_capped(
+                    groups,
+                    limit,
+                    key=lambda pair: pair[0],
+                    exclude={link for link, _ in pairs},
+                )
+            if last_error is not None and not pairs:
+                raise last_error
+            jobs = []
+            for link, location in pairs:
+                try:
+                    response = _get_with_retry(client, link)
+                except httpx.TransportError as exc:
+                    logger.warning("google_job_skipped url=%s error=%r", link, exc)
+                    continue
+                response.raise_for_status()
+                job = parse_google_job_detail(
+                    response.text, str(response.url), default_location=location
+                )
+                if job is not None:
+                    jobs.append(job)
+            return jobs
+
+
+def _discover_location_links(
+    client: httpx.Client, location: str, *, limit: int, max_pages: int
+) -> List[str]:
+    links: List[str] = []
+    for page in range(1, max_pages + 1):
+        if len(links) >= limit:
+            break
+        try:
+            response = _get_with_retry(
+                client,
+                GOOGLE_RESULTS_URL,
+                params={"location": location, "sort_by": "date", "page": page},
+            )
+        except httpx.TransportError:
+            if not links:
+                raise
+            logger.warning(
+                "google_listing_truncated location=%s page=%d kept=%d",
+                location,
+                page,
+                len(links),
+            )
+            break
+        response.raise_for_status()
+        new_links = [
+            link for link in discover_google_job_links(response.text) if link not in links
+        ]
+        links.extend(new_links)
+        if len(new_links) < GOOGLE_PAGE_SIZE:
+            break
+    return links
+
+
+def _get_with_retry(
+    client: httpx.Client, url: str, params: Optional[Dict[str, Any]] = None
+) -> httpx.Response:
+    # google.com is reachable only intermittently from mainland China networks;
+    # handshakes are often reset, and a retry usually gets through.
+    for attempt in range(GOOGLE_REQUEST_ATTEMPTS):
+        try:
+            return client.get(url, params=params)
+        except httpx.TransportError:
+            if attempt + 1 >= GOOGLE_REQUEST_ATTEMPTS:
+                raise
+            time.sleep(GOOGLE_RETRY_BACKOFF_SECONDS * (2 ** attempt))
+    raise AssertionError("unreachable")
+
+
+def discover_google_job_links(html: str) -> List[str]:
+    soup = BeautifulSoup(html, "html.parser")
+    links: List[str] = []
+    for anchor in soup.select("a[href]"):
+        href = str(anchor.get("href") or "")
+        full_url = urljoin(GOOGLE_CAREERS_ROOT, href)
+        parsed = httpx.URL(full_url)
+        if (
+            parsed.scheme == "https"
+            and parsed.host == "www.google.com"
+            and GOOGLE_JOB_PATH.search(full_url)
+        ):
+            links.append(full_url.split("?", 1)[0].split("#", 1)[0])
+    decoded = "\n".join(
+        script.get_text() for script in soup.select("script")
+    )
+    decoded = unescape(decoded).replace("\\/", "/")
+    for match in re.finditer(
+        r"(?:/about/careers/applications/)?jobs/results/(\d+)-([a-z0-9-]+)",
+        decoded,
+        flags=re.IGNORECASE,
+    ):
+        links.append(
+            f"{GOOGLE_ROOT}/about/careers/applications/jobs/results/"
+            f"{match.group(1)}-{match.group(2)}"
+        )
+    return list(dict.fromkeys(links))
+
+
+def parse_google_job_detail(
+    html: str, source_url: str, default_location: str = "Shanghai, China"
+) -> Dict[str, Any] | None:
+    match = GOOGLE_JOB_PATH.search(source_url)
+    if not match:
+        return None
+    source_job_id = match.group(1)
+    structured = ExternalJobEnricher.parse_html(
+        html,
+        final_url=source_url,
+        provider="company_site",
+    )
+    soup = BeautifulSoup(html, "html.parser")
+    meta = soup.select_one("meta[property='og:title']")
+    meta_title = str(meta.get("content") or "") if meta else ""
+    structured_title = (
+        "" if structured.title.lower() == "job details" else structured.title
+    )
+    title = structured_title or meta_title
+    if not title:
+        title = _first_text(soup, ["[itemprop='title']", "h1"])
+    title = re.sub(r"\s+[—|-]\s+Google Careers.*$", "", title).strip()
+    if title.lower() == "job details":
+        return None
+    if not title:
+        return None
+    location = structured.location or _first_text(
+        soup,
+        [
+            ".job-location",
+            "[itemprop='jobLocation']",
+            "[data-location]",
+            "[aria-label*='location' i]",
+        ],
+    )
+    location = location or default_location
+    location_category = classify_official_location(location)
+    if location_category == LocationCategory.EXCLUDED:
+        return None
+    description = structured.description or _first_text(
+        soup,
+        [
+            ".job-description",
+            "[itemprop='description']",
+            "main",
+        ],
+    )
+    semantic_sections = _google_detail_sections(soup)
+    if semantic_sections:
+        description = semantic_sections
+    content_hash = OfficialCollectorBase.build_hash(
+        source_job_id, title, "Google", location, description, source_url
+    )
+    return {
+        "source_job_id": source_job_id,
+        "company": "Google",
+        "title": title,
+        "location": location,
+        "country": country_for_category(location_category, location=location),
+        "description": description,
+        "apply_url": source_url,
+        "source_url": source_url,
+        "posted_at": structured.posted_at or google_posted_at(html, source_job_id),
+        "content_hash": content_hash,
+        "location_category": location_category.value,
+    }
+
+
+_GOOGLE_JOB_DATA = re.compile(
+    r"AF_initDataCallback\(\{key: 'ds:0'.*?data:(.*?), sideChannel", re.DOTALL
+)
+# Indexes of the job record's create, update and publish times, each [seconds, nanos].
+# The results page's date sort follows the publish time, so it is the posting date.
+_GOOGLE_DATE_FIELDS = (14, 13, 12)
+
+
+def google_posted_at(html: str, source_job_id: str) -> Optional[datetime]:
+    """The detail page has no schema.org date; its embedded job record does."""
+    match = _GOOGLE_JOB_DATA.search(html)
+    if not match:
+        return None
+    try:
+        record = json.loads(match.group(1))[0]
+    except (ValueError, IndexError, TypeError):
+        return None
+    if not isinstance(record, list) or not record or str(record[0]) != source_job_id:
+        return None
+    for index in _GOOGLE_DATE_FIELDS:
+        value = record[index] if len(record) > index else None
+        if isinstance(value, list) and value and isinstance(value[0], int) and value[0] > 0:
+            return datetime.fromtimestamp(value[0], tz=timezone.utc)
+    return None
+
+
+def _first_text(soup: BeautifulSoup, selectors: List[str]) -> str:
+    for selector in selectors:
+        node = soup.select_one(selector)
+        if node:
+            return " ".join(node.get_text(" ", strip=True).split())
+    return ""
+
+
+def _google_detail_sections(soup: BeautifulSoup) -> str:
+    section_names = {
+        "minimum qualifications",
+        "preferred qualifications",
+        "about the job",
+        "responsibilities",
+    }
+    sections: List[str] = []
+    for heading in soup.select("h2, h3"):
+        normalized = heading.get_text(" ", strip=True).lower().rstrip(":")
+        if normalized not in section_names:
+            continue
+        container = heading.parent
+        text = " ".join(container.get_text(" ", strip=True).split())
+        if text:
+            sections.append(text)
+    return "\n\n".join(dict.fromkeys(sections))

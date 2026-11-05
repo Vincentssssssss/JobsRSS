@@ -1,0 +1,78 @@
+pipeline {
+  agent any
+
+  options {
+    timestamps()
+    disableConcurrentBuilds()
+  }
+
+  environment {
+    ACR_NAME = credentials('acr-name')
+    ACR_LOGIN_SERVER = credentials('acr-login-server')
+    ACR_USERNAME = credentials('acr-username')
+    ACR_PASSWORD = credentials('acr-password')
+    AZURE_VM_HOST = credentials('azure-vm-host')
+    AZURE_VM_USER = credentials('azure-vm-user')
+    IMAGE_TAG = "${env.GIT_COMMIT}"
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout scm
+      }
+    }
+
+    stage('Backend Tests') {
+      steps {
+        sh '''
+          python3 -m venv .venv-ci
+          . .venv-ci/bin/activate
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt pytest
+          PYTHONPATH=backend pytest backend/tests
+        '''
+      }
+    }
+
+    stage('Frontend Build') {
+      steps {
+        dir('frontend') {
+          sh 'npm ci --no-audit --no-fund'
+          sh 'npm run build'
+        }
+      }
+    }
+
+    stage('Build & Push Images') {
+      steps {
+        sh '''
+          echo "$ACR_PASSWORD" | docker login "$ACR_LOGIN_SERVER" --username "$ACR_USERNAME" --password-stdin
+
+          docker build -t "$ACR_LOGIN_SERVER/jobsrss-api:$IMAGE_TAG" -f backend/Dockerfile backend
+          docker build -t "$ACR_LOGIN_SERVER/jobsrss-api:latest" -f backend/Dockerfile backend
+          docker push "$ACR_LOGIN_SERVER/jobsrss-api:$IMAGE_TAG"
+          docker push "$ACR_LOGIN_SERVER/jobsrss-api:latest"
+
+          docker build -t "$ACR_LOGIN_SERVER/jobsrss-frontend:$IMAGE_TAG" -f frontend/Dockerfile frontend
+          docker build -t "$ACR_LOGIN_SERVER/jobsrss-frontend:latest" -f frontend/Dockerfile frontend
+          docker push "$ACR_LOGIN_SERVER/jobsrss-frontend:$IMAGE_TAG"
+          docker push "$ACR_LOGIN_SERVER/jobsrss-frontend:latest"
+        '''
+      }
+    }
+
+    stage('Deploy to Azure VM') {
+      steps {
+        sshagent(credentials: ['azure-vm-ssh-key']) {
+          sh '''
+            scp -P 22 deploy/azure/vm/docker-compose.prod.yml "$AZURE_VM_USER@$AZURE_VM_HOST:/opt/jobsrss/docker-compose.prod.yml"
+            scp -P 22 deploy/azure/vm/deploy.sh "$AZURE_VM_USER@$AZURE_VM_HOST:/opt/jobsrss/deploy.sh"
+            ssh -p 22 "$AZURE_VM_USER@$AZURE_VM_HOST" \\
+              "ACR_LOGIN_SERVER='$ACR_LOGIN_SERVER' ACR_USERNAME='$ACR_USERNAME' ACR_PASSWORD='$ACR_PASSWORD' IMAGE_TAG='$IMAGE_TAG' bash /opt/jobsrss/deploy.sh"
+          '''
+        }
+      }
+    }
+  }
+}

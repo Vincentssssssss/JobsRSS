@@ -1,0 +1,77 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: jobsrss
+      POSTGRES_PASSWORD: jobsrss
+      POSTGRES_DB: jobsrss
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      # TCP, not the socket: during first-run initdb the image runs a socket-only
+      # temporary server that pg_isready would otherwise report as ready.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U jobsrss -d jobsrss"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  # api and worker run the checked-out backend code instead of the copy baked
+  # into the image, so `git pull` + recreate applies backend changes without a
+  # rebuild (rebuilds need apt/PyPI access). Rebuild only when
+  # backend/requirements.txt or the Dockerfile changes.
+  api:
+    build:
+      context: ./backend
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    env_file:
+      - .env
+    volumes:
+      - ./backend:/app
+      - ./secrets:/secrets:ro
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ./backend
+    command: python worker.py
+    env_file:
+      - .env
+    volumes:
+      - ./backend:/app
+      - ./secrets:/secrets:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    # The checked-out dashboard code is mounted and built on start, so `git pull` plus
+    # a recreate applies frontend changes without pulling base images or npm packages.
+    # The image is only needed for node and node_modules (rebuild when dependencies change).
+    command: sh -c "npm run build && exec npm run start -- --hostname 0.0.0.0 --port 3000"
+    volumes:
+      - ./frontend/app:/app/app:ro
+      - ./frontend/package.json:/app/package.json:ro
+      - ./frontend/next.config.ts:/app/next.config.ts:ro
+    environment:
+      BACKEND_API_BASE_URLS: http://api:8000,http://host.docker.internal:8000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

@@ -1,0 +1,85 @@
+version: 1
+profile_name: senior-cloud-security-apac
+
+target_roles:
+  - Cloud Security Architect
+  - Cloud Security Engineer
+  - Security Architect
+  - Cyber Security Architect
+  - Cloud Security Lead
+  - Security Engineering Manager
+  - Cloud Security Manager
+  - Application Security
+  - Product Security
+  - Infrastructure Security
+  - Security Engineering
+  - DevSecOps
+  - AI Security
+  - Security Automation
+
+cloud_experience:
+  - Alibaba Cloud
+  - Microsoft Azure
+  - AWS
+  - Multi-cloud
+  - VPC
+  - Network Security
+  - IAM
+  - Cloud Security Architecture
+  - Cloud Platform Security
+
+security_domains:
+  - Cloud Security
+  - Security Architecture
+  - Application Security
+  - API Security
+  - Network Security
+  - Vulnerability Management
+  - Penetration Testing
+  - IAM
+  - DevSecOps
+  - Security Operations
+  - Security Automation
+
+leadership_terms:
+  - Security Lead
+  - Cloud Security Lead
+  - Security Architect
+  - Security Engineering Manager
+  - Regional Security
+  - APAC Security
+  - Greater China Security
+  - Security Program Ownership
+
+ai_security_terms:
+  - AI Security
+  - LLM Security
+  - AI Security Agent
+  - Security AI
+  - Security Automation
+  - LLM-based Security
+  - AI-assisted Security Engineering
+
+preferred_locations:
+  - Hong Kong
+  - Mainland China
+  - Singapore
+  - APAC
+  - Greater China
+  - Remote
+
+preferred_seniority:
+  - Senior
+  - Lead
+  - Principal
+  - Architect
+  - Manager
+  - Director
+
+negative_signals:
+  - Pure helpdesk
+  - Basic IT support
+  - Desktop support
+  - Junior SOC-only roles
+  - Roles without security responsibility
+  - Roles unrelated to cloud/security
