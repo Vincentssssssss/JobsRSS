@@ -88,6 +88,11 @@ if $COMPOSE exec -T worker cat app/scheduler/runner.py 2>/dev/null | diff -q - b
 else
   fail "worker runs the checked-out backend code" "recreate it: $COMPOSE up -d --force-recreate worker"
 fi
+if $COMPOSE exec -T frontend cat app/page.tsx 2>/dev/null | diff -q - frontend/app/page.tsx >/dev/null 2>&1; then
+  pass "frontend has the checked-out dashboard code"
+else
+  fail "frontend has the checked-out dashboard code" "recreate it: $COMPOSE up -d --force-recreate --no-build frontend"
+fi
 
 section "API"
 json_check "healthz reports ok and version $EXPECT_VERSION" "$API_URL/healthz" "d.get('status')=='ok' and d.get('version')=='$EXPECT_VERSION'"
@@ -132,14 +137,19 @@ for feed in all high-match; do
 done
 
 section "Dashboard"
-page="$(curl -fsS --max-time 30 "$WEB_URL/" 2>/dev/null)"
+# The frontend container builds the dashboard when it starts (about a minute).
+page=""
+for _ in $(seq 1 24); do
+  page="$(curl -fsS --max-time 30 "$WEB_URL/" 2>/dev/null)" && break
+  sleep 5
+done
 if printf '%s' "$page" | grep -q "JobsRSS Intelligence"; then pass "dashboard page renders"; else fail "dashboard page renders" "$WEB_URL/"; fi
 if printf '%s' "$page" | grep -q "data-app-version=\"$EXPECT_VERSION\""; then
   pass "dashboard image is built from the checked-out code (v$EXPECT_VERSION)"
 else
   served="$(printf '%s' "$page" | sed -n 's/.*data-app-version="\([^"]*\)".*/\1/p' | head -n 1)"
   fail "dashboard image is built from the checked-out code (v$EXPECT_VERSION)" \
-    "it serves ${served:+v$served}${served:-a build from before v2.2.2}; rebuild it: $COMPOSE build frontend && $COMPOSE up -d frontend"
+    "it serves ${served:+v$served}${served:-a build from before v2.2.2}; recreate it: $COMPOSE up -d --force-recreate --no-build frontend"
 fi
 json_check "dashboard proxy reaches the API" "$WEB_URL/api/backend/healthz" "d.get('status')=='ok' and d.get('version')=='$EXPECT_VERSION'"
 json_check "dashboard proxy forwards job queries" "$WEB_URL/api/backend/jobs/count?min_llm_score=0" "isinstance(d.get('total'), int)"

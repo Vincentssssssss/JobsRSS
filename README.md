@@ -30,13 +30,19 @@ Open:
 
 `docker-compose.yml` mounts `./backend` over `/app` in the `api` and `worker`
 containers, so they run the checked-out backend code rather than the copy baked
-into the image. Backend changes apply without a rebuild:
+into the image. It also mounts the dashboard code (`frontend/app`,
+`package.json`, `next.config.ts`) into the `frontend` container, which builds
+it when it starts. Updates therefore apply without a rebuild and without
+Docker Hub, npm or PyPI access:
 
 ```bash
 git pull
-docker compose up -d --force-recreate api worker
+docker compose up -d --force-recreate --no-build api worker frontend
 docker compose exec -T worker cat app/scheduler/runner.py | diff -q - backend/app/scheduler/runner.py && echo "worker runs current code"
 ```
+
+The dashboard is back about a minute after the recreate (`docker compose logs -f frontend`
+shows the build; it is ready at `Ready in`). Reload the page with Cmd+Shift+R.
 
 Recreating the worker starts a full cycle: platform collectors, the LLM rerank
 and the freshness sweep run at once, and the official sources follow at
@@ -44,12 +50,16 @@ and the freshness sweep run at once, and the official sources follow at
 
 A rebuild (`docker compose build api worker`) is needed only when
 `backend/requirements.txt` or `backend/Dockerfile` changes; it needs apt and
-PyPI access. Dashboard changes under `frontend/` need
-`docker compose build frontend && docker compose up -d frontend`, which only
-needs npm registry access. The dashboard shows its version next to the title
-and a yellow warning when it is older than the API; if the warning stays after
-a rebuild, the build failed (check its output for `npm ci` errors) and the old
-image is still running.
+PyPI access. Likewise `docker compose build frontend` is needed only when
+`frontend/package-lock.json` or `frontend/Dockerfile` changes; it pulls
+`node:22-alpine` from Docker Hub and runs `npm ci`. If Docker Hub is
+unreachable (`failed to resolve source metadata for docker.io/library/node:22-alpine`),
+retry later or add a registry mirror in Docker Desktop (Settings → Docker
+Engine → `"registry-mirrors"`); the existing image keeps working meanwhile.
+
+The dashboard shows its version next to the title and a yellow warning when it
+is older than the API. If the warning stays, the frontend container was not
+recreated with the mounted code; run the recreate command above.
 
 ## Smoke Test
 
@@ -63,8 +73,8 @@ scripts/smoke_test.sh --write    # also sets and restores favorite/applied on on
 
 It checks:
 
-- **Containers:** all four are up, none is restart-looping, and api and worker
-  run the checked-out code.
+- **Containers:** all four are up, none is restart-looping, and api, worker
+  and frontend run the checked-out code.
 - **API:** `/healthz` reports this release's version; the jobs endpoints,
   filters and mark filters respond; RSS feeds are well-formed.
 - **Dashboard:** the page renders and its `/api/backend` proxy reaches the API.
@@ -364,7 +374,7 @@ API: `PUT /jobs/{id}/marks` with `{"favorited": true|false, "applied": true|fals
 `POST /jobs/{id}/view`, and `mark=favorited|applied|not_applied|viewed|not_viewed`
 on `/jobs`, `/jobs/count` and `/jobs/source-counts`. The API container adds
 the columns when it starts, so after pulling run
-`docker compose up -d --force-recreate api` and rebuild the frontend.
+`docker compose up -d --force-recreate --no-build api frontend`.
 
 ## Searching and Filtering by Location
 

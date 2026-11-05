@@ -895,9 +895,9 @@ export default function HomePage() {
       {apiVersion && apiVersion !== DASHBOARD_VERSION && (
         <section className="notice glass warning">
           This dashboard is <strong>v{DASHBOARD_VERSION}</strong> but the API is{" "}
-          <strong>v{apiVersion}</strong>, so the dashboard image was not rebuilt after the last
-          update. Run <code>docker compose build frontend &amp;&amp; docker compose up -d frontend</code>{" "}
-          and reload the page.
+          <strong>v{apiVersion}</strong>, so the dashboard container still runs older code. Run{" "}
+          <code>docker compose up -d --force-recreate --no-build frontend</code>, wait about a
+          minute and reload the page.
         </section>
       )}
 
