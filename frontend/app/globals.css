@@ -323,6 +323,32 @@ body {
   line-height: 1.45;
 }
 
+.notice.warning {
+  border-color: #e8b923;
+  background: #fff8e1;
+  color: #6b4e00;
+}
+
+.notice code {
+  font-size: 13px;
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.version-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #f0f0f2;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
+  vertical-align: middle;
+}
+
 .notice strong {
   color: var(--text);
 }

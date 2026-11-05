@@ -2,7 +2,7 @@
 
 Phase 1 monorepo for a personal Job Intelligence platform.
 
-Current release: **v2.2.1** ([release notes and test report](docs/RELEASE_V2.2.1.md))
+Current release: **v2.2.2** ([release notes and test report](docs/RELEASE_V2.2.2.md))
 
 ## Services
 
@@ -46,7 +46,10 @@ A rebuild (`docker compose build api worker`) is needed only when
 `backend/requirements.txt` or `backend/Dockerfile` changes; it needs apt and
 PyPI access. Dashboard changes under `frontend/` need
 `docker compose build frontend && docker compose up -d frontend`, which only
-needs npm registry access.
+needs npm registry access. The dashboard shows its version next to the title
+and a yellow warning when it is older than the API; if the warning stays after
+a rebuild, the build failed (check its output for `npm ci` errors) and the old
+image is still running.
 
 ## Smoke Test
 

@@ -1,6 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import packageJson from "../package.json";
+
+// Baked in at `next build`, so a dashboard image older than the checked-out code shows an older version.
+const DASHBOARD_VERSION = packageJson.version;
 
 type JobCard = {
   id: number;
@@ -279,6 +283,7 @@ export default function HomePage() {
   const [selectedJob, setSelectedJob] = useState<JobDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [openJobId, setOpenJobId] = useState<number | null>(null);
+  const [apiVersion, setApiVersion] = useState<string | null>(null);
   const detailRequest = useRef(0);
   const lastOpenedJobId = useRef<number | null>(null);
   const [listLoading, setListLoading] = useState(true);
@@ -655,6 +660,9 @@ export default function HomePage() {
 
   useEffect(() => {
     void loadOfficialSources();
+    void fetchJsonWithFallback<{ version?: string }>("/healthz").then((payload) => {
+      setApiVersion(payload?.version ?? null);
+    });
   }, []);
 
   const highMatchCount = useMemo(() => jobs.filter((job) => job.match_score >= 80).length, [jobs]);
@@ -675,7 +683,12 @@ export default function HomePage() {
   return (
     <main className="page">
       <section className="hero glass">
-        <h1>JobsRSS Intelligence</h1>
+        <h1>
+          JobsRSS Intelligence{" "}
+          <span className="version-tag" data-app-version={DASHBOARD_VERSION}>
+            v{DASHBOARD_VERSION}
+          </span>
+        </h1>
         <p>Cloud and security opportunities ranked for your profile.</p>
         <div className="actions">
           <a className="button primary" href={`${rssBase}/rss/high-match.xml`} target="_blank">
@@ -876,6 +889,15 @@ export default function HomePage() {
               </span>
             ))}
           </div>
+        </section>
+      )}
+
+      {apiVersion && apiVersion !== DASHBOARD_VERSION && (
+        <section className="notice glass warning">
+          This dashboard is <strong>v{DASHBOARD_VERSION}</strong> but the API is{" "}
+          <strong>v{apiVersion}</strong>, so the dashboard image was not rebuilt after the last
+          update. Run <code>docker compose build frontend &amp;&amp; docker compose up -d frontend</code>{" "}
+          and reload the page.
         </section>
       )}
 
