@@ -233,8 +233,11 @@ function formatLongDate(value: string): string {
   });
 }
 
+// Calendar days in the viewer's time zone, so "Nov 3" reads "2d ago" all day on Nov 5.
 function formatAge(value: string): string {
-  const days = Math.floor((Date.now() - new Date(value).getTime()) / 86_400_000);
+  const startOfDay = (date: Date) =>
+    new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const days = Math.round((startOfDay(new Date()) - startOfDay(new Date(value))) / 86_400_000);
   if (days <= 0) {
     return "today";
   }
