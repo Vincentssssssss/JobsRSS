@@ -482,6 +482,39 @@ def test_content_change_resets_cached_llm_match():
         assert stored.llm_model is None
 
 
+def _sighting(posted_at, apply_url="https://jobs.acme.example/keep"):
+    now = datetime.now(timezone.utc)
+    return UnifiedJob(
+        source="official_test_company", source_job_id="keep", company="Acme",
+        title="Cloud Security Architect", location="Shanghai, CHN",
+        description="Own cloud security architecture.", apply_url=apply_url,
+        source_url="https://jobs.acme.example/keep", posted_at=posted_at, updated_at=now,
+        first_seen_at=now, last_seen_at=now, content_hash="collector-hash",
+    )
+
+
+def test_llm_verdict_survives_resightings_and_date_or_link_changes():
+    # The stored hash of a new row came from the collector, so every job's verdict
+    # was cleared on its second sighting and scored twice.
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    posted = datetime.now(timezone.utc) - timedelta(days=3)
+    with Session(engine) as db:
+        ingest_collector(db, StubOfficialCollector(_sighting(posted)))
+        stored = db.query(Job).one()
+        stored.llm_fit_score, stored.llm_verdict = 88, "strong_fit"
+        db.commit()
+
+        ingest_collector(db, StubOfficialCollector(_sighting(posted)))
+        ingest_collector(db, StubOfficialCollector(_sighting(posted + timedelta(hours=8))))
+        ingest_collector(db, StubOfficialCollector(
+            _sighting(posted + timedelta(hours=8), apply_url="https://jobs.acme.example/keep?ref=x")
+        ))
+        db.refresh(stored)
+        assert (stored.llm_fit_score, stored.llm_verdict) == (88, "strong_fit")
+        assert stored.posted_at.replace(tzinfo=timezone.utc) == posted + timedelta(hours=8)
+
+
 def test_ingest_applies_early_career_guard_without_waiting_for_llm_rerank():
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)

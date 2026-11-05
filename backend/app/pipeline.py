@@ -52,7 +52,7 @@ def ingest_collector(db: Session, collector: BaseCollector) -> IngestStats:
                 .first()
             )
             if existing:
-                previous_hash = existing.content_hash
+                previous_llm_input = _llm_input(existing)
                 existing.last_seen_at = incoming.last_seen_at
                 existing_is_authoritative = bool(existing.enrichment_source)
                 incoming_is_authoritative = bool(incoming.enrichment_source)
@@ -96,7 +96,7 @@ def ingest_collector(db: Session, collector: BaseCollector) -> IngestStats:
                     existing.enrichment_source = incoming.enrichment_source
                 existing.match_score = score_job(existing.title, existing.description, existing.location)
                 existing.content_hash = _job_hash(existing)
-                if existing.content_hash != previous_hash:
+                if _llm_input(existing) != previous_llm_input:
                     existing.llm_fit_score = None
                     existing.llm_verdict = None
                     existing.llm_role_family = None
@@ -421,6 +421,12 @@ def _should_replace_apply_url(existing: str, incoming: str) -> bool:
     if existing and not existing_is_linkedin and incoming_is_linkedin:
         return False
     return True
+
+
+def _llm_input(job: Job) -> tuple:
+    """What the LLM rerank sees. A stored verdict stays valid until one of these
+    changes; a new posting date or apply link does not change the fit."""
+    return (job.title, job.company, job.location, (job.description or "")[:6000])
 
 
 def _job_hash(job: Job) -> str:
