@@ -145,10 +145,10 @@ for _ in $(seq 1 24); do
 done
 if printf '%s' "$page" | grep -q "JobsRSS Intelligence"; then pass "dashboard page renders"; else fail "dashboard page renders" "$WEB_URL/"; fi
 if printf '%s' "$page" | grep -q "data-app-version=\"$EXPECT_VERSION\""; then
-  pass "dashboard image is built from the checked-out code (v$EXPECT_VERSION)"
+  pass "dashboard serves this release (v$EXPECT_VERSION)"
 else
   served="$(printf '%s' "$page" | sed -n 's/.*data-app-version="\([^"]*\)".*/\1/p' | head -n 1)"
-  fail "dashboard image is built from the checked-out code (v$EXPECT_VERSION)" \
+  fail "dashboard serves this release (v$EXPECT_VERSION)" \
     "it serves ${served:+v$served}${served:-a build from before v2.2.2}; recreate it: $COMPOSE up -d --force-recreate --no-build frontend"
 fi
 json_check "dashboard proxy reaches the API" "$WEB_URL/api/backend/healthz" "d.get('status')=='ok' and d.get('version')=='$EXPECT_VERSION'"
