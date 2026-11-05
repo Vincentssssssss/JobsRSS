@@ -38,7 +38,7 @@ def test_parses_tencent_shanghai_jobs():
                     "ProductName": "腾讯云",
                     "Responsibility": "负责腾讯云安全架构。",
                     "Requirement": "具备 IAM 与 DevSecOps 经验。",
-                    "LastUpdateTime": "2026-08-20",
+                    "LastUpdateTime": "2026年08月20日",
                 }
             ]
         }

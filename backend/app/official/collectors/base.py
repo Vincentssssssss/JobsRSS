@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Hashable, Iterable, List, Optional, Tuple, TypeVar
 
@@ -8,6 +9,7 @@ from app.official.registry import OfficialSourceSpec
 from app.schemas.job import UnifiedJob
 
 T = TypeVar("T")
+_LOCAL_DATE = re.compile(r"(\d{4})\s*[年/.]\s*(\d{1,2})\s*[月/.]\s*(\d{1,2})\s*日?")
 
 
 class OfficialCollectorBase(BaseCollector):
@@ -112,6 +114,13 @@ def parse_source_datetime(value: Any) -> Optional[datetime]:
             value = value / 1000
         return datetime.fromtimestamp(value, tz=timezone.utc)
     text = str(value).strip().replace("Z", "+00:00")
+    # Tencent writes "2026年11月05日"; other Chinese portals use 2026/11/05 or 2026.11.05.
+    local_date = _LOCAL_DATE.fullmatch(text)
+    if local_date:
+        try:
+            return datetime(*(int(part) for part in local_date.groups()), tzinfo=timezone.utc)
+        except ValueError:
+            return None
     for parser in (
         lambda: datetime.fromisoformat(text),
         lambda: datetime.strptime(text, "%B %d, %Y"),

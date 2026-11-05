@@ -1,6 +1,8 @@
+import json
 import logging
 import re
 import time
+from datetime import datetime, timezone
 from html import unescape
 from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin
@@ -242,10 +244,36 @@ def parse_google_job_detail(
         "description": description,
         "apply_url": source_url,
         "source_url": source_url,
-        "posted_at": structured.posted_at,
+        "posted_at": structured.posted_at or google_posted_at(html, source_job_id),
         "content_hash": content_hash,
         "location_category": location_category.value,
     }
+
+
+_GOOGLE_JOB_DATA = re.compile(
+    r"AF_initDataCallback\(\{key: 'ds:0'.*?data:(.*?), sideChannel", re.DOTALL
+)
+# Indexes of the job record's create, update and publish times, each [seconds, nanos].
+# The results page's date sort follows the publish time, so it is the posting date.
+_GOOGLE_DATE_FIELDS = (14, 13, 12)
+
+
+def google_posted_at(html: str, source_job_id: str) -> Optional[datetime]:
+    """The detail page has no schema.org date; its embedded job record does."""
+    match = _GOOGLE_JOB_DATA.search(html)
+    if not match:
+        return None
+    try:
+        record = json.loads(match.group(1))[0]
+    except (ValueError, IndexError, TypeError):
+        return None
+    if not isinstance(record, list) or not record or str(record[0]) != source_job_id:
+        return None
+    for index in _GOOGLE_DATE_FIELDS:
+        value = record[index] if len(record) > index else None
+        if isinstance(value, list) and value and isinstance(value[0], int) and value[0] > 0:
+            return datetime.fromtimestamp(value[0], tz=timezone.utc)
+    return None
 
 
 def _first_text(soup: BeautifulSoup, selectors: List[str]) -> str:
